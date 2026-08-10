@@ -1,0 +1,4 @@
+interface:
+  display_name: "提交当前任务改动"
+  short_description: "Safely commit only the Git changes created by the current task"
+  default_prompt: "Use $git-commit-task-changes to commit only the Git changes created by this task."
