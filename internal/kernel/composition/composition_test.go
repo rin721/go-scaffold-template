@@ -1,4 +1,4 @@
-package assembly
+package composition
 
 import (
 	"context"
@@ -6,75 +6,78 @@ import (
 	"sync"
 	"testing"
 
-	databaseadapter "github.com/rin721/go-scaffold2/internal/adapter/database"
 	"github.com/rin721/go-scaffold2/internal/kernel"
+	databasecapability "github.com/rin721/go-scaffold2/internal/kernel/capability/database"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
 )
 
-func TestKernelNewDoesNotInjectDatabase(t *testing.T) {
+func TestKernelNewDoesNotComposeCapabilities(t *testing.T) {
 	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
 	if err != nil {
 		t.Fatalf("kernel.New() error = %v", err)
 	}
 	if err := runtime.Start(t.Context()); err != nil {
-		t.Fatalf("Start() without Inject error = %v", err)
+		t.Fatalf("Start() without Compose error = %v", err)
 	}
 	if err := runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
-func TestInjectMakesDatabaseParticipateInKernelStart(t *testing.T) {
+func TestComposeMakesDatabaseParticipateInKernelStart(t *testing.T) {
 	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
 	if err != nil {
 		t.Fatalf("kernel.New() error = %v", err)
 	}
-	capabilities, err := Inject(runtime)
+	capabilities, err := Compose(runtime)
 	if err != nil {
-		t.Fatalf("Inject() error = %v", err)
+		t.Fatalf("Compose() error = %v", err)
 	}
 	if capabilities.Database == nil {
-		t.Fatal("Inject() Database access is nil")
+		t.Fatal("Compose() Database access is nil")
 	}
 	if err := runtime.Start(t.Context()); err == nil {
-		t.Fatal("Start() after Inject error = nil, want missing database config error")
+		t.Fatal("Start() after Compose error = nil, want missing database config error")
 	}
 	if err := runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
-func TestInjectRejectsDuplicateDatabase(t *testing.T) {
+func TestComposeRejectsDuplicateDatabase(t *testing.T) {
 	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
 	if err != nil {
 		t.Fatalf("kernel.New() error = %v", err)
 	}
-	if _, err := Inject(runtime); err != nil {
-		t.Fatalf("first Inject() error = %v", err)
+	if _, err := Compose(runtime); err != nil {
+		t.Fatalf("first Compose() error = %v", err)
 	}
-	capabilities, err := Inject(runtime)
+	capabilities, err := Compose(runtime)
 	if err == nil {
-		t.Fatal("second Inject() error = nil")
+		t.Fatal("second Compose() error = nil")
 	}
 	if capabilities.Database != nil {
-		t.Fatal("second Inject() returned partial capabilities")
+		t.Fatal("second Compose() returned partial capabilities")
 	}
 	if err := runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
-func TestInjectedDatabaseReloadsThroughStableAccess(t *testing.T) {
+func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	source := &databaseSource{dsn: "v1"}
 	runtime, err := kernel.New(config.New(source), kernel.Options{})
 	if err != nil {
 		t.Fatalf("kernel.New() error = %v", err)
 	}
-	capability := newFakeDatabaseCapability()
-	access, err := injectDatabase(runtime, capability)
+	hooks := newFakeDatabaseHooks()
+	definition := databasecapability.Definition()
+	definition.Builder = hooks
+	definition.Lifecycle = hooks
+	access, err := registerDatabase(runtime, definition)
 	if err != nil {
-		t.Fatalf("injectDatabase() error = %v", err)
+		t.Fatalf("registerDatabase() error = %v", err)
 	}
 	if err := runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
@@ -92,8 +95,8 @@ func TestInjectedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	}
 	assertDatabaseVersion(t, access, "v2")
 
-	oldClient := capability.client("v1")
-	newClient := capability.client("v2")
+	oldClient := hooks.client("v1")
+	newClient := hooks.client("v2")
 	if oldClient.closeCount() != 1 {
 		t.Fatalf("old Close count = %d, want 1", oldClient.closeCount())
 	}
@@ -127,43 +130,35 @@ func (s *databaseSource) setDSN(dsn string) {
 	s.dsn = dsn
 }
 
-type fakeDatabaseCapability struct {
-	adapter *databaseadapter.Adapter
+type fakeDatabaseHooks struct {
 	mu      sync.Mutex
 	created map[string]*fakeClient
 }
 
-func newFakeDatabaseCapability() *fakeDatabaseCapability {
-	return &fakeDatabaseCapability{
-		adapter: databaseadapter.New(),
-		created: make(map[string]*fakeClient),
-	}
+func newFakeDatabaseHooks() *fakeDatabaseHooks {
+	return &fakeDatabaseHooks{created: make(map[string]*fakeClient)}
 }
 
-func (c *fakeDatabaseCapability) Decode(snapshot config.Snapshot) (databaseadapter.Config, error) {
-	return c.adapter.Decode(snapshot)
-}
-
-func (c *fakeDatabaseCapability) Build(_ context.Context, cfg databaseadapter.Config) (pkgdatabase.Client, error) {
+func (h *fakeDatabaseHooks) Build(_ context.Context, cfg databasecapability.Config) (pkgdatabase.Client, error) {
 	client := &fakeClient{version: cfg.DSN}
-	c.mu.Lock()
-	c.created[cfg.DSN] = client
-	c.mu.Unlock()
+	h.mu.Lock()
+	h.created[cfg.DSN] = client
+	h.mu.Unlock()
 	return client, nil
 }
 
-func (c *fakeDatabaseCapability) Start(ctx context.Context, client pkgdatabase.Client) error {
+func (h *fakeDatabaseHooks) Start(ctx context.Context, client pkgdatabase.Client) error {
 	return client.Ping(ctx)
 }
 
-func (c *fakeDatabaseCapability) Stop(_ context.Context, client pkgdatabase.Client) error {
+func (h *fakeDatabaseHooks) Stop(_ context.Context, client pkgdatabase.Client) error {
 	return client.Close()
 }
 
-func (c *fakeDatabaseCapability) client(version string) *fakeClient {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.created[version]
+func (h *fakeDatabaseHooks) client(version string) *fakeClient {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return h.created[version]
 }
 
 type fakeClient struct {
@@ -217,7 +212,7 @@ func (c *fakeClient) closeCount() int {
 	return c.closes
 }
 
-func assertDatabaseVersion(t *testing.T, access databaseadapter.Access, want string) {
+func assertDatabaseVersion(t *testing.T, access databasecapability.Access, want string) {
 	t.Helper()
 	if err := access.Use(t.Context(), func(client pkgdatabase.Client) error {
 		if client.(*fakeClient).version != want {

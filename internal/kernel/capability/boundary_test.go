@@ -1,4 +1,4 @@
-package adapter_test
+package capability_test
 
 import (
 	"go/ast"
@@ -11,10 +11,10 @@ import (
 	"testing"
 )
 
-func TestAdaptersHaveNoRegistrationSideEffects(t *testing.T) {
+func TestCapabilityDefinitionsHaveNoRegistrationSideEffects(t *testing.T) {
 	root, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("get adapter root: %v", err)
+		t.Fatalf("get capability root: %v", err)
 	}
 	kernelImport := strings.Join([]string{"github.com", "rin721", "go-scaffold2", "internal", "kernel"}, "/")
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
@@ -32,7 +32,7 @@ func TestAdaptersHaveNoRegistrationSideEffects(t *testing.T) {
 				return err
 			}
 			if importPath == "reflect" {
-				t.Fatalf("Adapter %s imports reflect; automatic discovery is forbidden", path)
+				t.Fatalf("capability %s imports reflect; automatic discovery is forbidden", path)
 			}
 			if importPath == kernelImport {
 				name := "kernel"
@@ -51,7 +51,7 @@ func TestAdaptersHaveNoRegistrationSideEffects(t *testing.T) {
 			switch value := node.(type) {
 			case *ast.FuncDecl:
 				if value.Name.Name == "init" {
-					t.Fatalf("Adapter %s declares init; registration must be explicit", path)
+					t.Fatalf("capability %s declares init; composition must own registration", path)
 				}
 			case *ast.CallExpr:
 				selector, ok := value.Fun.(*ast.SelectorExpr)
@@ -63,7 +63,7 @@ func TestAdaptersHaveNoRegistrationSideEffects(t *testing.T) {
 					return true
 				}
 				if _, forbidden := kernelAliases[qualifier.Name]; forbidden {
-					t.Fatalf("Adapter %s calls kernel.Register; assembly must own registration", path)
+					t.Fatalf("capability %s calls kernel.Register; composition must own registration", path)
 				}
 			}
 			return true
@@ -71,6 +71,6 @@ func TestAdaptersHaveNoRegistrationSideEffects(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walk adapters: %v", err)
+		t.Fatalf("walk capabilities: %v", err)
 	}
 }

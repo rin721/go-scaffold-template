@@ -1,4 +1,4 @@
-// Package database 封装 pkg/database 的配置、构造和生命周期钩子。
+// Package database 定义由 Kernel 托管的 Database 能力。
 package database
 
 import (
@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	// ID 是 Database adapter 在 kernel 内的稳定能力标识。
+	// ID 是 Database capability 在 Kernel 内的稳定能力标识。
 	ID kernel.ID = "database"
-	// ConfigPath 是 Database adapter 使用的顶层配置路径。
+	// ConfigPath 是 Database capability 使用的顶层配置路径。
 	ConfigPath = "database"
 )
 
@@ -25,19 +25,9 @@ type Access interface {
 	kernel.Access[pkgdatabase.Client]
 }
 
-// Adapter 封装 Database 能力的配置解码、实例构造和生命周期钩子。
+// Config 是 Database capability 的 typed 配置契约。
 //
-// Adapter 不登记 Kernel，也不持有运行中实例；具体启用位置由 Kernel assembly 决定。
-type Adapter struct{}
-
-// New 创建无状态的 Database Adapter。
-func New() *Adapter {
-	return &Adapter{}
-}
-
-// Config 是 Database adapter 的 typed 配置 DTO。
-//
-// DTO 归属于装配边界，pkg/database 因此不依赖 mapstructure 或 kernel 配置路径。
+// Config 归属于 Kernel 能力边界，pkg/database 因此不依赖 mapstructure 或配置路径。
 type Config struct {
 	Engine      pkgdatabase.Engine `mapstructure:"engine"`
 	Driver      pkgdatabase.Driver `mapstructure:"driver"`
@@ -46,7 +36,7 @@ type Config struct {
 	PingTimeout time.Duration      `mapstructure:"pingTimeout"`
 }
 
-// PoolConfig 是 Database adapter 的连接池配置 DTO。
+// PoolConfig 是 Database capability 的连接池配置契约。
 type PoolConfig struct {
 	MaxOpenConns    int           `mapstructure:"maxOpenConns"`
 	MaxIdleConns    int           `mapstructure:"maxIdleConns"`
@@ -54,8 +44,23 @@ type PoolConfig struct {
 	ConnMaxIdleTime time.Duration `mapstructure:"connMaxIdleTime"`
 }
 
-// Decode 从 Kernel 配置快照中解码并校验 Database 配置。
-func (a *Adapter) Decode(snapshot config.Snapshot) (Config, error) {
+// Definition 返回无注册副作用的 Database 能力定义。
+//
+// 调用方必须在 composition 中显式登记返回值；本包不持有 Kernel 或运行中实例。
+func Definition() kernel.Definition[Config, pkgdatabase.Client] {
+	implementation := capability{}
+	return kernel.Definition[Config, pkgdatabase.Client]{
+		ID:         ID,
+		ConfigPath: ConfigPath,
+		Decode:     decode,
+		Builder:    implementation,
+		Lifecycle:  implementation,
+	}
+}
+
+type capability struct{}
+
+func decode(snapshot config.Snapshot) (Config, error) {
 	cfg := defaultConfig()
 	if err := snapshot.DecodeSection(ConfigPath, &cfg); err != nil {
 		return Config{}, err
@@ -67,8 +72,7 @@ func (a *Adapter) Decode(snapshot config.Snapshot) (Config, error) {
 	return cfg, nil
 }
 
-// Build 根据已校验配置创建新的 Database Client。
-func (a *Adapter) Build(ctx context.Context, cfg Config) (pkgdatabase.Client, error) {
+func (capability) Build(ctx context.Context, cfg Config) (pkgdatabase.Client, error) {
 	packageConfig := cfg.packageConfig()
 	client, err := pkgdatabase.New(ctx, &packageConfig)
 	if err != nil {
@@ -77,16 +81,14 @@ func (a *Adapter) Build(ctx context.Context, cfg Config) (pkgdatabase.Client, er
 	return client, nil
 }
 
-// Start 在实例发布前检查 Database 是否就绪。
-func (a *Adapter) Start(ctx context.Context, client pkgdatabase.Client) error {
+func (capability) Start(ctx context.Context, client pkgdatabase.Client) error {
 	if err := client.Ping(ctx); err != nil {
 		return fmt.Errorf("verify database readiness: %w", err)
 	}
 	return nil
 }
 
-// Stop 释放 Database Client 拥有的资源。
-func (a *Adapter) Stop(_ context.Context, client pkgdatabase.Client) error {
+func (capability) Stop(_ context.Context, client pkgdatabase.Client) error {
 	return client.Close()
 }
 
@@ -118,5 +120,5 @@ func (c Config) packageConfig() pkgdatabase.Config {
 	}
 }
 
-var _ kernel.Builder[Config, pkgdatabase.Client] = (*Adapter)(nil)
-var _ kernel.Lifecycle[pkgdatabase.Client] = (*Adapter)(nil)
+var _ kernel.Builder[Config, pkgdatabase.Client] = capability{}
+var _ kernel.Lifecycle[pkgdatabase.Client] = capability{}

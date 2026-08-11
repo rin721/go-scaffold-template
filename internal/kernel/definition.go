@@ -23,7 +23,7 @@ type Definition[C, T any] struct {
 	Lifecycle  Lifecycle[T]
 }
 
-// Register 在 kernel 启动前登记能力，并返回供具体 adapter 收敛的稳定 Handle。
+// Register 在 Kernel 启动前登记能力，并返回供具体 Capability 收敛的稳定 Handle。
 func Register[C, T any](runtime *Kernel, definition Definition[C, T]) (*Handle[T], error) {
 	if runtime == nil {
 		return nil, fmt.Errorf("kernel is nil")

@@ -11,7 +11,7 @@ import (
 	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
 )
 
-func TestDecodeUsesDatabaseDefaultsAndDurationStrings(t *testing.T) {
+func TestDefinitionDecodesDatabaseDefaultsAndDurationStrings(t *testing.T) {
 	snapshot, err := config.New(config.MapSource("test", map[string]any{
 		"database": map[string]any{
 			"engine":      "sql",
@@ -23,9 +23,10 @@ func TestDecodeUsesDatabaseDefaultsAndDurationStrings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	cfg, err := New().Decode(snapshot)
+	definition := Definition()
+	cfg, err := definition.Decode(snapshot)
 	if err != nil {
-		t.Fatalf("decode() error = %v", err)
+		t.Fatalf("Decode() error = %v", err)
 	}
 	if cfg.PingTimeout != 9*time.Second {
 		t.Fatalf("PingTimeout = %v, want 9s", cfg.PingTimeout)
@@ -35,8 +36,8 @@ func TestDecodeUsesDatabaseDefaultsAndDurationStrings(t *testing.T) {
 	}
 }
 
-func TestAdapterBuildPreservesContextError(t *testing.T) {
-	client, err := New().Build(nil, Config{
+func TestDefinitionBuilderPreservesContextError(t *testing.T) {
+	client, err := Definition().Builder.Build(nil, Config{
 		Engine: pkgdatabase.EngineSQL,
 		Driver: pkgdatabase.DriverPostgres,
 		DSN:    "postgres://example.invalid/app",
@@ -49,16 +50,16 @@ func TestAdapterBuildPreservesContextError(t *testing.T) {
 	}
 }
 
-func TestAdapterLifecyclePreservesReadinessAndCloseErrors(t *testing.T) {
+func TestDefinitionLifecyclePreservesReadinessAndCloseErrors(t *testing.T) {
 	pingErr := errors.New("ping failed")
 	closeErr := errors.New("close failed")
 	client := &fakeClient{pingErr: pingErr, closeErr: closeErr}
-	capability := New()
+	lifecycle := Definition().Lifecycle
 
-	if err := capability.Start(t.Context(), client); !errors.Is(err, pingErr) {
+	if err := lifecycle.Start(t.Context(), client); !errors.Is(err, pingErr) {
 		t.Fatalf("Start() error = %v, want ping error", err)
 	}
-	if err := capability.Stop(t.Context(), client); !errors.Is(err, closeErr) {
+	if err := lifecycle.Stop(t.Context(), client); !errors.Is(err, closeErr) {
 		t.Fatalf("Stop() error = %v, want close error", err)
 	}
 	if client.pings != 1 || client.closes != 1 {

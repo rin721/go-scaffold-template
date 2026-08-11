@@ -9,7 +9,7 @@
 - 第三方库必须被项目自有能力接口或 adapter 隔离，业务常用接口不得泄漏易变的第三方类型。
 - 阻塞 I/O、后台任务、重试和资源释放必须有 `context`、超时、关闭或等待边界。
 - 错误必须保留原始原因并增加项目语义，敏感值在日志、错误和本地调试输出中必须脱敏。
-- `pkg` 不得导入 `internal`；基础能力装配、生命周期钩子和配置切换统一由 `internal/kernel` 与 `internal/adapter` 承担。
+- `pkg` 不得导入 `internal`；受托管能力定义、显式组合、生命周期钩子和配置切换统一由 `internal/kernel/**` 承担。
 
 ## 当前能力
 
@@ -55,4 +55,4 @@
 - `git diff --check` 必须通过。
 - 旧模块路径、旧 import、旧文档路径必须为零。
 - 公开 API 不泄漏未允许的第三方类型。
-- `pkg` 层不得反向依赖 `internal/kernel` 或 `internal/adapter`。
+- `pkg` 层不得反向依赖 `internal/kernel`。

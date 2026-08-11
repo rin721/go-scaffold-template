@@ -4,7 +4,7 @@
 
 ## 运行方式
 
-调用方负责选择配置来源，主动调用固定装配清单，再把稳定 Access 显式传给业务构造函数：
+调用方负责选择配置来源，主动调用固定组合清单，再把稳定 Access 显式传给业务构造函数：
 
 ```go
 loader := config.New(
@@ -15,7 +15,7 @@ runtime, err := kernel.New(loader, kernel.Options{})
 if err != nil {
 	return err
 }
-capabilities, err := assembly.Inject(runtime)
+capabilities, err := composition.Compose(runtime)
 if err != nil {
 	return err
 }
@@ -26,7 +26,7 @@ if err := runtime.Start(ctx); err != nil {
 _ = service
 ```
 
-`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认注入任何能力。`assembly.Inject` 当前在源码中逐项登记 Database；必须在 `Start` 前显式调用，重复调用会触发重复 ID 错误。
+`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力。`composition.Compose` 当前在源码中逐项登记 Database Definition；必须在 `Start` 前显式调用，重复调用会触发重复 ID 错误。
 
 kernel 实现 `pkg/lifecycle.Participant`。应用应把它排在依赖其能力的 Participant 之前，并把文件监听作为长期 Task：
 
@@ -70,6 +70,6 @@ database:
 ## 边界
 
 - v1 能力彼此独立，不解析依赖 DAG，也不构造业务 service、handler 或 server。
-- 业务代码不得持有 kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Adapter Access。
-- Adapter 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/assembly` 决定。
+- 业务代码不得持有 Kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Capability Access。
+- Capability Definition 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/composition` 决定。
 - `Watch` 的单次重载错误通过必填回调上报并继续监听；fsnotify 后端错误才终止 Task。

@@ -17,7 +17,7 @@ const (
 
 // Handle 保存一个稳定能力入口背后的当前实例。
 //
-// Handle 只在 internal 范围内公开；具体 Adapter 应将它收敛为能力专用 Access。
+// Handle 只在 internal 范围内公开；具体 Capability 应将它收敛为能力专用 Access。
 type Handle[T any] struct {
 	mu sync.Mutex
 
