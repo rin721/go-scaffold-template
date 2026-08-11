@@ -2,11 +2,8 @@
 package composition
 
 import (
-	"fmt"
-
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	databasecapability "github.com/rin721/go-scaffold2/internal/kernel/capability/database"
-	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
 )
 
 // Capabilities 保存已完成组合的稳定能力入口。
@@ -19,20 +16,9 @@ type Capabilities struct {
 // Compose 当前只登记 Database。调用方必须主动调用本函数；Kernel.New 不会自动
 // 发现、选择或登记任何能力。
 func Compose(runtime *kernel.Kernel) (Capabilities, error) {
-	databaseAccess, err := registerDatabase(runtime, databasecapability.Definition())
+	databaseAccess, err := composeDatabase(runtime)
 	if err != nil {
-		return Capabilities{}, fmt.Errorf("compose database capability: %w", err)
+		return Capabilities{}, err
 	}
 	return Capabilities{Database: databaseAccess}, nil
-}
-
-func registerDatabase(
-	runtime *kernel.Kernel,
-	definition kernel.Definition[databasecapability.Config, pkgdatabase.Client],
-) (databasecapability.Access, error) {
-	handle, err := kernel.Register(runtime, definition)
-	if err != nil {
-		return nil, err
-	}
-	return handle, nil
 }
