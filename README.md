@@ -21,6 +21,7 @@
 
 ## 包入口
 
+- [docs/README.md](docs/README.md)：项目文档入口与任务级变更记录。
 - [pkg/README.md](pkg/README.md)：底层能力库封装规范、当前能力清单和暂缓路线。
 - [internal/kernel/README.md](internal/kernel/README.md)：显式组合、配置事务、租约排空和运行方式。
 - [internal/kernel/capability/README.md](internal/kernel/capability/README.md)：Kernel Capability 定义职责和 Database 实现。
@@ -31,7 +32,7 @@
 
 `composition.Compose(runtime, options)` 始终返回 Database Access 和默认配置管理器；只有 `options.CLI` 非 nil 时才构造 CLI App。配置管理器可由代码直接生成 YAML/JSON，也可通过启动前 `config init` 命令生成当前项目实际组合的完整默认配置骨架。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
-[design/001-default-config-cli-contracts](design/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
+[docs/changes/001-default-config-cli-contracts](docs/changes/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
 
 ## 启动项目
 
@@ -50,7 +51,7 @@ go run ./cmd/app
 
 环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会真实启动 Database Capability，完成连接与 Ping 后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前尚未组合 HTTP 或其他业务 Participant，因此不会创建网络监听器。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [design/002-application-entrypoint](design/002-application-entrypoint/README.md)。
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)。
 
 ## 本地验证
 
