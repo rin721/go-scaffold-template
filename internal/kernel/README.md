@@ -1,10 +1,10 @@
 # kernel
 
-`internal/kernel` 是脚手架内部的基础能力运行时。它拥有 Builder、Lifecycle 和 Access 托管契约，加载不可变配置快照，按显式注册顺序启动独立能力，并在配置变化时执行排空、候选构造、统一发布和旧实例清理。
+`internal/kernel` 是脚手架内部的基础能力运行时。它拥有 Builder、InstanceHooks 和 Access 托管契约，加载不可变配置快照，按显式注册顺序启动独立能力，并在配置变化时执行排空、候选构造、统一发布和旧实例清理。
 
 ## 运行方式
 
-调用方负责选择配置来源，主动调用固定组合清单，再把稳定 Access 显式传给业务构造函数：
+调用方负责选择配置来源，主动调用固定组合清单，把稳定 Access 显式传给业务构造函数，最后创建 Host 监督整个进程：
 
 ```go
 loader := config.New(
@@ -20,23 +20,33 @@ if err != nil {
 	return err
 }
 service := NewService(capabilities.Database)
-if err := runtime.Start(ctx); err != nil {
+server := NewServer(service)
+host, err := kernel.NewHost(runtime, kernel.HostOptions{
+	ShutdownTimeout: 10 * time.Second,
+	Watch: &kernel.WatchOptions{
+		OnReloadError: reportReloadError,
+	},
+}, server)
+if err != nil {
 	return err
 }
-_ = service
+ctx, cancel := supervisor.SignalContext(context.Background())
+defer cancel()
+return host.Run(ctx)
 ```
 
-`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力。`composition.Compose` 当前在源码中逐项登记 Database Definition；必须在 `Start` 前显式调用，重复调用会触发重复 ID 错误。
+`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力。`composition.Compose` 当前在源码中逐项登记 Database Definition；必须在 `Host.Run` 前显式调用，重复调用会触发重复 ID 错误。创建 Host 不会登记或查找 Capability，因此引入进程监督不会改变显式注入方式。
 
-kernel 实现 `pkg/lifecycle.Participant`。应用应把它排在依赖其能力的 Participant 之前，并把文件监听作为长期 Task：
+`NewHost` 固定把 Kernel 作为第一个 `pkg/supervisor.Participant`，随后才启动上层 Participant；停止时顺序相反，因此业务服务会在 Kernel 管理的资源之前退出。`Watch` 为 `nil` 时不监听配置；显式启用监听时必须提供错误回调，并且 Loader 必须包含文件配置源：
 
 ```go
-runner := lifecycle.New(lifecycle.Config{}, runtime, server)
-if err := runner.AddTask("kernel-config-watch", func(ctx context.Context) error {
-	return runtime.Watch(ctx, reportReloadError)
-}); err != nil {
+host, err := kernel.NewHost(runtime, kernel.HostOptions{
+	Watch: &kernel.WatchOptions{OnReloadError: reportReloadError},
+}, server)
+if err != nil {
 	return err
 }
+return host.Run(ctx)
 ```
 
 ## 配置事务
@@ -73,4 +83,5 @@ database:
 - 业务代码不得持有 Kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Capability Access。
 - Capability Definition 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/composition` 决定。
 - `composition.go` 只维护总入口、组合顺序和结果汇总；每项能力的 Definition 选择与登记放在同名文件，例如 `database.go`。
+- Host 只把 Kernel、上层 Participant 和可选 Watch Task 交给 `pkg/supervisor`；它不复制进程启动、取消和停止算法。
 - `Watch` 的单次重载错误通过必填回调上报并继续监听；fsnotify 后端错误才终止 Task。

@@ -10,9 +10,9 @@ import (
 	"github.com/rin721/go-scaffold2/pkg/health"
 	"github.com/rin721/go-scaffold2/pkg/httpx"
 	"github.com/rin721/go-scaffold2/pkg/idgen"
-	"github.com/rin721/go-scaffold2/pkg/lifecycle"
 	"github.com/rin721/go-scaffold2/pkg/logger"
 	"github.com/rin721/go-scaffold2/pkg/storage"
+	"github.com/rin721/go-scaffold2/pkg/supervisor"
 )
 
 func TestFoundationLibrariesCanBeCreatedIndependently(t *testing.T) {
@@ -65,8 +65,10 @@ func TestFoundationLibrariesCanBeCreatedIndependently(t *testing.T) {
 		t.Fatalf("health status = %q, want pass", got)
 	}
 
-	runner := lifecycle.New(lifecycle.Config{ShutdownTimeout: time.Second})
-	if err := runner.Stop(context.Background()); err != nil {
-		t.Fatalf("empty runner Stop() error = %v", err)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	processSupervisor := supervisor.New(supervisor.Config{ShutdownTimeout: time.Second})
+	if err := processSupervisor.Run(ctx); err != nil {
+		t.Fatalf("empty supervisor Run() error = %v", err)
 	}
 }

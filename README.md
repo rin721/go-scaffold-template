@@ -14,7 +14,7 @@
 当前 `pkg` 保留以下底层能力库：
 
 - `logger`、`httpx`、`i18n`、`database`、`cache`、`cli`、`storage`
-- `validation`、`fault`、`lifecycle`、`health`
+- `validation`、`fault`、`supervisor`、`health`
 - `idgen`、`clock`、`secrets`、`resource`
 - `resilience`、`concurrency`、`codec`、`testkit`
 

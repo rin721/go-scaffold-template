@@ -20,7 +20,7 @@ type Definition[C, T any] struct {
 	ConfigPath string
 	Decode     Decoder[C]
 	Builder    Builder[C, T]
-	Lifecycle  Lifecycle[T]
+	Hooks      InstanceHooks[T]
 }
 
 // Register 在 Kernel 启动前登记能力，并返回供具体 Capability 收敛的稳定 Handle。
@@ -40,8 +40,8 @@ func Register[C, T any](runtime *Kernel, definition Definition[C, T]) (*Handle[T
 	if isNilInterface(definition.Builder) {
 		return nil, fmt.Errorf("kernel definition %s builder is nil", definition.ID)
 	}
-	if isNilInterface(definition.Lifecycle) {
-		return nil, fmt.Errorf("kernel definition %s lifecycle is nil", definition.ID)
+	if isNilInterface(definition.Hooks) {
+		return nil, fmt.Errorf("kernel definition %s instance hooks are nil", definition.ID)
 	}
 
 	handle := newHandle[T]()
@@ -122,7 +122,7 @@ func (c *typedComponent[C, T]) buildStart(ctx context.Context) error {
 	}
 	c.candidate = instance
 	c.hasCandidate = true
-	if err := c.definition.Lifecycle.Start(ctx, instance); err != nil {
+	if err := c.definition.Hooks.Start(ctx, instance); err != nil {
 		return fmt.Errorf("start component %s: %w", c.id(), err)
 	}
 	return nil
@@ -132,7 +132,7 @@ func (c *typedComponent[C, T]) discardCandidate(ctx context.Context) error {
 	if !c.hasCandidate {
 		return nil
 	}
-	err := c.definition.Lifecycle.Stop(ctx, c.candidate)
+	err := c.definition.Hooks.Stop(ctx, c.candidate)
 	var zero T
 	c.candidate = zero
 	c.hasCandidate = false
@@ -178,7 +178,7 @@ func (c *typedComponent[C, T]) stopPrevious(ctx context.Context) error {
 	if !c.hasPrevious {
 		return nil
 	}
-	err := c.definition.Lifecycle.Stop(ctx, c.previous)
+	err := c.definition.Hooks.Stop(ctx, c.previous)
 	var zero T
 	c.previous = zero
 	c.hasPrevious = false

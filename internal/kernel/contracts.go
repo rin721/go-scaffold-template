@@ -24,22 +24,22 @@ func (f BuilderFunc[C, T]) Build(ctx context.Context, cfg C) (T, error) {
 	return f(ctx, cfg)
 }
 
-// Lifecycle 定义候选实例的启动和停止钩子。
+// InstanceHooks 定义候选实例的启动和停止钩子。
 //
 // Start 必须在实例可被发布前完成就绪确认；Stop 必须释放该实例拥有的资源。
-type Lifecycle[T any] interface {
+type InstanceHooks[T any] interface {
 	Start(context.Context, T) error
 	Stop(context.Context, T) error
 }
 
-// LifecycleFuncs 用函数实现 Lifecycle，便于测试和简单能力保持显式。
-type LifecycleFuncs[T any] struct {
+// InstanceHookFuncs 用函数实现 InstanceHooks，便于测试和简单能力保持显式。
+type InstanceHookFuncs[T any] struct {
 	OnStart func(context.Context, T) error
 	OnStop  func(context.Context, T) error
 }
 
 // Start 执行启动钩子。
-func (h LifecycleFuncs[T]) Start(ctx context.Context, instance T) error {
+func (h InstanceHookFuncs[T]) Start(ctx context.Context, instance T) error {
 	if h.OnStart == nil {
 		return fmt.Errorf("kernel start hook is nil")
 	}
@@ -47,7 +47,7 @@ func (h LifecycleFuncs[T]) Start(ctx context.Context, instance T) error {
 }
 
 // Stop 执行停止钩子。
-func (h LifecycleFuncs[T]) Stop(ctx context.Context, instance T) error {
+func (h InstanceHookFuncs[T]) Stop(ctx context.Context, instance T) error {
 	if h.OnStop == nil {
 		return fmt.Errorf("kernel stop hook is nil")
 	}

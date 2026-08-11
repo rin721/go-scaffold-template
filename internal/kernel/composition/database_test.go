@@ -41,7 +41,7 @@ func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	hooks := newFakeDatabaseHooks()
 	definition := databasecapability.Definition()
 	definition.Builder = hooks
-	definition.Lifecycle = hooks
+	definition.Hooks = hooks
 	access, err := registerDatabase(runtime, definition)
 	if err != nil {
 		t.Fatalf("registerDatabase() error = %v", err)

@@ -50,16 +50,16 @@ func TestDefinitionBuilderPreservesContextError(t *testing.T) {
 	}
 }
 
-func TestDefinitionLifecyclePreservesReadinessAndCloseErrors(t *testing.T) {
+func TestDefinitionInstanceHooksPreserveReadinessAndCloseErrors(t *testing.T) {
 	pingErr := errors.New("ping failed")
 	closeErr := errors.New("close failed")
 	client := &fakeClient{pingErr: pingErr, closeErr: closeErr}
-	lifecycle := Definition().Lifecycle
+	hooks := Definition().Hooks
 
-	if err := lifecycle.Start(t.Context(), client); !errors.Is(err, pingErr) {
+	if err := hooks.Start(t.Context(), client); !errors.Is(err, pingErr) {
 		t.Fatalf("Start() error = %v, want ping error", err)
 	}
-	if err := lifecycle.Stop(t.Context(), client); !errors.Is(err, closeErr) {
+	if err := hooks.Stop(t.Context(), client); !errors.Is(err, closeErr) {
 		t.Fatalf("Stop() error = %v, want close error", err)
 	}
 	if client.pings != 1 || client.closes != 1 {

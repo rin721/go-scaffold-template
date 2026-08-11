@@ -54,7 +54,7 @@ func Definition() kernel.Definition[Config, pkgdatabase.Client] {
 		ConfigPath: ConfigPath,
 		Decode:     decode,
 		Builder:    implementation,
-		Lifecycle:  implementation,
+		Hooks:      implementation,
 	}
 }
 
@@ -121,4 +121,4 @@ func (c Config) packageConfig() pkgdatabase.Config {
 }
 
 var _ kernel.Builder[Config, pkgdatabase.Client] = capability{}
-var _ kernel.Lifecycle[pkgdatabase.Client] = capability{}
+var _ kernel.InstanceHooks[pkgdatabase.Client] = capability{}

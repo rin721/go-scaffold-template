@@ -356,7 +356,7 @@ func testDefinition(
 			log.add("build:" + name + ":" + cfg.Version)
 			return &testInstance{name: name, version: cfg.Version}, nil
 		}),
-		Lifecycle: LifecycleFuncs[*testInstance]{
+		Hooks: InstanceHookFuncs[*testInstance]{
 			OnStart: func(_ context.Context, instance *testInstance) error {
 				log.add("start:" + name + ":" + instance.version)
 				return nil

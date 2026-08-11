@@ -79,7 +79,7 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 	}, nil
 }
 
-// Name 返回 lifecycle 参与者名称。
+// Name 返回进程监督参与者名称。
 func (k *Kernel) Name() string {
 	return "kernel"
 }

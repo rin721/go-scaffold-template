@@ -47,4 +47,4 @@ func Register(file io.Closer, sharedCache io.Closer) (*resource.Registry, error)
 
 ## 边界说明
 
-本包不替代 `lifecycle.Runner`。`resource.Registry` 只负责释放资源；启动顺序、信号处理和后台任务退出仍由生命周期层或应用入口协调。
+本包不替代 `supervisor.Supervisor`。`resource.Registry` 只负责释放资源；启动顺序、信号处理和后台任务退出仍由进程监督层或应用入口协调。

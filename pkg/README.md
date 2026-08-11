@@ -24,7 +24,7 @@
 | `storage` | 本地文件系统、AWS SDK v2 S3 兼容对象存储、文件辅助库 | 构造对象存储和本地文件工具；公开接口不泄漏 `afero`、`excelize`、`imaging` 类型。 |
 | `validation` | `go-playground/validator/v10` | 构造结构体验证器，输出项目自有字段错误。 |
 | `fault` | 标准库 `errors` | 封装错误码、分类、可重试、取消/超时、关闭错误聚合和脱敏输出。 |
-| `lifecycle` | `context`、`os/signal`、`errgroup` | 构造生命周期运行器，管理启动、停止、优雅关闭和后台任务。 |
+| `supervisor` | `context`、`os/signal`、`errgroup` | 监督进程级 Participant 和长期 Task，统一处理信号、失败取消与优雅退出。 |
 | `health` | 标准库 | 构造健康检查 registry，提供超时、快照、liveness/readiness/startup 分类和 degraded 状态。 |
 | `idgen` | `google/uuid` | 构造 ID generator，提供请求和资源 ID。 |
 | `clock` | 标准库 `time` | 构造系统时钟或固定时钟，封装时间格式边界。 |
