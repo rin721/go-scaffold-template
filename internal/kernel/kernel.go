@@ -11,6 +11,8 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
+	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
 const (
@@ -24,6 +26,7 @@ const (
 type Options struct {
 	Debounce      time.Duration
 	ReloadTimeout time.Duration
+	Logging       *kernellogging.Manager
 }
 
 // ReloadResult 描述一次配置加载对运行实例产生的影响。
@@ -60,6 +63,9 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 	if loader == nil {
 		return nil, fmt.Errorf("kernel config loader is nil")
 	}
+	if options.Logging == nil {
+		return nil, fmt.Errorf("kernel logging manager is nil")
+	}
 	if options.Debounce < 0 {
 		return nil, fmt.Errorf("kernel debounce must be non-negative")
 	}
@@ -82,6 +88,14 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 // Name 返回进程监督参与者名称。
 func (k *Kernel) Name() string {
 	return "kernel"
+}
+
+// LoggingManager 返回 Kernel 与 Logger Capability 共享的稳定日志 manager。
+func (k *Kernel) LoggingManager() *kernellogging.Manager {
+	if k == nil {
+		return nil
+	}
+	return k.options.Logging
 }
 
 func (k *Kernel) register(item component) error {
@@ -149,6 +163,7 @@ func (k *Kernel) Start(ctx context.Context) error {
 	k.snapshot = snapshot
 	k.state = kernelRunning
 	k.mu.Unlock()
+	k.options.Logging.Info("kernel started", pkglogger.Int("capabilities", len(components)))
 	return nil
 }
 
@@ -199,6 +214,7 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 		k.mu.Lock()
 		k.snapshot = candidateSnapshot
 		k.mu.Unlock()
+		k.options.Logging.Debug("kernel reload unchanged")
 		return result, nil
 	}
 
@@ -259,6 +275,7 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 	if cleanupErr != nil {
 		return result, &CommittedCleanupError{Err: cleanupErr}
 	}
+	k.options.Logging.Info("kernel reload completed", pkglogger.Any("changed", result.Changed))
 	return result, nil
 }
 
@@ -317,6 +334,9 @@ func (k *Kernel) Stop(ctx context.Context) error {
 	var joined error
 	for index := len(components) - 1; index >= 0; index-- {
 		joined = errors.Join(joined, components[index].stopCurrent(ctx))
+	}
+	if joined == nil {
+		k.options.Logging.Info("kernel stopped")
 	}
 	return joined
 }

@@ -1,12 +1,9 @@
 package logger
 
 import (
-	"errors"
 	"fmt"
-	"os"
 	"strings"
 
-	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
 
@@ -54,26 +51,14 @@ func resolveConfig(cfg *Config) (resolvedConfig, error) {
 	if cfg.AddStacktrace != nil {
 		resolved.AddStacktrace = *cfg.AddStacktrace
 	}
-
-	return resolved, nil
-}
-
-func buildZapConfig(cfg resolvedConfig) (zap.Config, error) {
-	level, err := toZapLevel(cfg.Level)
-	if err != nil {
-		return zap.Config{}, err
+	if err := validateOutputPaths(resolved.OutputPaths); err != nil {
+		return resolvedConfig{}, fmt.Errorf("validate logger output paths: %w", err)
+	}
+	if err := validateOutputPaths(resolved.ErrorOutputPaths); err != nil {
+		return resolvedConfig{}, fmt.Errorf("validate logger error output paths: %w", err)
 	}
 
-	return zap.Config{
-		Level:             zap.NewAtomicLevelAt(level),
-		Development:       cfg.Environment == EnvironmentDevelopment,
-		Encoding:          string(cfg.Encoding),
-		EncoderConfig:     buildEncoderConfig(cfg),
-		OutputPaths:       cloneStrings(cfg.OutputPaths),
-		ErrorOutputPaths:  cloneStrings(cfg.ErrorOutputPaths),
-		DisableCaller:     !cfg.AddCaller,
-		DisableStacktrace: !cfg.AddStacktrace,
-	}, nil
+	return resolved, nil
 }
 
 func buildEncoderConfig(cfg resolvedConfig) zapcore.EncoderConfig {
@@ -126,26 +111,14 @@ func cloneStrings(values []string) []string {
 	return cloned
 }
 
-func ignoreSyncError(err error) error {
-	if err == nil {
-		return nil
-	}
-	if errors.Is(err, os.ErrInvalid) {
-		return nil
-	}
-
-	message := strings.ToLower(err.Error())
-	for _, ignored := range []string{
-		"invalid argument",
-		"inappropriate ioctl",
-		"incorrect function",
-		"sync /dev/stdout",
-		"sync /dev/stderr",
-	} {
-		if strings.Contains(message, ignored) {
-			return nil
+func validateOutputPaths(paths []string) error {
+	for index, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			return fmt.Errorf("output path %d is empty", index)
+		}
+		if strings.Contains(path, "://") {
+			return fmt.Errorf("output path %q uses an unsupported sink scheme", path)
 		}
 	}
-
-	return err
+	return nil
 }

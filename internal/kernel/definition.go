@@ -22,6 +22,7 @@ type Definition[C, T any] struct {
 	Defaults   config.DefaultContract
 	Builder    Builder[C, T]
 	Hooks      InstanceHooks[T]
+	Activation ActivationHooks[T]
 }
 
 // Registration 是能力成功登记后返回的稳定 Access 和默认配置绑定。
@@ -161,6 +162,9 @@ func (c *typedComponent[C, T]) discardCandidate(ctx context.Context) error {
 
 func (c *typedComponent[C, T]) publishInitial() {
 	c.handle.publishInitial(c.candidate)
+	if c.definition.Activation != nil {
+		c.definition.Activation.Activate(c.candidate)
+	}
 	c.currentDigest = c.pendingDigest
 	var zero T
 	c.candidate = zero
@@ -174,6 +178,9 @@ func (c *typedComponent[C, T]) beginDrain() (<-chan struct{}, error) {
 func (c *typedComponent[C, T]) prepareCommit() {
 	c.previous = c.handle.replaceWhileDraining(c.candidate)
 	c.hasPrevious = true
+	if c.definition.Activation != nil {
+		c.definition.Activation.Activate(c.candidate)
+	}
 	c.currentDigest = c.pendingDigest
 	var zero T
 	c.candidate = zero
@@ -211,6 +218,9 @@ func (c *typedComponent[C, T]) prepareStop() {
 }
 
 func (c *typedComponent[C, T]) stopCurrent(ctx context.Context) error {
+	if c.definition.Activation != nil {
+		c.definition.Activation.Deactivate(c.previous)
+	}
 	return c.stopPrevious(ctx)
 }
 

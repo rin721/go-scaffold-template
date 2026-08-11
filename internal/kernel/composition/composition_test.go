@@ -7,16 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 )
 
 func TestKernelNewDoesNotComposeCapabilities(t *testing.T) {
-	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	if err := runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() without Compose error = %v", err)
 	}
@@ -26,22 +22,16 @@ func TestKernelNewDoesNotComposeCapabilities(t *testing.T) {
 }
 
 func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
-	disabledRuntime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	disabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	disabled, err := Compose(disabledRuntime, Options{})
 	if err != nil {
 		t.Fatalf("Compose(disabled) error = %v", err)
 	}
-	if disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
+	if disabled.Logger == nil || disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
 		t.Fatalf("Compose(disabled) = %#v", disabled)
 	}
 
-	enabledRuntime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	enabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	enabled, err := Compose(enabledRuntime, Options{CLI: &CLIOptions{App: pkgcli.Config{
 		Name:                   "test",
 		DisableInteractiveHome: true,
@@ -76,27 +66,26 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if !bytes.Equal(cliPayload, directPayload) {
 		t.Fatalf("CLI and direct generation differ:\nCLI:\n%s\ndirect:\n%s", cliPayload, directPayload)
 	}
+	loggerIndex := bytes.Index(cliPayload, []byte("logger:"))
+	databaseIndex := bytes.Index(cliPayload, []byte("database:"))
+	if loggerIndex < 0 || databaseIndex < 0 || loggerIndex >= databaseIndex {
+		t.Fatalf("generated capability order is not Logger then Database:\n%s", cliPayload)
+	}
 }
 
 func TestComposeCLIErrorReturnsZeroCapabilities(t *testing.T) {
-	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	capabilities, err := Compose(runtime, Options{CLI: &CLIOptions{}})
 	if err == nil {
 		t.Fatal("Compose(invalid CLI) error = nil")
 	}
-	if capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
+	if capabilities.Logger != nil || capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
 		t.Fatalf("Compose(invalid CLI) = %#v, want zero capabilities", capabilities)
 	}
 }
 
 func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
-	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	if _, err := Compose(runtime, Options{}); err != nil {
 		t.Fatalf("first Compose() error = %v", err)
 	}
@@ -104,7 +93,7 @@ func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
 	if err == nil {
 		t.Fatal("second Compose() error = nil")
 	}
-	if capabilities.Database != nil {
+	if capabilities.Logger != nil || capabilities.Database != nil {
 		t.Fatal("second Compose() returned partial capabilities")
 	}
 	if capabilities.Configuration != nil || capabilities.CLI != nil {

@@ -4,6 +4,7 @@ package composition
 import (
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	databasecapability "github.com/rin721/go-scaffold2/internal/kernel/capability/database"
+	loggercapability "github.com/rin721/go-scaffold2/internal/kernel/capability/logger"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 )
@@ -20,6 +21,7 @@ type CLIOptions struct {
 
 // Capabilities 保存已完成组合的稳定能力入口。
 type Capabilities struct {
+	Logger        loggercapability.Access
 	Database      databasecapability.Access
 	Configuration config.DefaultManager
 	CLI           pkgcli.App
@@ -27,14 +29,18 @@ type Capabilities struct {
 
 // Compose 按固定清单把能力定义显式登记到尚未启动的 Kernel。
 //
-// Compose 当前只登记 Database。调用方必须主动调用本函数；Kernel.New 不会自动
+// Compose 当前按 Logger、Database 顺序登记。调用方必须主动调用本函数；Kernel.New 不会自动
 // 发现、选择或登记任何能力。
 func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
+	loggerBinding, err := composeLogger(runtime)
+	if err != nil {
+		return Capabilities{}, err
+	}
 	databaseBinding, err := composeDatabase(runtime)
 	if err != nil {
 		return Capabilities{}, err
 	}
-	configurationBinding, err := composeConfiguration(databaseBinding.defaults)
+	configurationBinding, err := composeConfiguration(loggerBinding.defaults, databaseBinding.defaults)
 	if err != nil {
 		return Capabilities{}, err
 	}
@@ -44,6 +50,7 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 		return Capabilities{}, err
 	}
 	return Capabilities{
+		Logger:        loggerBinding.access,
 		Database:      databaseBinding.access,
 		Configuration: configurationBinding.manager,
 		CLI:           app,

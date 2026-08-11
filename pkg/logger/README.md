@@ -1,6 +1,6 @@
 # logger
 
-`pkg/logger` 是项目内通用日志库封装。它使用 `go.uber.org/zap` 作为内部实现，但业务代码只依赖本包暴露的 `Logger`、`Config`、`Field` 和字段构造函数，不直接接触 zap 类型。
+`pkg/logger` 是项目内通用日志库封装。它使用 `go.uber.org/zap` 作为内部实现，但业务代码只依赖本包暴露的 `Logger`、`Config`、`Field` 和字段构造函数，不直接接触 zap 类型。创建方通过 `Resource` 独占 Sync、Close 和文件 sink，业务调用方不能关闭共享 logger。
 
 ## 技术选型
 
@@ -10,7 +10,7 @@
 
 ## 设计目标
 
-- 简单：通过 `logger.New` 创建实例，直接调用 `Info`、`Error` 等方法。
+- 简单：通过 `logger.New` 创建 Resource，直接调用 `Info`、`Error` 等方法并在所有者边界关闭。
 - 高效：内部使用 zap 的结构化日志能力，适合服务端高频日志场景。
 - 通用：支持开发环境、生产环境、日志级别、输出位置和结构化字段。
 - 可维护：配置、默认值、级别、字段构造和 zap 适配分文件维护，便于后续扩展。
@@ -25,7 +25,7 @@ pkg/logger/
 ├── defaults.go     # 默认配置和默认值
 ├── field.go        # 项目自有结构化字段类型、构造函数和内部 zap 字段转换
 ├── level.go        # 日志级别定义和底层级别映射
-├── logger.go       # Logger 接口和 New 构造函数
+├── logger.go       # Logger、Resource、配置校验、构造和资源关闭
 └── README.md       # 使用文档
 ```
 
@@ -58,7 +58,7 @@ func main() {
 		panic(err)
 	}
 	defer func() {
-		if err := log.Sync(); err != nil {
+		if err := log.Close(); err != nil {
 			panic(err)
 		}
 	}()
@@ -88,7 +88,7 @@ func main() {
 		panic(err)
 	}
 	defer func() {
-		if err := log.Sync(); err != nil {
+		if err := log.Close(); err != nil {
 			panic(err)
 		}
 	}()
@@ -103,7 +103,7 @@ func main() {
 
 ## 在业务代码中的推荐使用方式
 
-推荐在程序入口创建 logger，再通过构造函数传入业务组件。业务包按自身需要定义依赖接口，或者直接依赖本包的 `logger.Logger`，不要在业务函数内部重复创建 logger。
+独立使用时推荐在程序入口创建 Resource、负责 Close，再把窄 `logger.Logger` 通过构造函数传入业务组件。业务包按自身需要定义依赖接口，或者直接依赖本包的 `logger.Logger`，不要在业务函数内部重复创建或关闭 logger。
 
 ```go
 package user
@@ -123,4 +123,4 @@ func (s *Service) Create(name string) {
 }
 ```
 
-本包当前不提供全局 logger。全局 logger 虽然接入更快，但会隐藏依赖关系，也容易让测试和并发初始化变复杂。对于脚手架项目，默认采用显式创建和注入的方式；如果后续确实需要全局入口，应只在应用启动层初始化，并明确初始化顺序和测试隔离规则。
+由 Kernel 托管时，应用入口创建基线 Resource，`internal/kernel/logging.Manager` 在配置化 Logger Capability 发布后切换委托目标，业务通过 `Capabilities.Logger` 的租约回调使用当前 `Logger`。本包仍不提供全局 logger；独立使用和 Kernel 托管都保持显式所有权与注入。

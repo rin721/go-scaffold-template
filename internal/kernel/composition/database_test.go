@@ -6,17 +6,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
 	databasecapability "github.com/rin721/go-scaffold2/internal/kernel/capability/database"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
 )
 
 func TestComposeDatabaseMakesDefinitionParticipateInKernelStart(t *testing.T) {
-	runtime, err := kernel.New(config.New(config.MapSource("empty", map[string]any{})), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	binding, err := composeDatabase(runtime)
 	if err != nil {
 		t.Fatalf("composeDatabase() error = %v", err)
@@ -34,10 +30,7 @@ func TestComposeDatabaseMakesDefinitionParticipateInKernelStart(t *testing.T) {
 
 func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	source := &databaseSource{dsn: "v1"}
-	runtime, err := kernel.New(config.New(source), kernel.Options{})
-	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
-	}
+	runtime := newTestRuntime(t, source)
 	hooks := newFakeDatabaseHooks()
 	definition := databasecapability.Definition()
 	definition.Builder = hooks

@@ -1,5 +1,7 @@
 package logger
 
+import "os"
+
 const (
 	environmentDevelopmentValue = "development"
 	environmentProductionValue  = "production"
@@ -9,6 +11,8 @@ const (
 
 	outputPathStdout = "stdout"
 	outputPathStderr = "stderr"
+
+	defaultLogFileMode os.FileMode = 0o666
 )
 
 const (

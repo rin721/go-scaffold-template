@@ -32,6 +32,15 @@ type InstanceHooks[T any] interface {
 	Stop(context.Context, T) error
 }
 
+// ActivationHooks 定义实例在不可失败提交区的发布与撤回动作。
+//
+// 实现不得执行 I/O、阻塞或失败；所有可能失败的准备工作必须在 Builder 或
+// InstanceHooks.Start 中完成。
+type ActivationHooks[T any] interface {
+	Activate(T)
+	Deactivate(T)
+}
+
 // InstanceHookFuncs 用函数实现 InstanceHooks，便于测试和简单能力保持显式。
 type InstanceHookFuncs[T any] struct {
 	OnStart func(context.Context, T) error

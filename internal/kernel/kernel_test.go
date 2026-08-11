@@ -295,6 +295,9 @@ func TestRegisterRejectsDuplicateID(t *testing.T) {
 
 func newTestKernel(t *testing.T, source config.Source, options Options) *Kernel {
 	t.Helper()
+	if options.Logging == nil {
+		options.Logging = newTestLoggingManager(t)
+	}
 	runtime, err := New(config.New(source), options)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
@@ -397,6 +400,7 @@ func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
 	runtime, err := New(config.New(config.FileSource(path)), Options{
 		Debounce:      30 * time.Millisecond,
 		ReloadTimeout: time.Second,
+		Logging:       newTestLoggingManager(t),
 	})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)

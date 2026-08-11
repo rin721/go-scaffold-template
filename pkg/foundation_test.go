@@ -20,7 +20,11 @@ func TestFoundationLibrariesCanBeCreatedIndependently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logger.New() error = %v", err)
 	}
-	defer log.Sync()
+	t.Cleanup(func() {
+		if err := log.Close(); err != nil {
+			t.Errorf("logger.Close() error = %v", err)
+		}
+	})
 
 	requestID, err := idgen.UUID().New()
 	if err != nil {

@@ -12,6 +12,16 @@
 
 能力不提供原地 Reload。配置变化始终由 Kernel 创建候选实例、统一切换并停止旧实例。固定组合清单位于 `internal/kernel/composition`，只有调用方显式调用 `composition.Compose` 才会登记能力。
 
+## Logger Capability
+
+`internal/kernel/capability/logger` 把现有 `pkg/logger` 纳入 Kernel 配置事务：
+
+- 使用顶层 `logger` typed 配置，并在 Decode 阶段通过无 I/O 的 `logger.ValidateConfig` 校验。
+- Builder 创建一代独占 `logger.Resource`；Stop 负责 Sync 并关闭文件 sink。
+- 业务 Access 的回调只暴露 `logger.Logger`，不允许调用方取得或关闭 Resource。
+- 发布激活只在整轮事务成功后的提交区切换 Kernel logging manager；候选失败不影响旧 logger。
+- Kernel 停止时先恢复启动前基线，再关闭当前配置化 Resource。
+
 ## Database Capability
 
 `internal/kernel/capability/database` 是首个真实定义：
@@ -26,8 +36,9 @@
 
 ```text
 caller -> internal/kernel/composition -> internal/kernel
+                                      -> internal/kernel/capability/logger   -> pkg/logger
                                       -> internal/kernel/capability/database -> pkg/database
-pkg -----------------------------------------------------------------------X-> internal
+pkg ------------------------------------------------------------------------X-> internal
 ```
 
-新增能力时必须保留此方向，由 composition 逐项显式登记；不得为了接入 Kernel 修改 pkg 包的依赖边界或加入全局容器。
+新增能力时必须保留此方向，由 composition 逐项显式登记；不得为了接入 Kernel 修改 pkg 包的依赖边界或加入全局容器。当前固定登记顺序为 Logger、Database，使 Database 停止时配置化 logger 仍可用。

@@ -17,7 +17,6 @@ func (noopLogger) Info(string, ...Field)  {}
 func (noopLogger) Warn(string, ...Field)  {}
 func (noopLogger) Error(string, ...Field) {}
 func (l noopLogger) With(...Field) Logger { return l }
-func (noopLogger) Sync() error            { return nil }
 
 // Entry 是测试日志条目。
 type Entry struct {
@@ -45,8 +44,6 @@ func (l *TestLogger) With(fields ...Field) Logger {
 	child.entries = append(child.entries, Entry{Level: "with", Fields: append([]Field(nil), fields...)})
 	return child
 }
-func (l *TestLogger) Sync() error { return nil }
-
 func (l *TestLogger) Entries() []Entry {
 	l.mu.Lock()
 	defer l.mu.Unlock()

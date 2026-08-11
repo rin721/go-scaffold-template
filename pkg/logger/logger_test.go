@@ -1,11 +1,18 @@
 package logger
 
 import (
+	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 func TestNewWithNilConfigUsesDefaults(t *testing.T) {
@@ -13,8 +20,8 @@ func TestNewWithNilConfigUsesDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New(nil) returned error: %v", err)
 	}
-	if err := log.Sync(); err != nil {
-		t.Fatalf("Sync returned error: %v", err)
+	if err := log.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
 	}
 }
 
@@ -41,6 +48,9 @@ func TestEnvironmentDefaultEncoding(t *testing.T) {
 				}
 
 				log.Info("service started", String("component", "test"))
+				if err := log.Close(); err != nil {
+					t.Fatalf("Close returned error: %v", err)
+				}
 			})
 
 			line := firstLogLine(t, output)
@@ -63,6 +73,9 @@ func TestDefaultConfigCanUseProductionDefaults(t *testing.T) {
 		}
 
 		log.Info("service started")
+		if err := log.Close(); err != nil {
+			t.Fatalf("Close returned error: %v", err)
+		}
 	})
 
 	line := firstLogLine(t, output)
@@ -80,6 +93,8 @@ func TestNewRejectsInvalidConfigValues(t *testing.T) {
 		{name: "invalid environment", cfg: &Config{Environment: Environment("test")}, want: "environment"},
 		{name: "invalid level", cfg: &Config{Level: Level("trace")}, want: "level"},
 		{name: "invalid encoding", cfg: &Config{Encoding: Encoding("xml")}, want: "encoding"},
+		{name: "empty output path", cfg: &Config{OutputPaths: []string{" "}}, want: "output path"},
+		{name: "unsupported sink scheme", cfg: &Config{OutputPaths: []string{"https://logs.example.invalid"}}, want: "sink scheme"},
 	}
 
 	for _, tt := range tests {
@@ -108,6 +123,9 @@ func TestWithAddsFieldsWithoutChangingParentLogger(t *testing.T) {
 
 		log.Info("parent")
 		log.With(String("component", "api")).Info("child")
+		if err := log.Close(); err != nil {
+			t.Fatalf("Close returned error: %v", err)
+		}
 	})
 
 	lines := logLines(output)
@@ -134,6 +152,132 @@ func TestSyncCanBeCalled(t *testing.T) {
 	if err := log.Sync(); err != nil {
 		t.Fatalf("Sync returned error: %v", err)
 	}
+	if err := log.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+}
+
+func TestValidateConfigDoesNotOpenOutputFiles(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "missing", "application.log")
+	cfg := DefaultConfig()
+	cfg.OutputPaths = []string{path}
+	if err := ValidateConfig(&cfg); err != nil {
+		t.Fatalf("ValidateConfig() error = %v", err)
+	}
+	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Stat() error = %v, want os.ErrNotExist", err)
+	}
+}
+
+func TestResourceCloseFlushesAndClosesOwnedFileOnce(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "application.log")
+	cfg := DefaultConfig()
+	cfg.OutputPaths = []string{path}
+	cfg.ErrorOutputPaths = []string{path}
+	resource, err := New(&cfg)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	resource.Info("persisted message")
+	if err := resource.Close(); err != nil {
+		t.Fatalf("first Close() error = %v", err)
+	}
+	if err := resource.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if !bytes.Contains(payload, []byte("persisted message")) {
+		t.Fatalf("log payload = %q", payload)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("Remove() after Close error = %v", err)
+	}
+}
+
+func TestResourceCloseJoinsSyncAndAllCloserErrors(t *testing.T) {
+	syncErr := errors.New("sync failed")
+	secondSyncErr := errors.New("second sync failed")
+	firstCloseErr := errors.New("first close failed")
+	secondCloseErr := errors.New("second close failed")
+	writer := &failingWriteSyncer{syncErr: syncErr}
+	secondWriter := &failingWriteSyncer{syncErr: secondSyncErr}
+	underlying := zap.New(zapcore.NewCore(
+		zapcore.NewJSONEncoder(zap.NewProductionEncoderConfig()),
+		writer,
+		zapcore.DebugLevel,
+	))
+	first := &countingCloser{err: firstCloseErr}
+	second := &countingCloser{err: secondCloseErr}
+	state := &resourceState{
+		syncers: []zapcore.WriteSyncer{writer, secondWriter},
+		closers: []io.Closer{first, second},
+	}
+	resource := &zapLogger{logger: underlying, state: state}
+
+	err := resource.Close()
+	for _, want := range []error{syncErr, secondSyncErr, firstCloseErr, secondCloseErr} {
+		if !errors.Is(err, want) {
+			t.Fatalf("Close() error = %v, want %v", err, want)
+		}
+	}
+	if second.count != 1 || first.count != 1 || writer.syncCount() != 1 || secondWriter.syncCount() != 1 {
+		t.Fatalf("counts = sync:%d secondSync:%d first:%d second:%d, want all 1", writer.syncCount(), secondWriter.syncCount(), first.count, second.count)
+	}
+	if secondErr := resource.Close(); !errors.Is(secondErr, syncErr) {
+		t.Fatalf("second Close() error = %v, want original joined error", secondErr)
+	}
+	if second.count != 1 || first.count != 1 || writer.syncCount() != 1 || secondWriter.syncCount() != 1 {
+		t.Fatalf("second Close counts = sync:%d secondSync:%d first:%d second:%d", writer.syncCount(), secondWriter.syncCount(), first.count, second.count)
+	}
+}
+
+func TestStandardStreamsHaveNoOwnedCloser(t *testing.T) {
+	for _, path := range []string{outputPathStdout, outputPathStderr} {
+		writer, closer, err := openSink(path)
+		if err != nil {
+			t.Fatalf("openSink(%s) error = %v", path, err)
+		}
+		if closer != nil {
+			t.Fatalf("openSink(%s) closer = %#v, want nil", path, closer)
+		}
+		if err := writer.Sync(); err != nil {
+			t.Fatalf("openSink(%s).Sync() error = %v", path, err)
+		}
+	}
+}
+
+type failingWriteSyncer struct {
+	mu      sync.Mutex
+	syncErr error
+	syncs   int
+}
+
+func (*failingWriteSyncer) Write(payload []byte) (int, error) { return len(payload), nil }
+
+func (w *failingWriteSyncer) Sync() error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.syncs++
+	return w.syncErr
+}
+
+func (w *failingWriteSyncer) syncCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.syncs
+}
+
+type countingCloser struct {
+	err   error
+	count int
+}
+
+func (c *countingCloser) Close() error {
+	c.count++
+	return c.err
 }
 
 func decodeLogLine(t *testing.T, line string) map[string]any {

@@ -15,7 +15,7 @@
 
 | 能力 | 当前底层技术 | 项目边界 |
 | --- | --- | --- |
-| `logger` | `go.uber.org/zap` | 构造结构化日志实例；提供 noop/test logger 和审计字段。 |
+| `logger` | `go.uber.org/zap` | 业务依赖窄 Logger；构造方通过 Resource 独占 Sync/Close 和文件 sink；提供 noop/test logger 和审计字段。 |
 | `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。 |
 | `i18n` | `go-i18n/v2` + `x/text/language` + `yaml.v3` | 构造翻译器并加载本地化资源，资源格式细节留在包内。 |
 | `database` | `database/sql`、`sqlx`、`gorm` | 构造数据库客户端，提供事务、健康、迁移、readiness、慢查询 hook 和 SQL 脱敏。 |

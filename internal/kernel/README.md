@@ -7,11 +7,20 @@
 调用方负责选择配置来源，主动调用固定组合清单，把稳定 Access 显式传给业务构造函数，最后创建 Host 监督整个进程：
 
 ```go
+baseline, err := logger.New(nil)
+if err != nil {
+	return err
+}
+defer baseline.Close()
+loggingManager, err := kernellogging.New(baseline)
+if err != nil {
+	return err
+}
 loader := config.New(
 	config.FileSource("config.yaml"),
 	config.EnvSource("APP_"),
 )
-runtime, err := kernel.New(loader, kernel.Options{})
+runtime, err := kernel.New(loader, kernel.Options{Logging: loggingManager})
 if err != nil {
 	return err
 }
@@ -19,7 +28,7 @@ capabilities, err := composition.Compose(runtime, composition.Options{})
 if err != nil {
 	return err
 }
-service := NewService(capabilities.Database)
+service := NewService(capabilities.Logger, capabilities.Database)
 server := NewServer(service)
 host, err := kernel.NewHost(runtime, kernel.HostOptions{
 	ShutdownTimeout: 10 * time.Second,
@@ -35,7 +44,13 @@ defer cancel()
 return host.Run(ctx)
 ```
 
-`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力。`composition.Compose` 当前在源码中逐项登记 Database Definition；必须在 `Host.Run` 前显式调用，重复调用会触发重复 ID 错误。创建 Host 不会登记或查找 Capability，因此引入进程监督不会改变显式注入方式。
+`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力；但它要求调用方显式提供始终可用的 logging manager，不创建隐藏 Noop 或全局 logger。`composition.Compose` 当前在源码中按 Logger、Database 顺序逐项登记 Definition；必须在 `Host.Run` 前显式调用，重复调用会触发重复 ID 错误。创建 Host 不会登记或查找 Capability，因此引入进程监督不会改变显式注入方式。
+
+## 基线 logger 与配置化接管
+
+logging manager 在配置加载前已经委托到应用入口拥有的基线 logger。Logger Capability 的 Build/Start 只准备候选 Resource，不会提前切换 manager；只有全部受影响能力成功构造且旧租约排空后，Kernel 才在不可失败提交区激活候选。Reload 失败继续使用旧 logger，成功后关闭旧 Resource；停止时按反向登记顺序先停止 Database，再恢复基线并关闭配置化 logger。
+
+业务调用方使用 `Capabilities.Logger.Use(ctx, func(logger.Logger) error { ... })`。回调只能获得窄 Logger，不能取得 Resource.Close；回调返回即结束本次租约。
 
 ## 默认配置与启动前 CLI
 
@@ -84,6 +99,7 @@ return host.Run(ctx)
 ## 配置事务
 
 - `Start` 加载初始快照，按注册顺序执行 Decode、Build、Start；全部成功后才发布 Access。
+- 带 ActivationHooks 的能力只在全部候选成功后的提交区激活；候选丢弃和回滚不激活。
 - `Reload` 先解码和校验全部变化配置，再关闭受影响 Access 的服务闸门。
 - 候选 Build/Start 与旧租约排空并行；任一步失败或超时都会停止候选、恢复旧实例并保持旧配置版本。
 - 全部候选成功且旧租约归零后，kernel 在闸门关闭期间替换所有实例，再统一恢复调用。
@@ -95,6 +111,13 @@ return host.Run(ctx)
 `internal/kernel/config` 支持 Map、JSON/YAML 文件和环境变量来源。后加载来源覆盖先加载来源，环境变量使用双下划线表达嵌套路径，例如 `APP_DATABASE__PINGTIMEOUT=5s`。
 
 ```yaml
+logger:
+  environment: development
+  level: info
+  outputPaths:
+    - stdout
+  errorOutputPaths:
+    - stderr
 database:
   engine: sql
   driver: postgres
@@ -107,13 +130,14 @@ database:
   pingTimeout: 5s
 ```
 
-生产环境通过 `EnvSource` 提供 `database.dsn`。当前 loader 不执行字符串插值；快照的脱敏视图会隐藏 DSN、密码、Token、Key 和 Credential。
+`logger.encoding`、`logger.addCaller` 和 `logger.addStacktrace` 未配置时由 environment 推导；可通过 `APP_LOGGER__LEVEL` 等环境变量覆盖。生产环境通过 `EnvSource` 提供 `database.dsn`。当前 loader 不执行字符串插值；快照的脱敏视图会隐藏 DSN、密码、Token、Key 和 Credential。
 
 ## 边界
 
 - v1 能力彼此独立，不解析依赖 DAG，也不构造业务 service、handler 或 server。
 - 业务代码不得持有 Kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Capability Access。
 - Capability Definition 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/composition` 决定。
+- Kernel logging manager 只负责并发安全的委托切换，不拥有 logger Resource；基线由应用入口关闭，配置化实例由 Logger Capability 关闭。
 - Definition 的默认配置契约只能描述自身 ConfigPath 下的字段和值；Capability ID 和路径归属由 Register 结果固定。
 - `composition.go` 只维护总入口、组合顺序和结果汇总；每项能力的 Definition 选择与登记放在同名文件，例如 `database.go`。
 - Host 只把 Kernel、上层 Participant 和可选 Watch Task 交给 `pkg/supervisor`；它不复制进程启动、取消和停止算法。
