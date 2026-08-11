@@ -9,6 +9,11 @@
 - [Kernel Capability](../internal/kernel/capability/README.md)
 - [CLI 契约](../pkg/cli/README.md)
 
+## 研究报告
+
+- [研究报告索引](research/README.md)
+- [Go 脚手架底层能力装配架构对比](research/001-go-capability-composition/README.md)
+
 ## 变更记录
 
 - [任务级变更索引](changes/README.md)
