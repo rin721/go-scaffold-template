@@ -1,11 +1,11 @@
 # go-scaffold2
 
-`go-scaffold2` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/kernel` 与 `internal/adapter` 负责应用内部的基础能力装配、生命周期和配置切换。
+`go-scaffold2` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/adapter` 封装底层能力，`internal/kernel` 负责显式装配、生命周期和配置切换。
 
 ## 当前目标
 
 - 保持 `pkg/*` 通用库不感知 kernel、DI、drain 或热替换。
-- 通过 `internal/adapter` 把需要托管的 pkg 实例接入 kernel，业务构造函数接收稳定 Access。
+- `internal/adapter` 只封装需要托管的 pkg 实例；`internal/kernel/assembly` 显式选择并登记能力，业务构造函数接收稳定 Access。
 - 配置变化时先排空旧租约并准备候选，全部成功后统一发布，失败继续使用旧实例。
 - 当前只接入 Database；不提前引入业务对象图、依赖 DAG、Service Locator 或诊断平台。
 
@@ -21,8 +21,8 @@
 ## 包入口
 
 - [pkg/README.md](pkg/README.md)：底层能力库封装规范、当前能力清单和暂缓路线。
-- [internal/kernel/README.md](internal/kernel/README.md)：配置事务、租约排空和运行方式。
-- [internal/adapter/README.md](internal/adapter/README.md)：pkg Adapter 契约和 Database 接入。
+- [internal/kernel/README.md](internal/kernel/README.md)：显式注入、配置事务、租约排空和运行方式。
+- [internal/adapter/README.md](internal/adapter/README.md)：pkg Adapter 封装职责和 Database 实现。
 - [AGENTS.md](AGENTS.md)：AI Agent 协作红线和工程底线。
 
 ## 本地验证

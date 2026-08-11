@@ -1,10 +1,10 @@
 # kernel
 
-`internal/kernel` 是脚手架内部的基础能力运行时。它加载不可变配置快照，按注册顺序启动独立能力，并在配置变化时执行排空、候选构造、统一发布和旧实例清理。
+`internal/kernel` 是脚手架内部的基础能力运行时。它拥有 Builder、Lifecycle 和 Access 托管契约，加载不可变配置快照，按显式注册顺序启动独立能力，并在配置变化时执行排空、候选构造、统一发布和旧实例清理。
 
 ## 运行方式
 
-composition root 负责选择配置来源、注册 Adapter，并把稳定 Access 显式传给业务构造函数：
+调用方负责选择配置来源，主动调用固定装配清单，再把稳定 Access 显式传给业务构造函数：
 
 ```go
 loader := config.New(
@@ -15,13 +15,18 @@ runtime, err := kernel.New(loader, kernel.Options{})
 if err != nil {
 	return err
 }
-databaseAccess, err := databaseadapter.Register(runtime)
+capabilities, err := assembly.Inject(runtime)
 if err != nil {
 	return err
 }
-service := NewService(databaseAccess)
+service := NewService(capabilities.Database)
+if err := runtime.Start(ctx); err != nil {
+	return err
+}
 _ = service
 ```
+
+`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认注入任何能力。`assembly.Inject` 当前在源码中逐项登记 Database；必须在 `Start` 前显式调用，重复调用会触发重复 ID 错误。
 
 kernel 实现 `pkg/lifecycle.Participant`。应用应把它排在依赖其能力的 Participant 之前，并把文件监听作为长期 Task：
 
@@ -66,4 +71,5 @@ database:
 
 - v1 能力彼此独立，不解析依赖 DAG，也不构造业务 service、handler 或 server。
 - 业务代码不得持有 kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Adapter Access。
+- Adapter 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/assembly` 决定。
 - `Watch` 的单次重载错误通过必填回调上报并继续监听；fsnotify 后端错误才终止 Task。

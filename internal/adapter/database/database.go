@@ -1,4 +1,4 @@
-// Package database 把 pkg/database 适配为可由 kernel 管理和注入的基础能力。
+// Package database 封装 pkg/database 的配置、构造和生命周期钩子。
 package database
 
 import (
@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/adapter"
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
@@ -23,7 +22,17 @@ const (
 //
 // Client、Rows、Row 和事务对象均不得逃逸 Use 回调；回调返回即代表本次使用结束。
 type Access interface {
-	adapter.Access[pkgdatabase.Client]
+	kernel.Access[pkgdatabase.Client]
+}
+
+// Adapter 封装 Database 能力的配置解码、实例构造和生命周期钩子。
+//
+// Adapter 不登记 Kernel，也不持有运行中实例；具体启用位置由 Kernel assembly 决定。
+type Adapter struct{}
+
+// New 创建无状态的 Database Adapter。
+func New() *Adapter {
+	return &Adapter{}
 }
 
 // Config 是 Database adapter 的 typed 配置 DTO。
@@ -45,44 +54,8 @@ type PoolConfig struct {
 	ConnMaxIdleTime time.Duration `mapstructure:"connMaxIdleTime"`
 }
 
-// Register 把 Database adapter 登记到尚未启动的 kernel。
-func Register(runtime *kernel.Kernel) (Access, error) {
-	return register(runtime, adapter.BuilderFunc[Config, pkgdatabase.Client](build))
-}
-
-func register(runtime *kernel.Kernel, builder adapter.Builder[Config, pkgdatabase.Client]) (Access, error) {
-	handle, err := kernel.Register(runtime, kernel.Definition[Config, pkgdatabase.Client]{
-		ID:         ID,
-		ConfigPath: ConfigPath,
-		Decode:     decode,
-		Builder:    builder,
-		Lifecycle: adapter.LifecycleFuncs[pkgdatabase.Client]{
-			OnStart: func(ctx context.Context, client pkgdatabase.Client) error {
-				if err := client.Ping(ctx); err != nil {
-					return fmt.Errorf("verify database readiness: %w", err)
-				}
-				return nil
-			},
-			OnStop: func(_ context.Context, client pkgdatabase.Client) error {
-				return client.Close()
-			},
-		},
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &databaseAccess{handle: handle}, nil
-}
-
-type databaseAccess struct {
-	handle *kernel.Handle[pkgdatabase.Client]
-}
-
-func (a *databaseAccess) Use(ctx context.Context, use func(pkgdatabase.Client) error) error {
-	return a.handle.Use(ctx, use)
-}
-
-func decode(snapshot config.Snapshot) (Config, error) {
+// Decode 从 Kernel 配置快照中解码并校验 Database 配置。
+func (a *Adapter) Decode(snapshot config.Snapshot) (Config, error) {
 	cfg := defaultConfig()
 	if err := snapshot.DecodeSection(ConfigPath, &cfg); err != nil {
 		return Config{}, err
@@ -92,6 +65,29 @@ func decode(snapshot config.Snapshot) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+// Build 根据已校验配置创建新的 Database Client。
+func (a *Adapter) Build(ctx context.Context, cfg Config) (pkgdatabase.Client, error) {
+	packageConfig := cfg.packageConfig()
+	client, err := pkgdatabase.New(ctx, &packageConfig)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+// Start 在实例发布前检查 Database 是否就绪。
+func (a *Adapter) Start(ctx context.Context, client pkgdatabase.Client) error {
+	if err := client.Ping(ctx); err != nil {
+		return fmt.Errorf("verify database readiness: %w", err)
+	}
+	return nil
+}
+
+// Stop 释放 Database Client 拥有的资源。
+func (a *Adapter) Stop(_ context.Context, client pkgdatabase.Client) error {
+	return client.Close()
 }
 
 func defaultConfig() Config {
@@ -122,11 +118,5 @@ func (c Config) packageConfig() pkgdatabase.Config {
 	}
 }
 
-func build(ctx context.Context, cfg Config) (pkgdatabase.Client, error) {
-	packageConfig := cfg.packageConfig()
-	client, err := pkgdatabase.New(ctx, &packageConfig)
-	if err != nil {
-		return nil, err
-	}
-	return client, nil
-}
+var _ kernel.Builder[Config, pkgdatabase.Client] = (*Adapter)(nil)
+var _ kernel.Lifecycle[pkgdatabase.Client] = (*Adapter)(nil)

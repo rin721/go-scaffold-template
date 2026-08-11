@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/adapter"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
@@ -348,7 +347,7 @@ func testDefinition(
 			}
 			return cfg, nil
 		},
-		Builder: adapter.BuilderFunc[testConfig, *testInstance](func(ctx context.Context, cfg testConfig) (*testInstance, error) {
+		Builder: BuilderFunc[testConfig, *testInstance](func(ctx context.Context, cfg testConfig) (*testInstance, error) {
 			if beforeBuild != nil {
 				if err := beforeBuild(ctx, cfg); err != nil {
 					return nil, err
@@ -357,7 +356,7 @@ func testDefinition(
 			log.add("build:" + name + ":" + cfg.Version)
 			return &testInstance{name: name, version: cfg.Version}, nil
 		}),
-		Lifecycle: adapter.LifecycleFuncs[*testInstance]{
+		Lifecycle: LifecycleFuncs[*testInstance]{
 			OnStart: func(_ context.Context, instance *testInstance) error {
 				log.add("start:" + name + ":" + instance.version)
 				return nil

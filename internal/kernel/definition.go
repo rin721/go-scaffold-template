@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/rin721/go-scaffold2/internal/adapter"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
@@ -20,8 +19,8 @@ type Definition[C, T any] struct {
 	ID         ID
 	ConfigPath string
 	Decode     Decoder[C]
-	Builder    adapter.Builder[C, T]
-	Lifecycle  adapter.Lifecycle[T]
+	Builder    Builder[C, T]
+	Lifecycle  Lifecycle[T]
 }
 
 // Register 在 kernel 启动前登记能力，并返回供具体 adapter 收敛的稳定 Handle。
