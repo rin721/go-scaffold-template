@@ -25,6 +25,10 @@
 - [internal/kernel/capability/README.md](internal/kernel/capability/README.md)：Kernel Capability 定义职责和 Database 实现。
 - [AGENTS.md](AGENTS.md)：AI Agent 协作红线和工程底线。
 
+## 目标设计（尚未实现）
+
+- [默认配置契约与可选 CLI 能力](design/001-default-config-cli-contracts/README.md)：定义默认配置聚合、`config init` 和可选 CLI 组合的目标方案。该目录是后续实现依据，不代表当前代码已经提供这些接口。
+
 ## 本地验证
 
 ```powershell
