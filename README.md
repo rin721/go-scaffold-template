@@ -32,22 +32,38 @@
 
 `composition.Compose(runtime, options)` 始终按 Logger、Database 顺序返回稳定 Access 和默认配置管理器；只有 `options.CLI` 非 nil 时才构造 CLI App。配置管理器可由代码直接生成 YAML/JSON，也可通过启动前 `config init` 命令生成当前项目实际组合的完整默认配置骨架。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
+根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。
+
 [docs/changes/001-default-config-cli-contracts](docs/changes/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
 
 ## 启动项目
 
-先从 `cmd/app` 入口生成本地配置骨架：
+推荐先复制带完整注释的示例配置：
 
 ```powershell
-go run ./cmd/app config init
+Copy-Item config.example.yaml config.yaml
 ```
 
-编辑 `config.yaml`，明确填写 `database.engine` 和 `database.driver`。DSN 通过环境变量提供，不写入文件；PowerShell 示例：
+示例默认选择 `development + gorm + postgres`。按注释切换 Logger、Database Engine 或 Driver 后，通过环境变量提供真实 DSN：
 
 ```powershell
 $env:APP_DATABASE__DSN = '<database-dsn>'
 go run ./cmd/app
 ```
+
+也可以从 `cmd/app` 入口生成不带方案注释的最小配置骨架：
+
+```powershell
+go run ./cmd/app config init
+```
+
+该命令默认拒绝覆盖已有目标。确认现有 `config.yaml` 可以被替换后，才使用：
+
+```powershell
+go run ./cmd/app config init --force
+```
+
+生成后必须明确填写 `database.engine` 和 `database.driver`。DSN 仍通过环境变量提供，不写入文件。
 
 环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会先发布配置化 Logger，再启动 Database 并完成连接与 Ping；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
 

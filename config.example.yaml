@@ -1,0 +1,72 @@
+# go-scaffold2 全量配置示例。
+#
+# 使用方式：
+#   Copy-Item config.example.yaml config.yaml
+#   $env:APP_DATABASE__DSN = '<database-dsn>'
+#   go run ./cmd/app
+#
+# 环境变量使用 APP_ 前缀，并以双下划线分隔嵌套字段。
+# 例如 APP_DATABASE__ENGINE、APP_DATABASE__DRIVER、APP_LOGGER__LEVEL。
+
+logger:
+  # 运行环境：development（开发）或 production（生产）。
+  environment: development
+  # environment: production
+
+  # 最低日志级别：debug、info、warn 或 error。
+  level: info
+  # level: debug
+  # level: warn
+  # level: error
+
+  # encoding 默认由 environment 推导：development 使用 console，production 使用 json。
+  # 只有需要覆盖环境默认值时才取消注释并保留一个选项。
+  # encoding: console
+  # encoding: json
+
+  # 普通日志输出目标；可使用 stdout 或文件路径。
+  outputPaths:
+    - stdout
+    # - ./logs/app.log
+
+  # Logger 内部错误输出目标；可使用 stderr 或文件路径。
+  errorOutputPaths:
+    - stderr
+    # - ./logs/app-error.log
+
+  # addCaller 默认由 environment 推导，当前 development 和 production 均为 true。
+  # addCaller: true
+  # addCaller: false
+
+  # addStacktrace 默认由 environment 推导：development 为 false，production 为 true。
+  # addStacktrace: false
+  # addStacktrace: true
+
+database:
+  # Engine：gorm（ORM）或 sql（database/sql + sqlx）。
+  engine: gorm
+  # engine: sql
+
+  # Driver：postgres 或 mysql；必须与 DSN 格式和实际数据库一致。
+  driver: postgres
+  # driver: mysql
+
+  # DSN 不应写入配置文件。运行前通过环境变量提供，例如：
+  # PostgreSQL:
+  #   $env:APP_DATABASE__DSN = 'postgres://<user>:<password>@localhost:5432/<database>?sslmode=disable'
+  # MySQL:
+  #   $env:APP_DATABASE__DSN = '<user>:<password>@tcp(localhost:3306)/<database>?parseTime=true'
+  dsn: ""
+
+  pool:
+    # 最大打开连接数；0 使用 database 包默认值，负数非法。
+    maxOpenConns: 25
+    # 最大空闲连接数；0 使用 database 包默认值，负数非法。
+    maxIdleConns: 5
+    # 单连接最大生命周期；0 使用 database 包默认值，负数非法。
+    connMaxLifetime: 30m0s
+    # 空闲连接最大保留时间；0 使用 database 包默认值，负数非法。
+    connMaxIdleTime: 5m0s
+
+  # 构造和就绪检查的超时时间；0 使用 database 包默认值，负数非法。
+  pingTimeout: 5s
