@@ -33,6 +33,25 @@
 
 [design/001-default-config-cli-contracts](design/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
 
+## 启动项目
+
+先从 `cmd/app` 入口生成本地配置骨架：
+
+```powershell
+go run ./cmd/app config init
+```
+
+编辑 `config.yaml`，明确填写 `database.engine` 和 `database.driver`。DSN 通过环境变量提供，不写入文件；PowerShell 示例：
+
+```powershell
+$env:APP_DATABASE__DSN = '<database-dsn>'
+go run ./cmd/app
+```
+
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会真实启动 Database Capability，完成连接与 Ping 后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前尚未组合 HTTP 或其他业务 Participant，因此不会创建网络监听器。
+
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [design/002-application-entrypoint](design/002-application-entrypoint/README.md)。
+
 ## 本地验证
 
 ```powershell
