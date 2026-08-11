@@ -17,11 +17,11 @@ func TestComposeDatabaseMakesDefinitionParticipateInKernelStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("kernel.New() error = %v", err)
 	}
-	access, err := composeDatabase(runtime)
+	binding, err := composeDatabase(runtime)
 	if err != nil {
 		t.Fatalf("composeDatabase() error = %v", err)
 	}
-	if access == nil {
+	if binding.access == nil {
 		t.Fatal("composeDatabase() access is nil")
 	}
 	if err := runtime.Start(t.Context()); err == nil {
@@ -42,7 +42,7 @@ func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	definition := databasecapability.Definition()
 	definition.Builder = hooks
 	definition.Hooks = hooks
-	access, err := registerDatabase(runtime, definition)
+	binding, err := registerDatabase(runtime, definition)
 	if err != nil {
 		t.Fatalf("registerDatabase() error = %v", err)
 	}
@@ -50,7 +50,7 @@ func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 		t.Fatalf("Start() error = %v", err)
 	}
 	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-	assertDatabaseVersion(t, access, "v1")
+	assertDatabaseVersion(t, binding.access, "v1")
 
 	source.setDSN("v2")
 	result, err := runtime.Reload(t.Context())
@@ -60,7 +60,7 @@ func TestComposedDatabaseReloadsThroughStableAccess(t *testing.T) {
 	if !result.Applied {
 		t.Fatalf("Reload() result = %#v, want applied", result)
 	}
-	assertDatabaseVersion(t, access, "v2")
+	assertDatabaseVersion(t, binding.access, "v2")
 
 	oldClient := hooks.client("v1")
 	newClient := hooks.client("v2")

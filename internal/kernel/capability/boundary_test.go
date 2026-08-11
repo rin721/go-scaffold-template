@@ -17,6 +17,11 @@ func TestCapabilityDefinitionsHaveNoRegistrationSideEffects(t *testing.T) {
 		t.Fatalf("get capability root: %v", err)
 	}
 	kernelImport := strings.Join([]string{"github.com", "rin721", "go-scaffold2", "internal", "kernel"}, "/")
+	discoveryCalls := map[string]map[string]struct{}{
+		"os":            {"ReadDir": {}},
+		"path/filepath": {"Glob": {}, "Walk": {}, "WalkDir": {}},
+		"io/fs":         {"Glob": {}, "WalkDir": {}},
+	}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return walkErr
@@ -26,6 +31,7 @@ func TestCapabilityDefinitionsHaveNoRegistrationSideEffects(t *testing.T) {
 			return err
 		}
 		kernelAliases := make(map[string]struct{})
+		discoveryAliases := make(map[string]map[string]struct{})
 		for _, imported := range file.Imports {
 			importPath, err := strconv.Unquote(imported.Path.Value)
 			if err != nil {
@@ -41,6 +47,13 @@ func TestCapabilityDefinitionsHaveNoRegistrationSideEffects(t *testing.T) {
 				}
 				kernelAliases[name] = struct{}{}
 			}
+			if calls, forbidden := discoveryCalls[importPath]; forbidden {
+				name := filepath.Base(importPath)
+				if imported.Name != nil {
+					name = imported.Name.Name
+				}
+				discoveryAliases[name] = calls
+			}
 		}
 
 		file, err = parser.ParseFile(token.NewFileSet(), path, nil, parser.SkipObjectResolution)
@@ -55,15 +68,22 @@ func TestCapabilityDefinitionsHaveNoRegistrationSideEffects(t *testing.T) {
 				}
 			case *ast.CallExpr:
 				selector, ok := value.Fun.(*ast.SelectorExpr)
-				if !ok || selector.Sel.Name != "Register" {
+				if !ok {
 					return true
 				}
 				qualifier, ok := selector.X.(*ast.Ident)
 				if !ok {
 					return true
 				}
-				if _, forbidden := kernelAliases[qualifier.Name]; forbidden {
-					t.Fatalf("capability %s calls kernel.Register; composition must own registration", path)
+				if selector.Sel.Name == "Register" {
+					if _, forbidden := kernelAliases[qualifier.Name]; forbidden {
+						t.Fatalf("capability %s calls kernel.Register; composition must own registration", path)
+					}
+				}
+				if calls, forbidden := discoveryAliases[qualifier.Name]; forbidden {
+					if _, discovery := calls[selector.Sel.Name]; discovery {
+						t.Fatalf("capability %s calls %s.%s; automatic discovery is forbidden", path, qualifier.Name, selector.Sel.Name)
+					}
 				}
 			}
 			return true

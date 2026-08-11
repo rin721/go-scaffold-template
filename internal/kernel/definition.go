@@ -19,37 +19,54 @@ type Definition[C, T any] struct {
 	ID         ID
 	ConfigPath string
 	Decode     Decoder[C]
+	Defaults   config.DefaultContract
 	Builder    Builder[C, T]
 	Hooks      InstanceHooks[T]
 }
 
-// Register 在 Kernel 启动前登记能力，并返回供具体 Capability 收敛的稳定 Handle。
-func Register[C, T any](runtime *Kernel, definition Definition[C, T]) (*Handle[T], error) {
+// Registration 是能力成功登记后返回的稳定 Access 和默认配置绑定。
+type Registration[T any] struct {
+	Access   *Handle[T]
+	Defaults config.Binding
+}
+
+// Register 在 Kernel 启动前登记能力，并返回不可变的登记结果。
+func Register[C, T any](runtime *Kernel, definition Definition[C, T]) (Registration[T], error) {
 	if runtime == nil {
-		return nil, fmt.Errorf("kernel is nil")
+		return Registration[T]{}, fmt.Errorf("kernel is nil")
 	}
 	if definition.ID == "" {
-		return nil, fmt.Errorf("kernel definition id is required")
+		return Registration[T]{}, fmt.Errorf("kernel definition id is required")
 	}
 	if definition.ConfigPath == "" {
-		return nil, fmt.Errorf("kernel definition %s config path is required", definition.ID)
+		return Registration[T]{}, fmt.Errorf("kernel definition %s config path is required", definition.ID)
 	}
 	if definition.Decode == nil {
-		return nil, fmt.Errorf("kernel definition %s decoder is nil", definition.ID)
+		return Registration[T]{}, fmt.Errorf("kernel definition %s decoder is nil", definition.ID)
+	}
+	if isNilInterface(definition.Defaults) {
+		return Registration[T]{}, fmt.Errorf("kernel definition %s defaults contract is nil", definition.ID)
 	}
 	if isNilInterface(definition.Builder) {
-		return nil, fmt.Errorf("kernel definition %s builder is nil", definition.ID)
+		return Registration[T]{}, fmt.Errorf("kernel definition %s builder is nil", definition.ID)
 	}
 	if isNilInterface(definition.Hooks) {
-		return nil, fmt.Errorf("kernel definition %s instance hooks are nil", definition.ID)
+		return Registration[T]{}, fmt.Errorf("kernel definition %s instance hooks are nil", definition.ID)
 	}
 
 	handle := newHandle[T]()
 	component := &typedComponent[C, T]{definition: definition, handle: handle}
 	if err := runtime.register(component); err != nil {
-		return nil, err
+		return Registration[T]{}, err
 	}
-	return handle, nil
+	return Registration[T]{
+		Access: handle,
+		Defaults: config.Binding{
+			CapabilityID: string(definition.ID),
+			ConfigPath:   definition.ConfigPath,
+			Contract:     definition.Defaults,
+		},
+	}, nil
 }
 
 func isNilInterface(value any) bool {

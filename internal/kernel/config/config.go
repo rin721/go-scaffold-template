@@ -1,4 +1,4 @@
-// Package config 负责为 kernel 加载不可变配置快照。
+// Package config 负责加载不可变配置快照，并聚合、编码和安全写入能力默认配置。
 package config
 
 import (

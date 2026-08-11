@@ -122,3 +122,9 @@ cli.FlagTypeStringSlice
 进程边界统一使用 `cli.GetExitCode(err)` 提取退出码。
 
 标准 `PromptUI` 的 `Select`、`Confirm`、`Input`、`Password` 和 `Info` 都会返回 stdout 写入失败。调用方不得把交互菜单、确认问题、输入提示或信息输出视为已可靠展示；如果这些输出影响脚本或人工操作判断，应把错误继续返回给上层处理。
+
+## Kernel 启动前 CLI
+
+`internal/kernel/cli` 复用本包的 `CommandSpec`、`FlagSpec`、`App`、`CommandError` 和退出码语义，聚合由 composition 显式提供的启动前命令契约。它不会把 Cobra 类型泄漏到 Kernel，也不把 CLI App 纳入 Kernel 生命周期。
+
+当前 composition 只有在 `composition.Options.CLI` 非 nil 时构造 App，并注册 `config init`。该命令调用 DefaultManager 生成配置文件；默认输出 `config.yaml`，支持 `-o/--output` 和 `-f/--force`，且不接受位置参数。CLI 未启用时普通服务启动不构造 App，也不执行命令契约。

@@ -15,7 +15,7 @@ runtime, err := kernel.New(loader, kernel.Options{})
 if err != nil {
 	return err
 }
-capabilities, err := composition.Compose(runtime)
+capabilities, err := composition.Compose(runtime, composition.Options{})
 if err != nil {
 	return err
 }
@@ -36,6 +36,38 @@ return host.Run(ctx)
 ```
 
 `kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力。`composition.Compose` 当前在源码中逐项登记 Database Definition；必须在 `Host.Run` 前显式调用，重复调用会触发重复 ID 错误。创建 Host 不会登记或查找 Capability，因此引入进程监督不会改变显式注入方式。
+
+## 默认配置与启动前 CLI
+
+每个成功登记的 Definition 必须提供 `config.DefaultContract`。`kernel.Register` 只冻结 Definition 的 ID、配置路径和契约，不会调用契约；composition 收集全部成功登记结果后构造 `config.DefaultManager`。调用方可以在 Kernel 尚未启动、配置文件尚不存在时直接生成配置：
+
+```go
+result, err := capabilities.Configuration.Generate(ctx, config.GenerateRequest{
+	Path:  "config.yaml",
+	Force: false,
+})
+```
+
+`.yaml`、`.yml` 和 `.json` 扩展名决定编码格式。生成过程先在内存中完成全部契约调用、结构校验和编码，随后以 `0600` 目标权限安全写入；默认拒绝覆盖，`Force` 才允许同文件系统替换。契约返回 Abort 或任意错误时不会创建或改写目标。
+
+启动前 CLI 必须由 composition options 显式启用：
+
+```go
+capabilities, err := composition.Compose(runtime, composition.Options{
+	CLI: &composition.CLIOptions{App: cli.Config{
+		Name:                   "app",
+		DisableInteractiveHome: true,
+	}},
+})
+if err != nil {
+	return err
+}
+if runCLI {
+	return capabilities.CLI.Run(ctx, args)
+}
+```
+
+启用后提供 `config init --output config.yaml --force`；`-o` 和 `-f` 是对应短 flag。该命令只调用 DefaultManager，成功生成后不会自动启动或重载 Kernel。CLI 未启用时 `Capabilities.CLI` 为 nil，普通 `NewHost(...).Run(ctx)` 路径不构造 App，也不调用任何 CLI Contract。
 
 `NewHost` 固定把 Kernel 作为第一个 `pkg/supervisor.Participant`，随后才启动上层 Participant；停止时顺序相反，因此业务服务会在 Kernel 管理的资源之前退出。`Watch` 为 `nil` 时不监听配置；显式启用监听时必须提供错误回调，并且 Loader 必须包含文件配置源：
 
@@ -82,6 +114,7 @@ database:
 - v1 能力彼此独立，不解析依赖 DAG，也不构造业务 service、handler 或 server。
 - 业务代码不得持有 Kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Capability Access。
 - Capability Definition 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/composition` 决定。
+- Definition 的默认配置契约只能描述自身 ConfigPath 下的字段和值；Capability ID 和路径归属由 Register 结果固定。
 - `composition.go` 只维护总入口、组合顺序和结果汇总；每项能力的 Definition 选择与登记放在同名文件，例如 `database.go`。
 - Host 只把 Kernel、上层 Participant 和可选 Watch Task 交给 `pkg/supervisor`；它不复制进程启动、取消和停止算法。
 - `Watch` 的单次重载错误通过必填回调上报并继续监听；fsnotify 后端错误才终止 Task。

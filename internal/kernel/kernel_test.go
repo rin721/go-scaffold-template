@@ -311,21 +311,21 @@ func registerTestComponent(
 ) *Handle[*testInstance] {
 	t.Helper()
 	definition := testDefinition(name, log, beforeBuild, nil)
-	access, err := Register(runtime, definition)
+	registration, err := Register(runtime, definition)
 	if err != nil {
 		t.Fatalf("Register(%s) error = %v", name, err)
 	}
-	return access
+	return registration.Access
 }
 
 func registerTestComponentWithStop(t *testing.T, runtime *Kernel, name string, stop func(*testInstance) error) *Handle[*testInstance] {
 	t.Helper()
 	definition := testDefinition(name, &eventLog{}, nil, stop)
-	access, err := Register(runtime, definition)
+	registration, err := Register(runtime, definition)
 	if err != nil {
 		t.Fatalf("Register(%s) error = %v", name, err)
 	}
-	return access
+	return registration.Access
 }
 
 func testDefinition(
@@ -347,6 +347,9 @@ func testDefinition(
 			}
 			return cfg, nil
 		},
+		Defaults: config.DefaultContractFunc(func(context.Context) (config.Object, config.Control, error) {
+			return config.Object{config.FieldOf("version", config.String("v1"))}, config.Continue, nil
+		}),
 		Builder: BuilderFunc[testConfig, *testInstance](func(ctx context.Context, cfg testConfig) (*testInstance, error) {
 			if beforeBuild != nil {
 				if err := beforeBuild(ctx, cfg); err != nil {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -64,6 +66,71 @@ func TestDefinitionInstanceHooksPreserveReadinessAndCloseErrors(t *testing.T) {
 	}
 	if client.pings != 1 || client.closes != 1 {
 		t.Fatalf("lifecycle calls = ping:%d close:%d, want 1 each", client.pings, client.closes)
+	}
+}
+
+func TestDefinitionDefaultsGenerateStableYAMLAndJSON(t *testing.T) {
+	definition := Definition()
+	manager, err := config.NewDefaultManager(config.Binding{
+		CapabilityID: string(definition.ID),
+		ConfigPath:   definition.ConfigPath,
+		Contract:     definition.Defaults,
+	})
+	if err != nil {
+		t.Fatalf("NewDefaultManager() error = %v", err)
+	}
+	tests := []struct {
+		name string
+		ext  string
+		want string
+	}{
+		{
+			name: "yaml",
+			ext:  ".yaml",
+			want: "database:\n" +
+				"  engine: \"\"\n" +
+				"  driver: \"\"\n" +
+				"  dsn: \"\"\n" +
+				"  pool:\n" +
+				"    maxOpenConns: 25\n" +
+				"    maxIdleConns: 5\n" +
+				"    connMaxLifetime: 30m0s\n" +
+				"    connMaxIdleTime: 5m0s\n" +
+				"  pingTimeout: 5s\n",
+		},
+		{
+			name: "json",
+			ext:  ".json",
+			want: "{\n" +
+				"  \"database\": {\n" +
+				"    \"engine\": \"\",\n" +
+				"    \"driver\": \"\",\n" +
+				"    \"dsn\": \"\",\n" +
+				"    \"pool\": {\n" +
+				"      \"maxOpenConns\": 25,\n" +
+				"      \"maxIdleConns\": 5,\n" +
+				"      \"connMaxLifetime\": \"30m0s\",\n" +
+				"      \"connMaxIdleTime\": \"5m0s\"\n" +
+				"    },\n" +
+				"    \"pingTimeout\": \"5s\"\n" +
+				"  }\n" +
+				"}\n",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "config"+test.ext)
+			if _, err := manager.Generate(t.Context(), config.GenerateRequest{Path: target}); err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			payload, err := os.ReadFile(target)
+			if err != nil {
+				t.Fatalf("ReadFile() error = %v", err)
+			}
+			if string(payload) != test.want {
+				t.Fatalf("payload:\n%s\nwant:\n%s", payload, test.want)
+			}
+		})
 	}
 }
 

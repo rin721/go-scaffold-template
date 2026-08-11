@@ -53,12 +53,43 @@ func Definition() kernel.Definition[Config, pkgdatabase.Client] {
 		ID:         ID,
 		ConfigPath: ConfigPath,
 		Decode:     decode,
+		Defaults:   implementation,
 		Builder:    implementation,
 		Hooks:      implementation,
 	}
 }
 
 type capability struct{}
+
+func (capability) Defaults(ctx context.Context) (config.Object, config.Control, error) {
+	if ctx == nil {
+		return nil, config.Continue, fmt.Errorf("database defaults context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, config.Continue, err
+	}
+	defaults := pkgdatabase.DefaultConfig()
+	maxOpenConns, err := config.Number(fmt.Sprint(defaults.Pool.MaxOpenConns))
+	if err != nil {
+		return nil, config.Continue, fmt.Errorf("encode database max open connections: %w", err)
+	}
+	maxIdleConns, err := config.Number(fmt.Sprint(defaults.Pool.MaxIdleConns))
+	if err != nil {
+		return nil, config.Continue, fmt.Errorf("encode database max idle connections: %w", err)
+	}
+	return config.Object{
+		config.FieldOf("engine", config.String("")),
+		config.FieldOf("driver", config.String("")),
+		config.FieldOf("dsn", config.String("")),
+		config.FieldOf("pool", config.ObjectValue(config.Object{
+			config.FieldOf("maxOpenConns", maxOpenConns),
+			config.FieldOf("maxIdleConns", maxIdleConns),
+			config.FieldOf("connMaxLifetime", config.Duration(defaults.Pool.ConnMaxLifetime)),
+			config.FieldOf("connMaxIdleTime", config.Duration(defaults.Pool.ConnMaxIdleTime)),
+		})),
+		config.FieldOf("pingTimeout", config.Duration(defaults.PingTimeout)),
+	}, config.Continue, nil
+}
 
 func decode(snapshot config.Snapshot) (Config, error) {
 	cfg := defaultConfig()
@@ -122,3 +153,4 @@ func (c Config) packageConfig() pkgdatabase.Config {
 
 var _ kernel.Builder[Config, pkgdatabase.Client] = capability{}
 var _ kernel.InstanceHooks[pkgdatabase.Client] = capability{}
+var _ config.DefaultContract = capability{}
