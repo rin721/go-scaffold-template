@@ -13,6 +13,7 @@
 
 - [研究报告索引](research/README.md)
 - [Go 脚手架底层能力装配架构对比](research/001-go-capability-composition/README.md)
+- [Kernel 底层组件手动装配与安全重载](research/002-kernel-app-manual-composition/README.md)
 
 ## 变更记录
 
