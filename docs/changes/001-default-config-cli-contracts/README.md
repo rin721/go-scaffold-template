@@ -2,7 +2,7 @@
 
 ## 状态
 
-本设计已于 2026-08-11 完成实施。当前使用方式以根 [README.md](../../../README.md)、[Kernel 说明](../../../internal/kernel/README.md)、[Capability 说明](../../../internal/kernel/capability/README.md)、[CLI 说明](../../../pkg/cli/README.md) 和实际 Go API 为准；本目录保留需求、开发设计、任务账本和验证证据，不作为第二套现行使用说明。
+本设计已于 2026-08-11 完成实施。当前使用方式以根 [README.md](../../../README.md)、[Kernel 说明](../../../internal/kernel/README.md)、[App 组件说明](../../../internal/kernel/app/README.md)、[CLI 说明](../../../pkg/cli/README.md) 和实际 Go API 为准；本目录保留需求、开发设计、任务账本和当时实现证据，不作为第二套现行使用说明。
 
 设计序号为 `001`，主题范围只包含：能力默认配置契约、默认配置文件生成、启动前可选 CLI 组合，以及 `config init` 命令。不包含运行时 CLI 命令、远程配置中心或多实例命名。
 

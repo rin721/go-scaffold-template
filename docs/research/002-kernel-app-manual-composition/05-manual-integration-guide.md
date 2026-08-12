@@ -1,6 +1,6 @@
 # 手动接入指南
 
-> 本章使用 `<pkg-name1>` 和 `<pkg-app-name1>` 表达目标开发流程。示例 API 是行为伪代码，当前仓库不能直接编译；当前实现仍位于 `internal/kernel/capability` 和 `internal/kernel/composition`。
+> 本章使用 `<pkg-name1>` 和 `<pkg-app-name1>` 表达开发流程。006 已实现本文的核心路径；早期伪代码可能与最终函数名不同，可编译入口和最小清单以 [Kernel App 组件开发](../../../internal/kernel/app/README.md) 为准。
 
 ## 1. 固定接入路径
 
@@ -189,8 +189,7 @@ internal/kernel/composition/<pkg-app-name1>.go
 简单能力示意：
 
 ```go
-// 目标伪代码，尚未实现。
-func composeClock(plan *app.Plan) (app.Binding[clock.Clock], error) {
+func composeClock(plan *app.Plan) (app.Added[clock.Clock], error) {
 	return app.Add(plan, clockapp.System())
 }
 ```
@@ -218,8 +217,8 @@ if err != nil {
 ```go
 componentBinding, err := app.Add(plan, pkgnameapp.Definition(
 	pkgnameapp.Inputs{
-		Clock: app.InputOf(clockBinding),
-		IDs:   app.InputOf(idBinding),
+		Clock: app.InputOf(clockBinding.Binding),
+		IDs:   app.InputOf(idBinding.Binding),
 	},
 ))
 ```
@@ -243,7 +242,7 @@ componentBinding, err := app.Add(plan, pkgnameapp.Definition(
 7. Kernel 按各组件 Reload Policy 原地重载、换代、交接或报告需要重启；
 8. Host 关闭时，Kernel 按反向依赖顺序停止所有已拥有资源。
 
-Clock、ID Generator、Validator 在第 4 步完成一次构造，之后不参与 Watch 或换代。Database 等组件才进入租约、候选、观察期与回滚流程。
+Clock、ID Generator、Validator 在 composition 选择 Definition 时形成 Direct 输出，之后不参与 Kernel Start、Watch 或换代。Database 等组件才进入运行节点、租约和候选流程；观察期与切换后回切尚未实现。
 
 当前尚无 HTTP、handler、service、repository 或 model。本阶段通过组件与 composition 测试验证输出，不用虚构业务消费者。
 

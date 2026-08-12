@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
-	loggercapability "github.com/rin721/go-scaffold2/internal/kernel/capability/logger"
+	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
 	"github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
@@ -131,7 +131,7 @@ func (p process) run(ctx context.Context, args []string) error {
 }
 
 type applicationLifecycle struct {
-	logging loggercapability.Access
+	logging loggerapp.Access
 }
 
 func (applicationLifecycle) Name() string { return "application" }

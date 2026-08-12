@@ -4,7 +4,7 @@
 
 用户已于 2026-08-11 明确确认当前 004 方案；实现、测试、权威文档和验证已经完成。当前状态：**已完成**。
 
-当前使用方式以根 [README.md](../../../README.md)、[Kernel 说明](../../../internal/kernel/README.md)、[Capability 说明](../../../internal/kernel/capability/README.md)、[`pkg/logger` 说明](../../../pkg/logger/README.md) 和实际 Go API 为准；本目录保留需求、设计、任务账本和验证证据，不作为第二套现行规范。
+当前使用方式以根 [README.md](../../../README.md)、[Kernel 说明](../../../internal/kernel/README.md)、[App 组件说明](../../../internal/kernel/app/README.md)、[`pkg/logger` 说明](../../../pkg/logger/README.md) 和实际 Go API 为准；本目录保留需求、设计、任务账本和当时实现证据，不作为第二套现行规范。
 
 ## 范围
 

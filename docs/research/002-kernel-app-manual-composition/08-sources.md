@@ -2,28 +2,28 @@
 
 ## 1. 本地代码证据
 
-本报告以提交 `a1a3a65b8f180ca9b571b8e3d7424c74403746e0` 为当前实现基线。以下文件是复核入口：
+本报告研究事实以提交 `a1a3a65b8f180ca9b571b8e3d7424c74403746e0` 为历史基线。006 实施后的当前复核入口如下：
 
 | 主题 | 本地入口 | 支持的事实 |
 | --- | --- | --- |
 | 应用启动链 | `cmd/app/main.go` | baseline Logger、Loader、Kernel、Compose、Host 的真实调用顺序 |
-| Kernel 定义 | `internal/kernel/definition.go` | Definition、Register、候选实例、发布和旧代清理 |
-| 稳定租约 | `internal/kernel/handle.go` | Use、activeUses、draining、replace 和 resume |
-| Reload 事务 | `internal/kernel/kernel.go` | Decode、Build/Start、并行 drain、commit、rollback 和 cleanup |
+| App 定义与 Plan | `internal/kernel/app/*.go` | Definition、Binding/Input、Direct/Leased、Freeze 和运行节点 |
+| 稳定租约 | `internal/kernel/app/lease.go` | Use、activeUses、draining、replace 和 resume |
+| Reload 事务 | `internal/kernel/kernel.go` | Stage、候选准备、反向 drain、commit、rollback、RestartRequired 和 cleanup |
 | 配置监听 | `internal/kernel/watch.go`、`internal/kernel/config/watch.go` | fsnotify、防抖、单次 Reload 错误回调 |
 | Host | `internal/kernel/host.go` | Kernel 与业务 Participant 的监督顺序 |
 | Supervisor | `pkg/supervisor/supervisor.go` | 顺序 Start、Task、失败取消和反向 Stop |
-| Logger 组件 | `internal/kernel/capability/logger/logger.go` | 私有 Resource、typed Access 和 Activation |
-| Database 组件 | `internal/kernel/capability/database/database.go` | typed Config、New、Ping、Close 和 Access |
+| Logger 组件 | `internal/kernel/app/logger/logger.go` | 私有 Resource、typed Access 和 Activation |
+| Database 组件 | `internal/kernel/app/database/database.go` | typed Config、New、Ready/Ping、私有 Close 和 Access |
 | 显式组合 | `internal/kernel/composition/*.go` | 固定清单、每能力登记、Defaults/CLI 聚合 |
-| Clock | `pkg/clock/clock.go` | 项目 Clock 契约与 System/Fixed 实现；当前未进入 composition |
-| ID Generator | `pkg/idgen/idgen.go` | 项目 Generator 契约与 UUID 实现；当前未进入 composition |
-| Validator | `pkg/validation/validation.go` | 项目 Validator 契约与默认实现；当前未进入 composition |
+| Clock | `pkg/clock/clock.go`、`internal/kernel/app/clock/clock.go` | 项目契约与 Fixed Direct Definition |
+| ID Generator | `pkg/idgen/idgen.go`、`internal/kernel/app/idgen/idgen.go` | 项目契约与 Fixed Direct Definition |
+| Validator | `pkg/validation/validation.go`、`internal/kernel/app/validation/validation.go` | 项目契约与 Fixed Direct Definition |
 | 当前简单能力使用 | `pkg/httpx/production_middleware.go`、`pkg/storage/watch.go` | UUID nil 回退及直接 `time.Now` 等尚未统一注入的现状 |
 | 健康能力库 | `pkg/health/*.go` | Registry、Kind、Snapshot；当前未接入观察期 |
 | HTTP 排他资源示例 | `pkg/httpx/server.go` | `ListenAndServe` 与 Shutdown 的当前封装 |
 
-报告中的目标策略、目录和伪代码不能从这些文件推导为已实现。它们来自用户确认的目标意图和对当前缺口的设计分析。
+006 已实现的能力可由上述当前源码确认；Native Reload、Handoff、观察期和自动回切仍不能从这些文件推导为已实现。
 
 ## 2. 本仓库既有研究
 

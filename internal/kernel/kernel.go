@@ -1,4 +1,4 @@
-// Package kernel 负责基础能力的启动、排空和配置事务。
+// Package kernel 负责底层 App 组件计划的启动、排空和配置事务。
 package kernel
 
 import (
@@ -8,33 +8,33 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/sync/errgroup"
-
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
 const (
-	// DefaultDebounce 是文件配置事件的默认防抖时间。
+	// DefaultDebounce 是文件配置变化的默认防抖时间。
 	DefaultDebounce = 250 * time.Millisecond
-	// DefaultReloadTimeout 是启动和单次重载事务的默认总超时。
+	// DefaultReloadTimeout 是启动和单次重载事务的默认超时。
 	DefaultReloadTimeout = 30 * time.Second
 )
 
-// Options 配置 kernel 的配置监听和事务边界。
+// Options 配置 Kernel 的监听和事务边界。
 type Options struct {
 	Debounce      time.Duration
 	ReloadTimeout time.Duration
 	Logging       *kernellogging.Manager
 }
 
-// ReloadResult 描述一次配置加载对运行实例产生的影响。
+// ReloadResult 描述一轮配置候选对当前有效状态产生的结果。
 type ReloadResult struct {
-	Applied        bool
-	PreviousDigest string
-	CurrentDigest  string
-	Changed        []ID
+	Applied         bool
+	PreviousDigest  string
+	CurrentDigest   string
+	Changed         []app.ID
+	RestartRequired []app.ID
 }
 
 type kernelState uint8
@@ -45,7 +45,7 @@ const (
 	kernelStopped
 )
 
-// Kernel 管理彼此独立的基础能力定义。
+// Kernel 执行一份显式安装的底层 App 组件计划。
 type Kernel struct {
 	loader  *config.Loader
 	options Options
@@ -53,12 +53,12 @@ type Kernel struct {
 	operationMu sync.Mutex
 	mu          sync.Mutex
 	state       kernelState
-	components  []component
-	registered  map[ID]struct{}
+	installed   bool
+	components  []app.RuntimeComponent
 	snapshot    config.Snapshot
 }
 
-// New 创建尚未启动的 kernel。
+// New 创建尚未安装组件计划的空 Kernel。
 func New(loader *config.Loader, options Options) (*Kernel, error) {
 	if loader == nil {
 		return nil, fmt.Errorf("kernel config loader is nil")
@@ -78,19 +78,13 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 	if options.ReloadTimeout == 0 {
 		options.ReloadTimeout = DefaultReloadTimeout
 	}
-	return &Kernel{
-		loader:     loader,
-		options:    options,
-		registered: make(map[ID]struct{}),
-	}, nil
+	return &Kernel{loader: loader, options: options}, nil
 }
 
 // Name 返回进程监督参与者名称。
-func (k *Kernel) Name() string {
-	return "kernel"
-}
+func (k *Kernel) Name() string { return "kernel" }
 
-// LoggingManager 返回 Kernel 与 Logger Capability 共享的稳定日志 manager。
+// LoggingManager 返回配置加载前也始终可用的基线日志委托。
 func (k *Kernel) LoggingManager() *kernellogging.Manager {
 	if k == nil {
 		return nil
@@ -98,21 +92,31 @@ func (k *Kernel) LoggingManager() *kernellogging.Manager {
 	return k.options.Logging
 }
 
-func (k *Kernel) register(item component) error {
+// Install 把完整冻结计划一次性安装到尚未启动的空 Kernel。
+func (k *Kernel) Install(plan app.FrozenPlan) error {
+	if k == nil {
+		return fmt.Errorf("kernel is nil")
+	}
+	if err := plan.Validate(); err != nil {
+		return fmt.Errorf("validate component plan: %w", err)
+	}
+	components := plan.Components()
+	k.operationMu.Lock()
+	defer k.operationMu.Unlock()
 	k.mu.Lock()
 	defer k.mu.Unlock()
 	if k.state != kernelCreated {
-		return fmt.Errorf("register component %s after kernel start", item.id())
+		return fmt.Errorf("install component plan after kernel start")
 	}
-	if _, exists := k.registered[item.id()]; exists {
-		return fmt.Errorf("kernel component %s already registered", item.id())
+	if k.installed {
+		return fmt.Errorf("kernel component plan is already installed")
 	}
-	k.registered[item.id()] = struct{}{}
-	k.components = append(k.components, item)
+	k.components = components
+	k.installed = true
 	return nil
 }
 
-// Start 加载初始配置并按注册顺序构造、启动和发布全部能力。
+// Start 加载初始配置，并按计划顺序准备和发布运行组件。
 func (k *Kernel) Start(ctx context.Context) error {
 	if ctx == nil {
 		return ErrNilContext
@@ -129,7 +133,7 @@ func (k *Kernel) Start(ctx context.Context) error {
 		k.mu.Unlock()
 		return fmt.Errorf("kernel already started")
 	}
-	components := append([]component(nil), k.components...)
+	components := append([]app.RuntimeComponent(nil), k.components...)
 	k.mu.Unlock()
 
 	operationCtx, cancel := context.WithTimeout(ctx, k.options.ReloadTimeout)
@@ -139,35 +143,53 @@ func (k *Kernel) Start(ctx context.Context) error {
 		return fmt.Errorf("load initial kernel config: %w", err)
 	}
 
-	staged := make([]component, 0, len(components))
-	for _, item := range components {
-		changed, err := item.stage(snapshot)
-		if err != nil {
-			return err
+	started := make([]app.RuntimeComponent, 0, len(components))
+	for _, component := range components {
+		changed, stageErr := component.Stage(snapshot)
+		if stageErr != nil {
+			return k.failStart(ctx, components, started, stageErr)
 		}
-		if changed {
-			staged = append(staged, item)
+		if !changed {
+			continue
 		}
-	}
-	for _, item := range staged {
-		if err := item.buildStart(operationCtx); err != nil {
-			cleanupErr := discardCandidatesAfterFailure(ctx, k.options.ReloadTimeout, staged)
-			return errors.Join(err, cleanupErr)
+		if buildErr := prepareComponent(operationCtx, component); buildErr != nil {
+			cleanupErr := component.DiscardCandidate(context.WithoutCancel(ctx))
+			return k.failStart(ctx, components, started, errors.Join(buildErr, cleanupErr))
 		}
-	}
-	for _, item := range staged {
-		item.publishInitial()
+		component.PublishInitial()
+		started = append(started, component)
 	}
 
 	k.mu.Lock()
 	k.snapshot = snapshot
 	k.state = kernelRunning
 	k.mu.Unlock()
-	k.options.Logging.Info("kernel started", pkglogger.Int("capabilities", len(components)))
+	k.options.Logging.Info("kernel started", pkglogger.Int("components", len(components)))
 	return nil
 }
 
-// Reload 执行一轮全体受影响能力的原子配置事务。
+func (k *Kernel) failStart(ctx context.Context, components, started []app.RuntimeComponent, cause error) error {
+	cleanupErr := stopStartedAfterFailure(ctx, k.options.ReloadTimeout, started)
+	for _, component := range components {
+		component.StopPending()
+	}
+	k.mu.Lock()
+	k.state = kernelStopped
+	k.mu.Unlock()
+	return errors.Join(cause, cleanupErr)
+}
+
+func prepareComponent(ctx context.Context, component app.RuntimeComponent) error {
+	if err := component.Build(ctx); err != nil {
+		return err
+	}
+	if err := component.Start(ctx); err != nil {
+		return err
+	}
+	return component.Ready(ctx)
+}
+
+// Reload 执行一轮配置预检、候选准备、排空和提交事务。
 func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 	if ctx == nil {
 		return ReloadResult{}, ErrNilContext
@@ -184,7 +206,7 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 		}
 		return ReloadResult{}, ErrNotRunning
 	}
-	components := append([]component(nil), k.components...)
+	components := append([]app.RuntimeComponent(nil), k.components...)
 	previousSnapshot := k.snapshot
 	k.mu.Unlock()
 
@@ -194,84 +216,65 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 	if err != nil {
 		return ReloadResult{}, fmt.Errorf("load candidate kernel config: %w", err)
 	}
-	result := ReloadResult{
-		PreviousDigest: previousSnapshot.Digest(),
-		CurrentDigest:  candidateSnapshot.Digest(),
-	}
+	result := ReloadResult{PreviousDigest: previousSnapshot.Digest(), CurrentDigest: previousSnapshot.Digest()}
 
-	changed := make([]component, 0, len(components))
-	for _, item := range components {
-		componentChanged, err := item.stage(candidateSnapshot)
-		if err != nil {
-			return result, err
+	changed := make([]app.RuntimeComponent, 0, len(components))
+	for _, component := range components {
+		componentChanged, stageErr := component.Stage(candidateSnapshot)
+		if stageErr != nil {
+			return result, stageErr
 		}
-		if componentChanged {
-			changed = append(changed, item)
-			result.Changed = append(result.Changed, item.id())
+		if !componentChanged {
+			continue
 		}
+		changed = append(changed, component)
+		result.Changed = append(result.Changed, component.ID())
+		if component.Policy() == app.RestartRequired {
+			result.RestartRequired = append(result.RestartRequired, component.ID())
+		}
+	}
+	if len(result.RestartRequired) > 0 {
+		return result, &app.RestartRequiredError{Components: append([]app.ID(nil), result.RestartRequired...)}
 	}
 	if len(changed) == 0 {
 		k.mu.Lock()
 		k.snapshot = candidateSnapshot
 		k.mu.Unlock()
+		result.CurrentDigest = candidateSnapshot.Digest()
 		k.options.Logging.Debug("kernel reload unchanged")
 		return result, nil
 	}
 
-	drained := make([]<-chan struct{}, 0, len(changed))
-	for _, item := range changed {
-		ready, err := item.beginDrain()
-		if err != nil {
-			for _, begun := range changed[:len(drained)] {
-				begun.rollback()
-			}
-			return result, fmt.Errorf("drain component %s: %w", item.id(), err)
+	prepared := make([]app.RuntimeComponent, 0, len(changed))
+	for _, component := range changed {
+		if prepareErr := prepareComponent(operationCtx, component); prepareErr != nil {
+			cleanupErr := discardCandidatesAfterFailure(ctx, k.options.ReloadTimeout, append(prepared, component))
+			return result, errors.Join(prepareErr, cleanupErr)
 		}
-		drained = append(drained, ready)
+		prepared = append(prepared, component)
 	}
 
-	group, groupCtx := errgroup.WithContext(operationCtx)
-	group.Go(func() error {
-		for _, item := range changed {
-			if err := item.buildStart(groupCtx); err != nil {
-				return err
-			}
+	drained, drainErr := drainReverse(operationCtx, changed)
+	if drainErr != nil {
+		for index := len(drained) - 1; index >= 0; index-- {
+			drained[index].Rollback()
 		}
-		return nil
-	})
-	group.Go(func() error {
-		for index, ready := range drained {
-			select {
-			case <-groupCtx.Done():
-				return fmt.Errorf("wait component %s drain: %w", changed[index].id(), groupCtx.Err())
-			case <-ready:
-			}
-		}
-		return nil
-	})
-	if err := group.Wait(); err != nil {
 		cleanupErr := discardCandidatesAfterFailure(ctx, k.options.ReloadTimeout, changed)
-		for _, item := range changed {
-			item.rollback()
-		}
-		return result, errors.Join(err, cleanupErr)
+		return result, errors.Join(drainErr, cleanupErr)
 	}
-
-	for _, item := range changed {
-		item.prepareCommit()
+	for _, component := range changed {
+		component.Commit()
 	}
 	k.mu.Lock()
 	k.snapshot = candidateSnapshot
 	k.mu.Unlock()
-	for _, item := range changed {
-		item.publish()
+	result.CurrentDigest = candidateSnapshot.Digest()
+	for _, component := range changed {
+		component.Resume()
 	}
 	result.Applied = true
 
-	var cleanupErr error
-	for index := len(changed) - 1; index >= 0; index-- {
-		cleanupErr = errors.Join(cleanupErr, changed[index].stopPrevious(operationCtx))
-	}
+	cleanupErr := stopPreviousReverse(operationCtx, changed)
 	if cleanupErr != nil {
 		return result, &CommittedCleanupError{Err: cleanupErr}
 	}
@@ -279,7 +282,25 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 	return result, nil
 }
 
-// Stop 排空所有能力并按反向注册顺序停止当前实例。
+func drainReverse(ctx context.Context, components []app.RuntimeComponent) ([]app.RuntimeComponent, error) {
+	drained := make([]app.RuntimeComponent, 0, len(components))
+	for index := len(components) - 1; index >= 0; index-- {
+		component := components[index]
+		ready, err := component.BeginDrain()
+		if err != nil {
+			return drained, fmt.Errorf("drain component %s: %w", component.ID(), err)
+		}
+		drained = append(drained, component)
+		select {
+		case <-ctx.Done():
+			return drained, fmt.Errorf("wait component %s drain: %w", component.ID(), ctx.Err())
+		case <-ready:
+		}
+	}
+	return drained, nil
+}
+
+// Stop 排空所有运行组件，并按计划反序释放 Kernel 拥有的资源。
 func (k *Kernel) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return ErrNilContext
@@ -292,48 +313,33 @@ func (k *Kernel) Stop(ctx context.Context) error {
 		k.mu.Unlock()
 		return nil
 	}
-	components := append([]component(nil), k.components...)
+	components := append([]app.RuntimeComponent(nil), k.components...)
 	if k.state == kernelCreated {
 		k.state = kernelStopped
 		k.mu.Unlock()
-		for _, item := range components {
-			item.stopPending()
+		for _, component := range components {
+			component.StopPending()
 		}
 		return nil
 	}
 	k.mu.Unlock()
 
-	drained := make([]<-chan struct{}, 0, len(components))
-	for _, item := range components {
-		ready, err := item.beginDrain()
-		if err != nil {
-			for _, begun := range components[:len(drained)] {
-				begun.rollback()
-			}
-			return fmt.Errorf("drain component %s for stop: %w", item.id(), err)
+	drained, err := drainReverse(ctx, components)
+	if err != nil {
+		for index := len(drained) - 1; index >= 0; index-- {
+			drained[index].Rollback()
 		}
-		drained = append(drained, ready)
+		return err
 	}
-	for index, ready := range drained {
-		select {
-		case <-ctx.Done():
-			for _, item := range components {
-				item.rollback()
-			}
-			return fmt.Errorf("wait component %s drain for stop: %w", components[index].id(), ctx.Err())
-		case <-ready:
-		}
-	}
-	for _, item := range components {
-		item.prepareStop()
+	for index := len(components) - 1; index >= 0; index-- {
+		components[index].PrepareStop()
 	}
 	k.mu.Lock()
 	k.state = kernelStopped
 	k.mu.Unlock()
-
 	var joined error
 	for index := len(components) - 1; index >= 0; index-- {
-		joined = errors.Join(joined, components[index].stopCurrent(ctx))
+		joined = errors.Join(joined, components[index].StopCurrent(ctx))
 	}
 	if joined == nil {
 		k.options.Logging.Info("kernel stopped")
@@ -341,16 +347,41 @@ func (k *Kernel) Stop(ctx context.Context) error {
 	return joined
 }
 
-func discardCandidates(ctx context.Context, components []component) error {
+func discardCandidatesAfterFailure(parent context.Context, timeout time.Duration, components []app.RuntimeComponent) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
+	defer cancel()
 	var joined error
 	for index := len(components) - 1; index >= 0; index-- {
-		joined = errors.Join(joined, components[index].discardCandidate(ctx))
+		joined = errors.Join(joined, components[index].DiscardCandidate(ctx))
 	}
 	return joined
 }
 
-func discardCandidatesAfterFailure(parent context.Context, timeout time.Duration, components []component) error {
+func stopPreviousReverse(ctx context.Context, components []app.RuntimeComponent) error {
+	var joined error
+	for index := len(components) - 1; index >= 0; index-- {
+		joined = errors.Join(joined, components[index].StopPrevious(ctx))
+	}
+	return joined
+}
+
+func stopStartedAfterFailure(parent context.Context, timeout time.Duration, components []app.RuntimeComponent) error {
+	if len(components) == 0 {
+		return nil
+	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), timeout)
 	defer cancel()
-	return discardCandidates(ctx, components)
+	drained, err := drainReverse(ctx, components)
+	if err != nil {
+		return err
+	}
+	for index := len(components) - 1; index >= 0; index-- {
+		components[index].PrepareStop()
+	}
+	var joined error
+	for index := len(components) - 1; index >= 0; index-- {
+		joined = errors.Join(joined, components[index].StopCurrent(ctx))
+	}
+	_ = drained
+	return joined
 }

@@ -10,7 +10,7 @@ var (
 	ErrNilContext = errors.New("kernel context is nil")
 	// ErrNotRunning 表示操作要求 kernel 已经完成启动。
 	ErrNotRunning = errors.New("kernel is not running")
-	// ErrStopped 表示 kernel 或能力入口已经永久停止。
+	// ErrStopped 表示 Kernel 已经永久停止。
 	ErrStopped = errors.New("kernel is stopped")
 )
 

@@ -1,6 +1,6 @@
 # 组件级重载策略
 
-> 本章中的策略枚举、观察期和切换后回滚是目标设计，当前 Kernel 尚未实现。当前实现差异见本章末尾。
+> 006 已实现 `NoReload`、`KernelInstanceSwap` 和 `RestartRequired` 的第一阶段状态机；`NativeAtomicReload`、`ComponentHandoff`、观察期和切换后回滚仍是目标设计。当前差异见本章末尾。
 
 ## 1. 选择策略，而不是统一套用 Reload
 
@@ -167,15 +167,15 @@ Kernel 只编排交接步骤、超时、错误和诊断，不猜测组件内部�
 
 | 行为 | 当前实现 | 目标设计 |
 | --- | --- | --- |
-| 配置变化策略 | 受托管组件统一候选换代 | 每组件显式选择五种策略；无配置组件选择 `NoReload` |
-| 候选 Build/Start | 已实现 | 保留，并增加可选 Ready |
+| 配置变化策略 | 已实现 NoReload、Swap、RestartRequired | 后续补充 Native 与 Handoff |
+| 候选 Build/Start/Ready | 已实现 | 保留 |
 | 旧租约排空 | 已实现 | 保留 |
 | 提交前失败保留旧代 | 已实现 | 保留 |
-| 原子替换 Handle | 已实现 | 保留 |
+| 原子替换 Lease Access | 已实现 | 保留 |
 | 切换后旧实例 | 立即反向 Stop | 观察期内保留为上一代 |
 | 切换后 Health | 未实现 | 观察期持续检查 |
 | 切换后自动回切 | 未实现 | 健康失败后排空新租约并回切 |
-| 排他资源策略 | 未表达 | Handoff 或 RestartRequired |
+| 排他资源策略 | 可选择 RestartRequired | 后续增加 Handoff |
 | 后续配置变化 | Watch 串行触发 Reload | 观察期合并最新变化后串行处理 |
 
-因此后续实施不能只在现有 `Definition` 增加一个枚举字段。它会改变实例所有权、Stop 时机、Kernel 状态机、Watch 排队、健康契约、错误类型、测试矩阵和诊断视图，必须作为独立架构变更设计。
+因此后续观察期、Native 与 Handoff 不能只在现有 `Definition` 增加枚举字段。它们会改变实例所有权、Stop 时机、Kernel 状态机、Watch 排队、健康契约、错误类型、测试矩阵和诊断视图，必须作为独立架构变更设计。

@@ -8,7 +8,7 @@
 | --- | --- |
 | 项目定位与边界 | [根 README](../../../README.md) |
 | Kernel 运行语义 | [Kernel README](../../../internal/kernel/README.md) |
-| Capability 约束 | [Capability README](../../../internal/kernel/capability/README.md) |
+| 当前 App 组件约束 | [Kernel App README](../../../internal/kernel/app/README.md) |
 | 进程入口 | `cmd/app/main.go` |
 | 显式组合清单 | `internal/kernel/composition/composition.go` |
 | Definition/Register | `internal/kernel/definition.go` |

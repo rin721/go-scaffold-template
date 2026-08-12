@@ -27,8 +27,19 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compose(disabled) error = %v", err)
 	}
-	if disabled.Logger == nil || disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
+	if disabled.Logger == nil || disabled.Clock == nil || disabled.IDGenerator == nil || disabled.Validator == nil || disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
 		t.Fatalf("Compose(disabled) = %#v", disabled)
+	}
+	if _, err := disabled.IDGenerator.New(); err != nil {
+		t.Fatalf("IDGenerator.New() error = %v", err)
+	}
+	if err := disabled.Validator.Struct(struct {
+		Name string `validate:"required"`
+	}{Name: "ready"}); err != nil {
+		t.Fatalf("Validator.Struct() error = %v", err)
+	}
+	if disabled.Clock.Now().IsZero() {
+		t.Fatal("Clock.Now() returned zero time")
 	}
 
 	enabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
@@ -79,8 +90,11 @@ func TestComposeCLIErrorReturnsZeroCapabilities(t *testing.T) {
 	if err == nil {
 		t.Fatal("Compose(invalid CLI) error = nil")
 	}
-	if capabilities.Logger != nil || capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
+	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
 		t.Fatalf("Compose(invalid CLI) = %#v, want zero capabilities", capabilities)
+	}
+	if _, err := Compose(runtime, Options{}); err != nil {
+		t.Fatalf("Compose(valid after CLI failure) error = %v", err)
 	}
 }
 
@@ -93,7 +107,7 @@ func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
 	if err == nil {
 		t.Fatal("second Compose() error = nil")
 	}
-	if capabilities.Logger != nil || capabilities.Database != nil {
+	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil {
 		t.Fatal("second Compose() returned partial capabilities")
 	}
 	if capabilities.Configuration != nil || capabilities.CLI != nil {

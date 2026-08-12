@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
@@ -21,6 +22,10 @@ type testConfig struct {
 type testInstance struct {
 	name    string
 	version string
+}
+
+type testAccess interface {
+	Use(context.Context, func(*testInstance) error) error
 }
 
 type mutableSource struct {
@@ -63,41 +68,157 @@ func (l *eventLog) snapshot() []string {
 	return append([]string(nil), l.events...)
 }
 
-func TestKernelStartsAndStopsInRegistrationOrder(t *testing.T) {
-	source := &mutableSource{values: map[string]any{
-		"first":  map[string]any{"version": "v1"},
-		"second": map[string]any{"version": "v1"},
-	}}
-	runtime := newTestKernel(t, source, Options{})
-	log := &eventLog{}
-	registerTestComponent(t, runtime, "first", log, nil)
-	registerTestComponent(t, runtime, "second", log, nil)
+type testAssembly struct {
+	runtime *Kernel
+	plan    *app.Plan
+}
 
-	if err := runtime.Start(t.Context()); err != nil {
+func newTestAssembly(t *testing.T, source config.Source, options Options) *testAssembly {
+	t.Helper()
+	if options.Logging == nil {
+		options.Logging = newTestLoggingManager(t)
+	}
+	runtime, err := New(config.New(source), options)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return &testAssembly{runtime: runtime, plan: app.NewPlan()}
+}
+
+func (a *testAssembly) add(t *testing.T, name string, policy app.ReloadPolicy, log *eventLog, beforeBuild func(context.Context, testConfig) error, stop func(*testInstance) error) testAccess {
+	t.Helper()
+	source, err := app.Configured(name, func(snapshot config.Snapshot) (testConfig, error) {
+		var cfg testConfig
+		if err := snapshot.DecodeSection(name, &cfg); err != nil {
+			return testConfig{}, err
+		}
+		if cfg.Version == "" {
+			return testConfig{}, fmt.Errorf("version is required")
+		}
+		return cfg, nil
+	}, nil)
+	if err != nil {
+		t.Fatalf("Configured(%s) error = %v", name, err)
+	}
+	definition, err := app.ManagedConfigured(
+		app.ID(name), source, app.FixedDependencies(struct{}{}),
+		func(ctx context.Context, cfg testConfig, _ struct{}) (*testInstance, error) {
+			if beforeBuild != nil {
+				if err := beforeBuild(ctx, cfg); err != nil {
+					return nil, err
+				}
+			}
+			log.add("build:" + name + ":" + cfg.Version)
+			return &testInstance{name: name, version: cfg.Version}, nil
+		},
+		app.Leased(func(lease app.Lease[*testInstance]) (testAccess, error) { return lease, nil }),
+		policy,
+		app.WithStart(func(_ context.Context, instance *testInstance) error {
+			log.add("start:" + name + ":" + instance.version)
+			return nil
+		}),
+		app.WithStop(func(_ context.Context, instance *testInstance) error {
+			log.add("stop:" + name + ":" + instance.version)
+			if stop != nil {
+				return stop(instance)
+			}
+			return nil
+		}),
+	)
+	if err != nil {
+		t.Fatalf("ManagedConfigured(%s) error = %v", name, err)
+	}
+	added, err := app.Add(a.plan, definition)
+	if err != nil {
+		t.Fatalf("Add(%s) error = %v", name, err)
+	}
+	return added.Output
+}
+
+func (a *testAssembly) install(t *testing.T) {
+	t.Helper()
+	frozen, err := a.plan.Freeze()
+	if err != nil {
+		t.Fatalf("Freeze() error = %v", err)
+	}
+	if err := a.runtime.Install(frozen); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+}
+
+func TestKernelStartsAndStopsInPlanOrder(t *testing.T) {
+	assembly := newTestAssembly(t, &mutableSource{values: map[string]any{
+		"first": map[string]any{"version": "v1"}, "second": map[string]any{"version": "v1"},
+	}}, Options{})
+	log := &eventLog{}
+	assembly.add(t, "first", app.KernelInstanceSwap, log, nil, nil)
+	assembly.add(t, "second", app.KernelInstanceSwap, log, nil, nil)
+	assembly.install(t)
+
+	if err := assembly.runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := runtime.Stop(t.Context()); err != nil {
+	if err := assembly.runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	want := []string{
-		"build:first:v1", "start:first:v1",
-		"build:second:v1", "start:second:v1",
+		"build:first:v1", "start:first:v1", "build:second:v1", "start:second:v1",
 		"stop:second:v1", "stop:first:v1",
 	}
 	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %#v, want %#v", got, want)
 	}
-	if err := runtime.Stop(t.Context()); err != nil {
+	if err := assembly.runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("second Stop() error = %v", err)
 	}
 }
 
-func TestReloadDrainsOldUseWhileBuildingCandidate(t *testing.T) {
+func TestKernelStartFailureCleansPublishedComponentsAndStopsAccess(t *testing.T) {
+	assembly := newTestAssembly(t, &mutableSource{values: map[string]any{
+		"first": map[string]any{"version": "v1"}, "second": map[string]any{"version": "bad"},
+	}}, Options{})
+	log := &eventLog{}
+	first := assembly.add(t, "first", app.KernelInstanceSwap, log, nil, nil)
+	assembly.add(t, "second", app.KernelInstanceSwap, log, func(context.Context, testConfig) error {
+		return errors.New("start transaction rejected")
+	}, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err == nil {
+		t.Fatal("Start() error = nil")
+	}
+	want := []string{"build:first:v1", "start:first:v1", "stop:first:v1"}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+	if err := first.Use(t.Context(), func(*testInstance) error { return nil }); !errors.Is(err, app.ErrStopped) {
+		t.Fatalf("Use() after failed Start error = %v", err)
+	}
+	if err := assembly.runtime.Start(t.Context()); !errors.Is(err, ErrStopped) {
+		t.Fatalf("second Start() error = %v, want ErrStopped", err)
+	}
+}
+
+func TestKernelInstallRequiresFrozenPlanAndIsAtomic(t *testing.T) {
+	assembly := newTestAssembly(t, config.MapSource("empty", map[string]any{}), Options{})
+	if err := assembly.runtime.Install(app.FrozenPlan{}); err == nil {
+		t.Fatal("Install(zero plan) error = nil")
+	}
+	assembly.install(t)
+	second, err := app.NewPlan().Freeze()
+	if err != nil {
+		t.Fatalf("Freeze(second) error = %v", err)
+	}
+	if err := assembly.runtime.Install(second); err == nil {
+		t.Fatal("Install(second plan) error = nil")
+	}
+}
+
+func TestReloadKeepsOldAccessAvailableWhileCandidateBuilds(t *testing.T) {
 	source := &mutableSource{values: versionValues("service", "v1")}
-	runtime := newTestKernel(t, source, Options{ReloadTimeout: 3 * time.Second})
+	assembly := newTestAssembly(t, source, Options{ReloadTimeout: 3 * time.Second})
 	buildStarted := make(chan struct{})
 	allowBuild := make(chan struct{})
-	access := registerTestComponent(t, runtime, "service", &eventLog{}, func(ctx context.Context, cfg testConfig) error {
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, func(ctx context.Context, cfg testConfig) error {
 		if cfg.Version != "v2" {
 			return nil
 		}
@@ -108,93 +229,49 @@ func TestReloadDrainsOldUseWhileBuildingCandidate(t *testing.T) {
 		case <-allowBuild:
 			return nil
 		}
-	})
-	if err := runtime.Start(t.Context()); err != nil {
+	}, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-
-	oldUseStarted := make(chan struct{})
-	releaseOldUse := make(chan struct{})
-	oldUseDone := make(chan error, 1)
-	go func() {
-		oldUseDone <- access.Use(t.Context(), func(instance *testInstance) error {
-			if instance.version != "v1" {
-				return fmt.Errorf("old version = %s", instance.version)
-			}
-			close(oldUseStarted)
-			<-releaseOldUse
-			return nil
-		})
-	}()
-	<-oldUseStarted
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
 
 	source.set(versionValues("service", "v2"))
 	reloadDone := make(chan error, 1)
 	go func() {
-		_, err := runtime.Reload(t.Context())
+		_, err := assembly.runtime.Reload(t.Context())
 		reloadDone <- err
 	}()
 	<-buildStarted
-
-	newUseEntered := make(chan string, 1)
-	newUseDone := make(chan error, 1)
-	go func() {
-		newUseDone <- access.Use(t.Context(), func(instance *testInstance) error {
-			newUseEntered <- instance.version
-			return nil
-		})
-	}()
-	select {
-	case version := <-newUseEntered:
-		t.Fatalf("new Use entered during drain with version %s", version)
-	case <-time.After(100 * time.Millisecond):
-	}
-
+	assertAccessVersion(t, access, "v1")
 	close(allowBuild)
-	select {
-	case err := <-reloadDone:
-		t.Fatalf("Reload() completed before old use drained: %v", err)
-	case <-time.After(100 * time.Millisecond):
-	}
-	close(releaseOldUse)
-	if err := <-oldUseDone; err != nil {
-		t.Fatalf("old Use() error = %v", err)
-	}
 	if err := <-reloadDone; err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
-	if err := <-newUseDone; err != nil {
-		t.Fatalf("new Use() error = %v", err)
-	}
-	if version := <-newUseEntered; version != "v2" {
-		t.Fatalf("new version = %s, want v2", version)
-	}
+	assertAccessVersion(t, access, "v2")
 }
 
-func TestReloadFailureRestoresEveryOldInstance(t *testing.T) {
+func TestReloadFailureRetainsEveryOldInstance(t *testing.T) {
 	source := &mutableSource{values: map[string]any{
-		"first":  map[string]any{"version": "v1"},
-		"second": map[string]any{"version": "v1"},
+		"first": map[string]any{"version": "v1"}, "second": map[string]any{"version": "v1"},
 	}}
-	runtime := newTestKernel(t, source, Options{})
-	first := registerTestComponent(t, runtime, "first", &eventLog{}, nil)
-	second := registerTestComponent(t, runtime, "second", &eventLog{}, func(_ context.Context, cfg testConfig) error {
+	assembly := newTestAssembly(t, source, Options{})
+	first := assembly.add(t, "first", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	second := assembly.add(t, "second", app.KernelInstanceSwap, &eventLog{}, func(_ context.Context, cfg testConfig) error {
 		if cfg.Version == "bad" {
 			return errors.New("candidate rejected")
 		}
 		return nil
-	})
-	if err := runtime.Start(t.Context()); err != nil {
+	}, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
 	source.set(map[string]any{
-		"first":  map[string]any{"version": "v2"},
-		"second": map[string]any{"version": "bad"},
+		"first": map[string]any{"version": "v2"}, "second": map[string]any{"version": "bad"},
 	})
-	result, err := runtime.Reload(t.Context())
+	result, err := assembly.runtime.Reload(t.Context())
 	if err == nil || result.Applied {
 		t.Fatalf("Reload() = %#v, %v; want rollback error", result, err)
 	}
@@ -202,39 +279,15 @@ func TestReloadFailureRestoresEveryOldInstance(t *testing.T) {
 	assertAccessVersion(t, second, "v1")
 }
 
-func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
-	cleanupErr := errors.New("close old failed")
-	source := &mutableSource{values: versionValues("service", "v1")}
-	runtime := newTestKernel(t, source, Options{})
-	access := registerTestComponentWithStop(t, runtime, "service", func(instance *testInstance) error {
-		if instance.version == "v1" {
-			return cleanupErr
-		}
-		return nil
-	})
-	if err := runtime.Start(t.Context()); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-
-	source.set(versionValues("service", "v2"))
-	result, err := runtime.Reload(t.Context())
-	var committed *CommittedCleanupError
-	if !result.Applied || !errors.As(err, &committed) || !errors.Is(err, cleanupErr) {
-		t.Fatalf("Reload() = %#v, %v; want committed cleanup error", result, err)
-	}
-	assertAccessVersion(t, access, "v2")
-}
-
 func TestReloadTimeoutRestoresOldInstance(t *testing.T) {
 	source := &mutableSource{values: versionValues("service", "v1")}
-	runtime := newTestKernel(t, source, Options{ReloadTimeout: 100 * time.Millisecond})
-	access := registerTestComponent(t, runtime, "service", &eventLog{}, nil)
-	if err := runtime.Start(t.Context()); err != nil {
+	assembly := newTestAssembly(t, source, Options{ReloadTimeout: 100 * time.Millisecond})
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
 	holding := make(chan struct{})
 	release := make(chan struct{})
 	go func() {
@@ -246,7 +299,7 @@ func TestReloadTimeoutRestoresOldInstance(t *testing.T) {
 	}()
 	<-holding
 	source.set(versionValues("service", "v2"))
-	result, err := runtime.Reload(t.Context())
+	result, err := assembly.runtime.Reload(t.Context())
 	if err == nil || result.Applied {
 		t.Fatalf("Reload() = %#v, %v; want timeout rollback", result, err)
 	}
@@ -254,127 +307,124 @@ func TestReloadTimeoutRestoresOldInstance(t *testing.T) {
 	assertAccessVersion(t, access, "v1")
 }
 
-func TestReloadSkipsUnchangedComponent(t *testing.T) {
-	source := &mutableSource{values: map[string]any{
-		"service": map[string]any{"version": "v1"},
-		"other":   map[string]any{"value": "one"},
-	}}
-	runtime := newTestKernel(t, source, Options{})
-	log := &eventLog{}
-	registerTestComponent(t, runtime, "service", log, nil)
-	if err := runtime.Start(t.Context()); err != nil {
+func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
+	cleanupErr := errors.New("close old failed")
+	source := &mutableSource{values: versionValues("service", "v1")}
+	assembly := newTestAssembly(t, source, Options{})
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, func(instance *testInstance) error {
+		if instance.version == "v1" {
+			return cleanupErr
+		}
+		return nil
+	})
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	source.set(versionValues("service", "v2"))
+	result, err := assembly.runtime.Reload(t.Context())
+	var committed *CommittedCleanupError
+	if !result.Applied || !errors.As(err, &committed) || !errors.Is(err, cleanupErr) {
+		t.Fatalf("Reload() = %#v, %v; want committed cleanup error", result, err)
+	}
+	assertAccessVersion(t, access, "v2")
+}
 
+func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
+	source := &mutableSource{values: map[string]any{
+		"swap": map[string]any{"version": "v1"}, "fixed-port": map[string]any{"version": "v1"},
+	}}
+	assembly := newTestAssembly(t, source, Options{})
+	log := &eventLog{}
+	swapAccess := assembly.add(t, "swap", app.KernelInstanceSwap, log, nil, nil)
+	restartAccess := assembly.add(t, "fixed-port", app.RestartRequired, log, nil, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	before := log.snapshot()
 	source.set(map[string]any{
-		"service": map[string]any{"version": "v1"},
-		"other":   map[string]any{"value": "two"},
+		"swap": map[string]any{"version": "v2"}, "fixed-port": map[string]any{"version": "v2"},
 	})
-	result, err := runtime.Reload(t.Context())
-	if err != nil {
-		t.Fatalf("Reload() error = %v", err)
+	result, err := assembly.runtime.Reload(t.Context())
+	if !errors.Is(err, app.ErrRestartRequired) || result.Applied {
+		t.Fatalf("Reload() = %#v, %v; want restart required", result, err)
 	}
-	if result.Applied || len(result.Changed) != 0 {
-		t.Fatalf("Reload() result = %#v, want unchanged", result)
+	if !reflect.DeepEqual(result.RestartRequired, []app.ID{"fixed-port"}) {
+		t.Fatalf("RestartRequired = %#v", result.RestartRequired)
 	}
-	if got := log.snapshot(); !reflect.DeepEqual(got, []string{"build:service:v1", "start:service:v1"}) {
-		t.Fatalf("events = %#v", got)
+	if result.CurrentDigest != result.PreviousDigest {
+		t.Fatalf("restart-required digest changed: %#v", result)
+	}
+	if got := log.snapshot(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("events changed = %#v, want %#v", got, before)
+	}
+	assertAccessVersion(t, swapAccess, "v1")
+	assertAccessVersion(t, restartAccess, "v1")
+}
+
+func TestReloadSkipsUnchangedComponent(t *testing.T) {
+	source := &mutableSource{values: map[string]any{
+		"service": map[string]any{"version": "v1"}, "other": map[string]any{"value": "one"},
+	}}
+	assembly := newTestAssembly(t, source, Options{})
+	log := &eventLog{}
+	assembly.add(t, "service", app.KernelInstanceSwap, log, nil, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	source.set(map[string]any{
+		"service": map[string]any{"version": "v1"}, "other": map[string]any{"value": "two"},
+	})
+	result, err := assembly.runtime.Reload(t.Context())
+	if err != nil || result.Applied || len(result.Changed) != 0 {
+		t.Fatalf("Reload() = %#v, %v; want unchanged", result, err)
 	}
 }
 
-func TestRegisterRejectsDuplicateID(t *testing.T) {
-	source := &mutableSource{values: versionValues("service", "v1")}
-	runtime := newTestKernel(t, source, Options{})
-	registerTestComponent(t, runtime, "service", &eventLog{}, nil)
-	definition := testDefinition("service", &eventLog{}, nil, nil)
-	if _, err := Register(runtime, definition); err == nil {
-		t.Fatal("Register(duplicate) error = nil")
+func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeVersionFile(t, path, "v1")
+	assembly := newTestAssembly(t, config.FileSource(path), Options{Debounce: 30 * time.Millisecond, ReloadTimeout: time.Second})
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, func(_ context.Context, cfg testConfig) error {
+		if cfg.Version == "bad" {
+			return errors.New("bad config")
+		}
+		return nil
+	}, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
 	}
-}
-
-func newTestKernel(t *testing.T, source config.Source, options Options) *Kernel {
-	t.Helper()
-	if options.Logging == nil {
-		options.Logging = newTestLoggingManager(t)
+	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	watchCtx, cancel := context.WithCancel(t.Context())
+	errorsSeen := make(chan error, 2)
+	watchDone := make(chan error, 1)
+	go func() { watchDone <- assembly.runtime.Watch(watchCtx, func(err error) { errorsSeen <- err }) }()
+	time.Sleep(100 * time.Millisecond)
+	writeVersionFile(t, path, "bad")
+	select {
+	case err := <-errorsSeen:
+		if err == nil {
+			t.Fatal("Watch() reported nil reload error")
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for reload error")
 	}
-	runtime, err := New(config.New(source), options)
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	return runtime
-}
-
-func registerTestComponent(
-	t *testing.T,
-	runtime *Kernel,
-	name string,
-	log *eventLog,
-	beforeBuild func(context.Context, testConfig) error,
-) *Handle[*testInstance] {
-	t.Helper()
-	definition := testDefinition(name, log, beforeBuild, nil)
-	registration, err := Register(runtime, definition)
-	if err != nil {
-		t.Fatalf("Register(%s) error = %v", name, err)
-	}
-	return registration.Access
-}
-
-func registerTestComponentWithStop(t *testing.T, runtime *Kernel, name string, stop func(*testInstance) error) *Handle[*testInstance] {
-	t.Helper()
-	definition := testDefinition(name, &eventLog{}, nil, stop)
-	registration, err := Register(runtime, definition)
-	if err != nil {
-		t.Fatalf("Register(%s) error = %v", name, err)
-	}
-	return registration.Access
-}
-
-func testDefinition(
-	name string,
-	log *eventLog,
-	beforeBuild func(context.Context, testConfig) error,
-	stop func(*testInstance) error,
-) Definition[testConfig, *testInstance] {
-	return Definition[testConfig, *testInstance]{
-		ID:         ID(name),
-		ConfigPath: name,
-		Decode: func(snapshot config.Snapshot) (testConfig, error) {
-			var cfg testConfig
-			if err := snapshot.DecodeSection(name, &cfg); err != nil {
-				return testConfig{}, err
-			}
-			if cfg.Version == "" {
-				return testConfig{}, fmt.Errorf("version is required")
-			}
-			return cfg, nil
-		},
-		Defaults: config.DefaultContractFunc(func(context.Context) (config.Object, config.Control, error) {
-			return config.Object{config.FieldOf("version", config.String("v1"))}, config.Continue, nil
-		}),
-		Builder: BuilderFunc[testConfig, *testInstance](func(ctx context.Context, cfg testConfig) (*testInstance, error) {
-			if beforeBuild != nil {
-				if err := beforeBuild(ctx, cfg); err != nil {
-					return nil, err
-				}
-			}
-			log.add("build:" + name + ":" + cfg.Version)
-			return &testInstance{name: name, version: cfg.Version}, nil
-		}),
-		Hooks: InstanceHookFuncs[*testInstance]{
-			OnStart: func(_ context.Context, instance *testInstance) error {
-				log.add("start:" + name + ":" + instance.version)
-				return nil
-			},
-			OnStop: func(_ context.Context, instance *testInstance) error {
-				log.add("stop:" + name + ":" + instance.version)
-				if stop != nil {
-					return stop(instance)
-				}
-				return nil
-			},
-		},
+	writeVersionFile(t, path, "v2")
+	waitForAccessVersion(t, access, "v2")
+	cancel()
+	select {
+	case err := <-watchDone:
+		if err != nil {
+			t.Fatalf("Watch() shutdown error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out stopping Watch()")
 	}
 }
 
@@ -382,7 +432,7 @@ func versionValues(name, version string) map[string]any {
 	return map[string]any{name: map[string]any{"version": version}}
 }
 
-func assertAccessVersion(t *testing.T, access *Handle[*testInstance], want string) {
+func assertAccessVersion(t *testing.T, access testAccess, want string) {
 	t.Helper()
 	if err := access.Use(t.Context(), func(instance *testInstance) error {
 		if instance.version != want {
@@ -394,72 +444,24 @@ func assertAccessVersion(t *testing.T, access *Handle[*testInstance], want strin
 	}
 }
 
-func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "config.yaml")
-	writeVersionFile(t, path, "v1")
-	runtime, err := New(config.New(config.FileSource(path)), Options{
-		Debounce:      30 * time.Millisecond,
-		ReloadTimeout: time.Second,
-		Logging:       newTestLoggingManager(t),
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	access := registerTestComponent(t, runtime, "service", &eventLog{}, func(_ context.Context, cfg testConfig) error {
-		if cfg.Version == "bad" {
-			return errors.New("bad config")
-		}
-		return nil
-	})
-	if err := runtime.Start(t.Context()); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
-
-	watchCtx, cancel := context.WithCancel(t.Context())
-	errorsSeen := make(chan error, 2)
-	watchDone := make(chan error, 1)
-	go func() {
-		watchDone <- runtime.Watch(watchCtx, func(err error) {
-			errorsSeen <- err
-		})
-	}()
-	time.Sleep(100 * time.Millisecond)
-	writeVersionFile(t, path, "bad")
-	select {
-	case err := <-errorsSeen:
-		if err == nil {
-			t.Fatal("Watch() reported nil reload error")
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out waiting for reload error")
-	}
-
-	writeVersionFile(t, path, "v2")
+func waitForAccessVersion(t *testing.T, access testAccess, want string) {
+	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
+		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		var version string
-		err := access.Use(t.Context(), func(instance *testInstance) error {
+		err := access.Use(ctx, func(instance *testInstance) error {
 			version = instance.version
 			return nil
 		})
-		if err == nil && version == "v2" {
-			break
+		cancel()
+		if err == nil && version == want {
+			return
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("watch did not apply v2; version = %s, error = %v", version, err)
+			t.Fatalf("access version = %q, error = %v, want %q", version, err, want)
 		}
 		time.Sleep(20 * time.Millisecond)
-	}
-
-	cancel()
-	select {
-	case err := <-watchDone:
-		if err != nil {
-			t.Fatalf("Watch() shutdown error = %v", err)
-		}
-	case <-time.After(3 * time.Second):
-		t.Fatal("timed out stopping Watch()")
 	}
 }
 

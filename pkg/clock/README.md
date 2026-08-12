@@ -46,3 +46,5 @@ func fixedRecorder() *Recorder {
 - `Clock` 只抽象“当前时间”和“等待”，不负责定时任务调度、重试策略或生命周期管理。
 - `Fixed` 适合测试确定性时间；生产代码不应把固定时钟作为隐藏全局默认值。
 - 业务组件优先通过构造函数接收 `clock.Clock`，不要在业务函数内部直接调用 `time.Now()`，这样测试和配置重载流程才能稳定复现时间行为。
+
+当前进程统一装配时，`internal/kernel/app/clock.System()` 通过 `app.Value` 输出同一个普通 `clock.Clock` 接口，composition 将它放入 `Capabilities.Clock`。该组件没有运行期配置、生命周期或 `Access.Use`；替换实现只需在 composition 选择另一个输出相同接口的 Definition。

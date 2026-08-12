@@ -7,13 +7,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
 func TestHostRunsKernelBeforeAndStopsKernelAfterUpperParticipants(t *testing.T) {
 	events := &eventLog{}
-	runtime := newTestKernel(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
-	registerTestComponent(t, runtime, "service", events, nil)
+	assembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
+	assembly.add(t, "service", app.KernelInstanceSwap, events, nil, nil)
+	assembly.install(t)
+	runtime := assembly.runtime
 	ctx, cancel := context.WithCancel(t.Context())
 	server := &hostParticipant{name: "server", events: events}
 	worker := &hostParticipant{
@@ -59,7 +62,9 @@ func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
 		t.Fatal("NewHost(nil reload callback) error = nil")
 	}
 
-	mapRuntime := newTestKernel(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
+	mapAssembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
+	mapAssembly.install(t)
+	mapRuntime := mapAssembly.runtime
 	if _, err := NewHost(mapRuntime, HostOptions{Watch: &WatchOptions{OnReloadError: func(error) {}}}); err == nil {
 		t.Fatal("NewHost(watch without FileSource) error = nil")
 	}
@@ -67,15 +72,13 @@ func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
 
 func TestHostWatchReloadsCapabilityAndStopsOnCancellation(t *testing.T) {
 	path := createHostVersionFile(t, "v1")
-	runtime, err := New(config.New(config.FileSource(path)), Options{
+	assembly := newTestAssembly(t, config.FileSource(path), Options{
 		Debounce:      30 * time.Millisecond,
 		ReloadTimeout: time.Second,
-		Logging:       newTestLoggingManager(t),
 	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	access := registerTestComponent(t, runtime, "service", &eventLog{}, nil)
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	assembly.install(t)
+	runtime := assembly.runtime
 	reloadErrors := make(chan error, 1)
 	host, err := NewHost(runtime, HostOptions{
 		Watch: &WatchOptions{OnReloadError: func(err error) { reloadErrors <- err }},
@@ -142,26 +145,5 @@ func writeHostVersionFile(t *testing.T, path string, version string) {
 	content := []byte("service:\n  version: " + version + "\n")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("write config %s: %v", version, err)
-	}
-}
-
-func waitForAccessVersion(t *testing.T, access *Handle[*testInstance], want string) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-		var version string
-		err := access.Use(ctx, func(instance *testInstance) error {
-			version = instance.version
-			return nil
-		})
-		cancel()
-		if err == nil && version == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("access version = %q, error = %v, want %q", version, err, want)
-		}
-		time.Sleep(20 * time.Millisecond)
 	}
 }

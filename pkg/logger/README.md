@@ -123,4 +123,4 @@ func (s *Service) Create(name string) {
 }
 ```
 
-由 Kernel 托管时，应用入口创建基线 Resource，`internal/kernel/logging.Manager` 在配置化 Logger Capability 发布后切换委托目标，业务通过 `Capabilities.Logger` 的租约回调使用当前 `Logger`。本包仍不提供全局 logger；独立使用和 Kernel 托管都保持显式所有权与注入。
+由 Kernel 托管时，应用入口创建基线 Resource，`internal/kernel/logging.Manager` 在 `internal/kernel/app/logger` 提交配置化实例后切换委托目标，调用方通过 `Capabilities.Logger` 的租约回调使用当前 `Logger`。本包仍不提供全局 logger；独立使用和 Kernel 托管都保持显式所有权与注入。

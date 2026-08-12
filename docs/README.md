@@ -6,7 +6,7 @@
 
 - [底层能力库](../pkg/README.md)
 - [Kernel 运行与配置](../internal/kernel/README.md)
-- [Kernel Capability](../internal/kernel/capability/README.md)
+- [Kernel App 组件](../internal/kernel/app/README.md)
 - [CLI 契约](../pkg/cli/README.md)
 
 ## 研究报告

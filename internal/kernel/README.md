@@ -1,25 +1,111 @@
-# kernel
+# Kernel 与 App 组件装配
 
-`internal/kernel` 是脚手架内部的基础能力运行时。它拥有 Builder、InstanceHooks 和 Access 托管契约，加载不可变配置快照，按显式注册顺序启动独立能力，并在配置变化时执行排空、候选构造、统一发布和旧实例清理。
+`internal/kernel` 治理当前进程选择的底层 App 组件：加载配置、按计划启动、监控配置变化、执行安全换代并反向关闭资源。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
 
-## 运行方式
+## 固定接入路径
 
-调用方负责选择配置来源，主动调用固定组合清单，把稳定 Access 显式传给业务构造函数，最后创建 Host 监督整个进程：
+```text
+pkg/<name>
+    -> internal/kernel/app/<name>
+    -> internal/kernel/composition/<name>.go
+    -> app.Plan / Kernel.Install
+    -> Kernel / Host
+```
+
+- `pkg/<name>` 定义项目能力契约并隔离第三方库。
+- `internal/kernel/app/<name>` 把选定实现声明为无安装副作用的 `Definition[O]`。
+- `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并在所有检查成功后一次性安装。
+- Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
+
+当前显式清单固定为 Logger、Clock、ID Generator、Validator、Database。修改清单只发生在 composition，不使用 `init` 自动注册。
+
+## 两类输出
+
+Clock、ID Generator、Validator 使用 `app.Value`，输出普通项目接口：
 
 ```go
-baseline, err := logger.New(nil)
+clockAdded, err := app.Add(plan, clockapp.System())
 if err != nil {
 	return err
 }
-defer baseline.Close()
-loggingManager, err := kernellogging.New(baseline)
-if err != nil {
-	return err
-}
-loader := config.New(
-	config.FileSource("config.yaml"),
-	config.EnvSource("APP_"),
-)
+clock := clockAdded.Output
+now := clock.Now()
+```
+
+它们没有配置、Defaults、CLI、生命周期或换代，因此也没有 `Access.Use`。需要这些能力的后续底层组件通过 `Binding/Input` 声明依赖；当前尚未建设的上层消费者未来只需接收普通接口。
+
+Logger、Database 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，输出稳定 Access：
+
+```go
+err := capabilities.Database.Use(ctx, func(client databaseapp.Client) error {
+	return useDatabase(ctx, client)
+})
+```
+
+一次 `Use` 是一次实例使用租约。回调取得的 Database Client 不含 `Close`；Rows、事务、stream 或 session 不得逃逸回调。这样 Kernel 才能等待旧代使用结束并安全关闭连接池。Logger 回调同样只能取得 `logger.Logger`，不能取得 Resource 的关闭权。
+
+## Plan 与 typed Input
+
+`app.NewPlan -> app.Add -> app.InputOf -> app.Freeze -> Kernel.Install` 是唯一装配流程：
+
+- Definition 私有字段不能由 composition 随意拼装；
+- Component ID 在同一 Plan 唯一；
+- Input 必须来自同一 Plan 内更早的 Binding；
+- Binding 没有 `Get/Resolve`，业务运行期不能查询容器；
+- Input 只在组件 Build 前通过声明的 decoder 解析，视图离开 decoder 即失效；
+- Freeze 后不能继续 Add；零值 FrozenPlan 不能安装；
+- Install 只接受 created 状态的空 Kernel，重复安装失败且不替换原计划。
+
+有底层依赖的组件在自身 app 包中定义 typed 依赖：
+
+```go
+clockInput := app.InputOf(clockAdded.Binding)
+dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, error) {
+	clock, err := app.Resolve(values, clockInput)
+	return Dependencies{Clock: clock}, err
+}, clockInput)
+```
+
+这里的 `Resolve` 只解析该 Definition 已声明的 Input，不接受字符串或类型查询，也不能保存为运行期 Resolver。
+
+## 配置、Defaults 与 CLI
+
+配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。composition 在本地 Plan Freeze 后聚合真实 Defaults 与 CLI Contract，全部构造成功后才 `Kernel.Install`。
+
+因此 `config init` 仍只生成 Logger、Database 两段：
+
+```powershell
+go run ./cmd/app config init
+```
+
+CLI 未启用时 `Capabilities.CLI` 为 nil；直接配置生成可使用 `Capabilities.Configuration.Generate`。
+
+## 生命周期与重载
+
+初始启动按运行节点顺序执行：
+
+```text
+Decode/Validate -> Build -> optional Start -> optional Ready
+-> Publish Access -> optional Activation
+```
+
+启动失败时反向排空并关闭已发布节点。Stop 时 Host 先停上层 Participant，Kernel 再反向 drain、Deactivate、Stop。
+
+006 已实现三种策略：
+
+| 策略 | 当前行为 |
+| --- | --- |
+| `NoReload` | 无运行期配置；Fixed Managed 只在初始启动构造 |
+| `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
+| `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
+
+候选准备期间旧 Access 继续服务。Decode、Build、Ready、排空或超时失败时，候选被清理且旧入口恢复。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效，不能伪装成回滚。
+
+`NativeAtomicReload`、`ComponentHandoff`、切换观察期与健康失败自动回切尚未实现；当前成功切换后立即清理旧代。
+
+## 运行示例
+
+```go
 runtime, err := kernel.New(loader, kernel.Options{Logging: loggingManager})
 if err != nil {
 	return err
@@ -28,117 +114,22 @@ capabilities, err := composition.Compose(runtime, composition.Options{})
 if err != nil {
 	return err
 }
-service := NewService(capabilities.Logger, capabilities.Database)
-server := NewServer(service)
-host, err := kernel.NewHost(runtime, kernel.HostOptions{
-	ShutdownTimeout: 10 * time.Second,
-	Watch: &kernel.WatchOptions{
-		OnReloadError: reportReloadError,
-	},
-}, server)
-if err != nil {
-	return err
-}
-ctx, cancel := supervisor.SignalContext(context.Background())
-defer cancel()
-return host.Run(ctx)
-```
-
-`kernel.New` 只创建空运行时，不扫描、不反射发现，也不默认组合任何能力；但它要求调用方显式提供始终可用的 logging manager，不创建隐藏 Noop 或全局 logger。`composition.Compose` 当前在源码中按 Logger、Database 顺序逐项登记 Definition；必须在 `Host.Run` 前显式调用，重复调用会触发重复 ID 错误。创建 Host 不会登记或查找 Capability，因此引入进程监督不会改变显式注入方式。
-
-## 基线 logger 与配置化接管
-
-logging manager 在配置加载前已经委托到应用入口拥有的基线 logger。Logger Capability 的 Build/Start 只准备候选 Resource，不会提前切换 manager；只有全部受影响能力成功构造且旧租约排空后，Kernel 才在不可失败提交区激活候选。Reload 失败继续使用旧 logger，成功后关闭旧 Resource；停止时按反向登记顺序先停止 Database，再恢复基线并关闭配置化 logger。
-
-业务调用方使用 `Capabilities.Logger.Use(ctx, func(logger.Logger) error { ... })`。回调只能获得窄 Logger，不能取得 Resource.Close；回调返回即结束本次租约。
-
-## 默认配置与启动前 CLI
-
-每个成功登记的 Definition 必须提供 `config.DefaultContract`。`kernel.Register` 只冻结 Definition 的 ID、配置路径和契约，不会调用契约；composition 收集全部成功登记结果后构造 `config.DefaultManager`。调用方可以在 Kernel 尚未启动、配置文件尚不存在时直接生成配置：
-
-```go
-result, err := capabilities.Configuration.Generate(ctx, config.GenerateRequest{
-	Path:  "config.yaml",
-	Force: false,
-})
-```
-
-`.yaml`、`.yml` 和 `.json` 扩展名决定编码格式。生成过程先在内存中完成全部契约调用、结构校验和编码，随后以 `0600` 目标权限安全写入；默认拒绝覆盖，`Force` 才允许同文件系统替换。契约返回 Abort 或任意错误时不会创建或改写目标。
-
-启动前 CLI 必须由 composition options 显式启用：
-
-```go
-capabilities, err := composition.Compose(runtime, composition.Options{
-	CLI: &composition.CLIOptions{App: cli.Config{
-		Name:                   "app",
-		DisableInteractiveHome: true,
-	}},
-})
-if err != nil {
-	return err
-}
-if runCLI {
-	return capabilities.CLI.Run(ctx, args)
-}
-```
-
-启用后提供 `config init --output config.yaml --force`；`-o` 和 `-f` 是对应短 flag。该命令只调用 DefaultManager，成功生成后不会自动启动或重载 Kernel。CLI 未启用时 `Capabilities.CLI` 为 nil，普通 `NewHost(...).Run(ctx)` 路径不构造 App，也不调用任何 CLI Contract。
-
-`NewHost` 固定把 Kernel 作为第一个 `pkg/supervisor.Participant`，随后才启动上层 Participant；停止时顺序相反，因此业务服务会在 Kernel 管理的资源之前退出。`Watch` 为 `nil` 时不监听配置；显式启用监听时必须提供错误回调，并且 Loader 必须包含文件配置源：
-
-```go
 host, err := kernel.NewHost(runtime, kernel.HostOptions{
 	Watch: &kernel.WatchOptions{OnReloadError: reportReloadError},
-}, server)
+})
 if err != nil {
 	return err
 }
 return host.Run(ctx)
 ```
 
-## 配置事务
-
-- `Start` 加载初始快照，按注册顺序执行 Decode、Build、Start；全部成功后才发布 Access。
-- 带 ActivationHooks 的能力只在全部候选成功后的提交区激活；候选丢弃和回滚不激活。
-- `Reload` 先解码和校验全部变化配置，再关闭受影响 Access 的服务闸门。
-- 候选 Build/Start 与旧租约排空并行；任一步失败或超时都会停止候选、恢复旧实例并保持旧配置版本。
-- 全部候选成功且旧租约归零后，kernel 在闸门关闭期间替换所有实例，再统一恢复调用。
-- 发布后按反向顺序 Stop 旧实例。此阶段失败返回 `CommittedCleanupError`，表示新配置已提交，不得回滚。
-- 相同配置段摘要不会重建实例；文件事件默认防抖 `250ms`，单次事务默认超时 `30s`。
-
-## 配置来源
-
-`internal/kernel/config` 支持 Map、JSON/YAML 文件和环境变量来源。后加载来源覆盖先加载来源，环境变量使用双下划线表达嵌套路径，例如 `APP_DATABASE__PINGTIMEOUT=5s`。
-
-```yaml
-logger:
-  environment: development
-  level: info
-  outputPaths:
-    - stdout
-  errorOutputPaths:
-    - stderr
-database:
-  engine: sql
-  driver: postgres
-  # dsn 通过 APP_DATABASE__DSN 提供，不写入文件。
-  pool:
-    maxOpenConns: 25
-    maxIdleConns: 5
-    connMaxLifetime: 30m
-    connMaxIdleTime: 5m
-  pingTimeout: 5s
-```
-
-`logger.encoding`、`logger.addCaller` 和 `logger.addStacktrace` 未配置时由 environment 推导；可通过 `APP_LOGGER__LEVEL` 等环境变量覆盖。生产环境通过 `EnvSource` 提供 `database.dsn`。当前 loader 不执行字符串插值；快照的脱敏视图会隐藏 DSN、密码、Token、Key 和 Credential。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`Compose` 完成底层组件装配；创建 Host 不会新增或查找组件。
 
 ## 边界
 
-- v1 能力彼此独立，不解析依赖 DAG，也不构造业务 service、handler 或 server。
-- 业务代码不得持有 Kernel Handle、Resolver 或 Container；依赖必须通过构造函数接收 Capability Access。
-- Capability Definition 不得自行登记 Kernel；启用清单和注册顺序只由 `internal/kernel/composition` 决定。
-- Kernel logging manager 只负责并发安全的委托切换，不拥有 logger Resource；基线由应用入口关闭，配置化实例由 Logger Capability 关闭。
-- Definition 的默认配置契约只能描述自身 ConfigPath 下的字段和值；Capability ID 和路径归属由 Register 结果固定。
-- `composition.go` 只维护总入口、组合顺序和结果汇总；每项能力的 Definition 选择与登记放在同名文件，例如 `database.go`。
-- Host 只把 Kernel、上层 Participant 和可选 Watch Task 交给 `pkg/supervisor`；它不复制进程启动、取消和停止算法。
-- `Watch` 的单次重载错误通过必填回调上报并继续监听；fsnotify 后端错误才终止 Task。
+- 当前没有 HTTP Server、middleware、handler、service、repository、model 等业务层装配。
+- Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
+- 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
+- Database App 私有实例持有 `Close`，Access 只暴露使用能力。
+- 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
+- HTTP 同端口、文件锁、单消费者等排他资源不能套用双实例 Swap；在专用 Handoff 落地前应选择 `RestartRequired`。

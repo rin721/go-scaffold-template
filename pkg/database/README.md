@@ -69,7 +69,7 @@ func main() {
 
 两种实现都共享 `Config`、连接池配置、启动 `Ping`、事务入口和关闭责任。应用入口创建数据库客户端后，应通过构造函数显式注入业务组件。
 
-需要由 Kernel 管理配置切换时，不修改本包的通用契约；`internal/kernel/capability/database` 提供无副作用的能力 Definition，调用方显式调用 `internal/kernel/composition.Compose` 完成登记，再把 `Capabilities.Database` 注入业务构造函数。
+需要由 Kernel 管理配置切换时，不修改本包的通用契约；`internal/kernel/app/database` 提供无安装副作用的 Definition，composition 把它加入冻结 Plan。`Capabilities.Database` 是稳定租约 Access，回调只取得不含 `Close` 的窄 Client；连接池仍由 Kernel App 拥有和释放。
 
 ## 配置项
 

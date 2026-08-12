@@ -48,3 +48,5 @@ func (g fixedGenerator) New() (string, error) {
 - `Generator` 只承诺生成字符串 ID，不承诺排序性、时间编码或分布式节点信息。
 - 业务组件应通过构造函数接收 `idgen.Generator`，不要直接依赖 `uuid` 第三方类型。
 - 普通请求路径优先使用 `New()` 并处理错误；`MustNew` 只适合失败即不可恢复的初始化路径。
+
+当前进程统一装配时，`internal/kernel/app/idgen.UUID()` 通过 `app.Value` 输出普通 `idgen.Generator`，composition 将它放入 `Capabilities.IDGenerator`。该组件没有配置、生命周期或 `Access.Use`；调用方只依赖本包接口。

@@ -3,34 +3,19 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	loggercapability "github.com/rin721/go-scaffold2/internal/kernel/capability/logger"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
+	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
+	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 )
 
-type loggerComposition struct {
-	access   loggercapability.Access
-	defaults config.Binding
-}
-
-func composeLogger(runtime *kernel.Kernel) (loggerComposition, error) {
-	if runtime == nil {
-		return loggerComposition{}, fmt.Errorf("compose logger runtime is nil")
-	}
-	return registerLogger(runtime, loggercapability.Definition(runtime.LoggingManager()))
-}
-
-func registerLogger(
-	runtime *kernel.Kernel,
-	definition kernel.Definition[loggercapability.Config, *loggercapability.Instance],
-) (loggerComposition, error) {
-	registration, err := kernel.Register(runtime, definition)
+func composeLogger(plan *app.Plan, manager *kernellogging.Manager) (app.Added[loggerapp.Access], error) {
+	definition, err := loggerapp.Definition(manager)
 	if err != nil {
-		return loggerComposition{}, fmt.Errorf("compose logger capability: %w", err)
+		return app.Added[loggerapp.Access]{}, fmt.Errorf("define logger app: %w", err)
 	}
-	access, err := loggercapability.NewAccess(registration.Access)
+	added, err := app.Add(plan, definition)
 	if err != nil {
-		return loggerComposition{}, fmt.Errorf("compose logger access: %w", err)
+		return app.Added[loggerapp.Access]{}, fmt.Errorf("compose logger app: %w", err)
 	}
-	return loggerComposition{access: access, defaults: registration.Defaults}, nil
+	return added, nil
 }

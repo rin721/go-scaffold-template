@@ -49,3 +49,5 @@ func Validate(req CreateUser) ([]validation.FieldError, error) {
 
 - 本包只负责输入形状和边界约束校验，不推导业务规则，不访问数据库，也不执行跨资源一致性检查。
 - 业务入口可以把 `validation.Validator` 注入 handler、command 或 config loader；业务组件不要直接依赖 `validator/v10` 的具体错误类型。
+
+当前进程统一装配时，`internal/kernel/app/validation.Default()` 通过 `app.Value` 输出普通 `validation.Validator`，composition 将它放入 `Capabilities.Validator`。该组件没有配置、生命周期或 `Access.Use`；只有出现真实规则集或 locale 配置需求时才应增加配置契约。

@@ -1,12 +1,12 @@
 # Kernel 底层组件手动装配与安全重载
 
-- 状态：已完成
+- 状态：研究已完成；006 第一阶段目标已实施
 - 研究日期：2026-08-12
 - 当前仓库基线：`a1a3a65b8f180ca9b571b8e3d7424c74403746e0`
 
 ## 结论摘要
 
-当前项目让人“看着有点懵”，不是因为手工装配本身困难，而是当前开发路径同时暴露了四类不同问题：第三方库封装、Kernel 生命周期接入、配置默认值与 CLI 聚合、运行期资源代际切换。对一个只想新增底层能力的人来说，必须先理解 `Definition`、`Access.Use`、租约排空、候选实例、配置事务和 composition 聚合，才能找到第一处可修改代码，认知入口确实过重。
+研究基线中的项目让人“看着有点懵”，不是因为手工装配本身困难，而是当时的开发路径同时暴露了四类不同问题：第三方库封装、Kernel 生命周期接入、配置默认值与 CLI 聚合、运行期资源代际切换。006 已把入口收敛为 `kernel/app + 有序 Plan + 原子 Install`，并让 Direct 简单能力不再承担租约和空生命周期成本。
 
 本报告确认的目标不是引入自动扫描、反射容器或业务 DI 框架，而是把手工装配路径收敛为：
 
@@ -48,7 +48,7 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 
 `KernelInstanceSwap` 的目标语义是带观察期的两阶段切换：新实例通过 Build、Start、Ready 后接管新租约；上一代暂时保留但不接收新租约；观察期健康失败时排空新租约并切回上一代；观察期通过后才异步关闭上一代。Kernel 同时最多保留当前代和上一代。
 
-上述策略名、`internal/kernel/app` 目录、Ready/Health 观察期及切换后回滚均是**目标设计，尚未实现**。当前实现只有统一的候选换代路径，并在成功切换后立即清理旧实例。
+006 已实现 `NoReload`、`KernelInstanceSwap`、`RestartRequired`、`internal/kernel/app`、可选 Ready 和成功切换后立即清理旧代。`NativeAtomicReload`、`ComponentHandoff`、持续 Health 观察期及切换后回切仍是目标设计，尚未实现。
 
 ## 阅读顺序
 
@@ -69,9 +69,11 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 | 初始 Build/Start、Reload 候选构造、旧租约排空、失败恢复旧实例 | 当前已实现 |
 | Supervisor 按顺序启动、反向停止，配置文件 Watch | 当前已实现 |
 | `pkg/health` 健康检查库 | 当前已实现，但未接入 Kernel/Host 组件观察期 |
-| 所有底层能力统一进入 `internal/kernel/app/<name>` 和 composition | 目标设计，尚未实现 |
-| `Fixed/Configured`、`Direct/Leased`、typed `Binding/Input` 和组件级 Reload Policy | 目标设计，尚未实现 |
+| Logger、Database、Clock、ID Generator、Validator 统一进入 `internal/kernel/app/<name>` 和 composition | 006 已实现 |
+| Value/Configured/ManagedFixed、Direct/Leased、typed `Binding/Input` | 006 已实现 |
+| `NoReload`、`KernelInstanceSwap`、`RestartRequired` | 006 已实现 |
+| `NativeAtomicReload`、`ComponentHandoff` | 目标设计，尚未实现 |
 | 切换后观察期、自动回切、最多保留两代 | 目标设计，尚未实现 |
 | HTTP 入站服务及 middleware、handler、service、repository、model | 尚未建设，全部排除在本报告设计与验收之外 |
 
-本报告是研究结论和后续设计输入，不是已经确认的源码改造。实施目录迁移、公共契约变更或重载状态机前，必须另建任务级变更方案并获得确认。
+本报告保留研究结论；第一阶段实施证据见 [006 变更记录](../../changes/006-kernel-app-polymorphic-composition/README.md)。后续观察期、Native Reload 或 Handoff 仍须建立新的任务级变更方案并获得确认。

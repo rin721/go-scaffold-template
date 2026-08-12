@@ -1,6 +1,8 @@
-# 当前路径与困惑来源
+# 研究基线路径与困惑来源
 
-## 1. 当前真实装配链
+> 本章记录 006 实施前的历史基线，用于解释问题来源。当前装配路径已迁移为 `kernel/app -> Plan -> Kernel.Install`，见 [Kernel App 组件开发](../../../internal/kernel/app/README.md)。
+
+## 1. 研究基线的真实装配链
 
 当前实现不是“封装一个库，然后把实例传进应用”这么短的路径。Logger 和 Database 的真实路径是：
 
@@ -34,9 +36,9 @@ flowchart LR
 
 `kernel.New` 不会自动发现或登记能力。真正的选择发生在 `internal/kernel/composition`，真正的资源构造要等 `Kernel.Start` 加载配置后才发生。
 
-### 1.1 Clock、ID Generator、Validator 的当前事实
+### 1.1 Clock、ID Generator、Validator 的研究基线事实
 
-当前仓库已经在 `pkg` 定义了 `clock.Clock`、`idgen.Generator` 和 `validation.Validator` 项目契约，但尚未形成统一装配：
+研究基线已经在 `pkg` 定义了 `clock.Clock`、`idgen.Generator` 和 `validation.Validator` 项目契约，但尚未形成统一装配；006 已补齐三项 Fixed Direct App Definition 和 composition 输出。历史缺口是：
 
 - `internal/kernel/composition.Capabilities` 只有 Logger、Database、Configuration 和 CLI；
 - 三项简单能力都没有对应 `internal/kernel/capability` 或目标 `internal/kernel/app` 组件；

@@ -1,6 +1,6 @@
 # 目标组件与多态装配模型
 
-> 本章描述目标设计，不是当前公共 API。当前实现仍使用 `internal/kernel/capability/<name>`、`kernel.Definition`，并且只有 Logger、Database 进入 composition。
+> 本章最初描述目标模型。006 已实现 `internal/kernel/app`、有序 Plan、Direct/Leased、typed Binding/Input 和三种基础重载策略；Native Reload、Handoff、观察期与回切仍是目标设计。真实 API 以 [Kernel App 组件开发](../../../internal/kernel/app/README.md) 为准。
 
 ## 1. 统一组件化，但不统一成同一种运行协议
 
@@ -215,9 +215,9 @@ if err != nil {
 // 目标伪代码，尚未实现。
 componentBinding, err := app.Add(plan, componentapp.Definition(
 	componentapp.Inputs{
-		Clock:     app.InputOf(clockBinding),
-		IDs:       app.InputOf(idBinding),
-		Validator: app.InputOf(validatorBinding),
+	Clock:     app.InputOf(clockBinding.Binding),
+	IDs:       app.InputOf(idBinding.Binding),
+	Validator: app.InputOf(validatorBinding.Binding),
 	},
 ))
 if err != nil {
