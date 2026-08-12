@@ -19,6 +19,8 @@
 建议收敛或扩展：
 
 - `internal/kernel/capability` 重命名/迁移到开发者更易理解的 `internal/kernel/app`；
+- Clock、ID Generator、Validator 等稳定能力也通过 `kernel/app` 和 composition 显式选择，但使用 Direct 输出且不强制 `Access.Use`；
+- 增加仅服务底层组件的有序 typed `Binding/Input` 计划，禁止前向引用和运行期 Resolve；
 - composition 不再手工搬运 Access、Defaults、CLI 契约；
 - Definition 由一个组件入口组合可选小契约；
 - 为每个组件增加显式 Reload Policy；
@@ -32,7 +34,8 @@
 
 先建立一个独立变更任务，固定：
 
-- 五种 Reload Policy 的名称和精确定义；
+- `Fixed/Configured`、`Direct/Leased` 和五种 Reload Policy 的名称、组合约束；
+- typed `Binding/Input` 的 Component ID 唯一性、同计划约束、严格登记顺序和原子安装语义；
 - Ready、Health、观察期和回切错误语义；
 - 代际上限、Watch 合并和进程关闭优先级；
 - 组件定义入口的最小 API；
@@ -61,19 +64,19 @@
 采用单轨迁移：
 
 1. 建立新的组件定义契约；
-2. 同一任务迁移 Logger、Database、composition、测试和文档；
+2. 同一任务迁移 Logger、Database、Clock、ID Generator、Validator、composition、测试和文档；
 3. 删除旧 `capability` 路径、旧 Definition 接口和失效说明；
 4. 搜索旧 import、符号、配置和目录引用归零；
 5. 不保留 alias、legacy 目录或并行兼容入口。
 
 目录改名不应早于新契约稳定，否则只是把复杂度从 `capability` 搬到 `app`。
 
-### 阶段 D：用真实第三个组件验收扩展路径
+### 阶段 D：用简单能力和真实资源组件分别验收
 
-不要只用 Logger 和 Database 自证抽象。选择一个真实、边界清晰的新底层能力，完整走过：
+先用 Clock、ID Generator、Validator 验证 Fixed + Direct + NoReload 的轻量路径，再选择一个真实、边界清晰的新资源能力验证 Configured、生命周期和重载路径：
 
 ```text
-pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> 配置变化 -> 业务消费者
+pkg 封装 -> kernel/app 组件 -> composition typed 绑定 -> Kernel/Host -> 组件边界测试
 ```
 
 候选应有明确使用场景和资源语义，能够验证生命周期与至少一种 Reload Policy，但不得为了验证框架而引入 HTTP 或业务分层。具体能力必须在后续任务中依据真实底层需求选择。
@@ -109,6 +112,8 @@ pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> �
 - 不引入 Fx/Dig 来替换资源代际状态机。
 - 不让 `internal/kernel/app` 组件通过 `init` 自动注册。
 - 不建立万能 `Component`，也不通过大量 nil Hook 模拟可选行为。
+- 不因所有能力统一进入 composition，就把 Direct 能力强制包装成 `Access.Use`。
+- 不把 typed Binding 扩展成可在运行期任意查询的容器。
 - 不为尚未建设的业务层新增 Kernel Handle、Resolver 或 Capabilities 使用规则。
 - 不允许策略失败时静默退化成停旧启新。
 - 不因担心迁移成本永久保留 `capability` 和 `app` 两套目录。
@@ -120,6 +125,8 @@ pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> �
 
 | 场景 | 预期结果 |
 | --- | --- |
+| Fixed + Direct 组件构造 | 注入普通项目接口，不建立配置监听、租约或空生命周期 |
+| 零值/跨计划 Binding 或重复能力 | 冻结装配计划失败，不启动任何组件 |
 | Decode/Validate 失败 | 当前实例继续服务，不开始 drain |
 | Build/Start/Ready 失败 | 恢复旧入口，候选完整清理 |
 | 旧租约排空超时 | 不切换，恢复旧入口 |
@@ -139,7 +146,7 @@ pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> �
 只有满足以下条件才能宣布架构收敛完成：
 
 - 新组件作者能从单一指南完成接入，无需理解 Kernel 私有状态机；
-- Logger、Database 和至少一个新增底层组件完成组件级真实验证；
+- Clock、ID Generator、Validator 的轻量路径，以及 Logger、Database 和至少一个新增资源组件完成真实验证；
 - 旧目录、旧 API、旧测试和旧文档已单轨删除；
 - 全部重载策略都有确定错误、超时、资源和诊断语义；
 - Race、失败注入、连续变化和进程关闭测试通过；

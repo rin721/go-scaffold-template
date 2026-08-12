@@ -13,7 +13,7 @@
 | 非必要认知成本 | 每个组件都先理解同一套最重协议 | 应由策略和框架入口屏蔽 |
 | 非必要样板 | Definition、Access 适配、composition binding、聚合字段之间的机械搬运 | 可通过单一组件入口和明确约定收敛 |
 | 非必要耦合 | 默认配置、CLI、实例换代必须一起出现 | 应改为可选小契约 |
-| 非必要前置设计 | 在没有消费者时提前建立通用业务 DI、DAG、scope、named binding | 应继续避免 |
+| 非必要前置设计 | 在没有消费者时提前建立通用业务 DI、DAG、scope、运行时 Resolver | 应继续避免；底层组件只需要有序 typed 手动计划 |
 
 ## 2. 设计目标在迭代中发生了语义漂移
 
@@ -86,7 +86,7 @@ Kernel 内部需要知道 generation、candidate、draining、commit 和 cleanup
 
 后续设计应遵守：
 
-1. **先分类，再装配**：先判断能力是否需要 Kernel 托管，再选择 Reload Policy。
+1. **统一准入，分类治理**：底层能力统一进入 `kernel/app` 和 composition，再分别选择构造、出口、生命周期与 Reload Policy。
 2. **单一开发入口**：组件作者从 `kernel/app/<name>` 的一个定义入口开始。
 3. **策略显式**：不从方法名、nil hook 或目录位置推断重载语义。
 4. **内部状态机不外泄**：业务只看到窄能力，组件只实现所选策略需要的契约。

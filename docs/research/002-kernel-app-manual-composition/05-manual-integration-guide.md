@@ -1,32 +1,45 @@
 # 手动接入指南
 
-> 本章使用 `<pkg-name1>` 和 `<pkg-app-name1>` 表达目标开发流程。示例 API 是目标伪代码，当前仓库不能直接编译；当前等价实现仍位于 `internal/kernel/capability` 和 `internal/kernel/composition`。
+> 本章使用 `<pkg-name1>` 和 `<pkg-app-name1>` 表达目标开发流程。示例 API 是行为伪代码，当前仓库不能直接编译；当前实现仍位于 `internal/kernel/capability` 和 `internal/kernel/composition`。
 
-## 1. 先回答三个问题
+## 1. 固定接入路径
 
-不要从复制 Database Definition 开始。先写清：
+凡是由当前进程统一选择和注入的底层能力，都走同一条路径：
 
-1. **业务需要什么能力**：调用方真正需要哪些方法，哪些第三方 API 不应暴露？
-2. **谁拥有资源**：谁创建、Start、Stop、Close，派生对象能否逃逸？
-3. **配置怎样生效**：底层库能否原子重载，新旧实例能否并存，是否存在排他资源？
+```text
+pkg/<pkg-name1>
+    -> internal/kernel/app/<pkg-app-name1>
+    -> internal/kernel/composition/<pkg-app-name1>.go
+    -> Kernel 装配计划
+    -> Direct 项目接口或 Leased Access
+```
 
-只有能力需要进程级治理时，才继续建立 `kernel/app` 组件。纯函数或无资源能力到 `pkg` 和普通构造函数注入即结束。
+Clock、ID Generator、Validator 不再绕过这条路径。统一的是组件身份、实现选择、依赖声明和装配入口，不是强制所有组件拥有配置、CLI、Start/Stop、Health 或 `Access.Use`。
+
+开始封装前先回答四组问题：
+
+1. **能力契约**：项目真正需要哪些方法，哪些标准库或第三方类型不能暴露？
+2. **构造来源**：实现和参数由代码固定，还是来自 typed 配置？配置是否真的需要 Defaults 或 CLI？
+3. **出口形态**：进程期间是否保持同一实例身份？能否 Direct 注入，还是必须通过 Leased Access 跟踪使用？
+4. **运行治理**：是否有 Start、Ready、Health、Stop，以及配置怎样生效？
+
+四组答案彼此独立。无资源能力通常是 `Fixed + Direct + Builder only + NoReload`；Database 一类资源能力才可能是 `Configured + Leased + Lifecycle + KernelInstanceSwap`。
 
 ## 2. 第一步：封装 `pkg/<pkg-name1>`
 
-推荐最小文件：
+推荐按真实复杂度组织文件，而不是机械创建固定目录：
 
 ```text
 pkg/<pkg-name1>/
-├── <pkg-name1>.go       # 项目自有业务能力接口
-├── config.go            # 与第三方类型无关的配置
-├── errors.go            # 可识别的项目错误
-├── builder.go           # New/Build 和资源所有权
+├── <pkg-name1>.go       # 项目自有能力接口与简单实现
+├── config.go            # 仅在确有配置时存在
+├── errors.go            # 仅在需要稳定错误语义时存在
+├── resource.go          # 仅在拥有资源和 Close 权时存在
 ├── <pkg-name1>_test.go  # 契约与实现测试
-└── README.md            # 直接使用方式和边界
+└── README.md            # 直接构造方式和边界
 ```
 
-示意契约：
+资源能力的示意契约：
 
 ```go
 // 伪代码：具体名称由真实能力语义决定。
@@ -50,99 +63,106 @@ func New(context.Context, *Config) (Resource, error)
 
 约束：
 
-- `Request`、`Result`、`Config` 和错误都是项目类型；
-- `New` 不读取全局配置，不自动注册 Kernel；
-- `Resource` 的 Close 只交给所有者，业务常用接口不暴露 Close；
-- I/O 接收 Context，超时和取消保持可识别；
-- 第三方错误经过项目语义包装但保留原始原因；
-- 单元测试覆盖配置、构造失败、正常调用、取消、重复 Close 和资源清理；
-- 如果计划未来替换第三方库，建立同一套契约测试，而不是依赖实现私有测试。
+- 对外只暴露项目类型和调用方需要的窄接口；
+- `pkg.New` 不读取全局配置、不自注册 Kernel；
+- 创建资源的一方明确拥有 Close，常用能力接口不泄漏关闭权；
+- I/O 接收 Context，错误转换保留原始错误链；
+- 不同底层实现可以通过同一套契约测试；
+- `pkg` 仍可脱离 Kernel 独立构造和测试。
 
-完成这一步后，`pkg` 已经可以脱离 Kernel 单独使用，也已经实现了最重要的“第三方库可替换”。
+Clock 等简单能力不需要模仿资源接口。例如当前 `pkg/clock.Clock` 只需 `Now`、`Sleep` 和明确构造函数。
 
-## 3. 第二步：判断是否需要 Kernel 组件
+## 3. 第二步：在 `kernel/app/<pkg-app-name1>` 声明组件
 
-使用下表：
+### 3.1 先选择四项策略
 
-| 问题 | 否时处理 |
-| --- | --- |
-| 是否拥有共享进程级资源？ | 在普通 composition root 直接构造 |
-| 是否需要统一 Start/Stop 或长期 Task？ | 由实际所有者管理生命周期 |
-| 是否需要配置监听、健康或实例重载？ | 不建立 `kernel/app` |
-| 业务是否必须避免取得 Close 权？ | 可直接注入窄 `pkg` 接口 |
+| 维度 | 可选策略 | 选择依据 |
+| --- | --- | --- |
+| 构造 | `Fixed[I]` / `Configured[C,I]` | 参数来自代码还是 typed 配置 |
+| 出口 | `Direct[I,O]` / `Leased[I,A]` | 实例身份是否需要运行期替换并排空使用 |
+| 生命周期 | Builder + 可选 Starter/Ready/Health/Stopper | 只声明真实存在的动作 |
+| 重载 | `NoReload` / Native / Swap / Handoff / RestartRequired | 配置与资源的真实生效能力 |
 
-Clock、ID Generator、Validator、Codec 等通常无需进入 Kernel。不要为了目录整齐机械包装。
+组件定义必须在登记时就能校验策略组合。例如：
 
-## 4. 第三步：建立 `kernel/app/<pkg-app-name1>`
+- `Fixed` 应与 `NoReload` 组合；
+- `Configured` 不能使用 `NoReload` 掩盖配置变化；
+- `KernelInstanceSwap` 必须输出 Leased Access；
+- `Direct` 可以配合 `NativeAtomicReload`，因为实例身份不变；
+- 没有 Stopper 的组件不得声称自己拥有需要回收的资源。
 
-目标最小文件：
+### 3.2 简单能力只需要一个小组件文件
+
+Clock 的目标结构可以只有：
 
 ```text
-internal/kernel/app/<pkg-app-name1>/
-├── component.go       # 唯一 Definition 入口、ID、Dependencies
-├── config.go          # typed 解码、校验和默认值契约
-├── lifecycle.go       # Build/Start/Ready/Stop，仅保留实际需要的职责
-├── access.go          # 必要时收敛稳定租约 Access
-├── reload.go          # Reload Policy 及策略专用实现
-└── component_test.go  # 组件级契约和失败语义
+internal/kernel/app/clock/
+├── component.go
+└── component_test.go
 ```
 
-文件可以在能力较小时合并；重要的是职责和唯一入口，不是机械目录数量。
-
-### 4.1 定义身份和依赖
+目标伪代码：
 
 ```go
-// 目标伪代码，尚未实现。
-const ID kernel.ID = "<pkg-app-name1>"
-const ConfigPath = "<pkg-app-name1>"
+const ID app.ID = "clock"
 
-type Dependencies struct {
-	// 只列构建该组件确实需要的固定依赖。
-}
-
-func Definition(deps Dependencies) kernelapp.Definition[Config, Instance, Access] {
-	// 在一个入口组合小契约和 Reload Policy。
+// System 声明一个代码固定、直接输出且不参与重载的 Clock 组件。
+func System() app.Definition[clock.Clock] {
+	return app.DefineFixed(
+		ID,
+		func(context.Context) (clock.Clock, error) {
+			return clock.System(), nil
+		},
+		app.Direct[clock.Clock](),
+		app.NoReload(),
+	)
 }
 ```
 
-组件不持有 Kernel，不调用 Register，不 import 其他 composition 文件。依赖由手动装配者传入。
+这里没有 `ConfigPath`、Defaults、CLI、Start、Ready、Health、Stop 或 Access Adapter。它仍是完整的应用组件，只是采用最轻策略。
 
-### 4.2 typed 配置和初始配置
+ID Generator 和 Validator 使用同一形状，各自输出 `idgen.Generator` 与 `validation.Validator`。如果同一契约存在多个实现，组件包可以提供多个 Definition 构造函数，但 composition 对每个必需能力只选择一个：
 
-- 从完整 Snapshot 只读取自己的 ConfigPath；
-- Decode 预填由 `pkg` 提供的安全默认值；
-- Validate 不打开网络、文件或 goroutine；
-- Defaults 只生成自身配置段；
-- 密码、Token、DSN 等默认保持安全空值，通过环境变量等受控来源提供；
-- 有组件专用启动前命令时贡献 CLI Contract，不自行构造 CLI App。
+```go
+clockapp.System()
+// 或未来的 clockapp.Monotonic(...)
+```
 
-### 4.3 构建与生命周期
+多态发生在“不同 Definition 输出同一项目接口”，不是业务运行时向容器查询实现。
+
+### 3.3 配置契约是可选策略
+
+只有真实需要配置时才选择 `Configured[C,I]`。其最小契约包括：
+
+- 稳定 ConfigPath；
+- 从 Snapshot 解码为 `C`；
+- 无资源副作用的 Validate；
+- 使用 `C` 构建 Kernel 拥有的实例 `I`，再按出口策略暴露 `O` 或 Access `A`。
+
+以下仍然独立可选：
+
+- **Defaults**：只有项目能够给出安全且有意义的初始值时才贡献；
+- **CLI Contract**：只有组件确有启动前命令时才贡献；
+- **配置摘要**：只包含判断相关变化所需的非敏感信息；
+- **Reload Policy**：必须说明配置在当前进程怎样生效。
+
+“写死”通过 `Fixed` 明确表达，不伪造空配置契约；“可配置”通过 `Configured` 明确表达，也不要求必须生成默认配置。密码、Token、DSN 不得出现在 Defaults、摘要或日志中。
+
+### 3.4 生命周期也是可选策略
 
 ```text
-Build: Config -> 未发布 Instance
-Start: 启动实例拥有的后台活动或连接
-Ready: 确认候选可以接管业务
-Stop: 停止活动并释放该代全部资源
-Health: 运行期间返回结构化健康结果
+Build: 构造尚未发布的能力或资源
+Start: 打开连接或启动组件拥有的后台活动
+Ready: 判断候选是否能够接管
+Health: 运行期间提供结构化健康状态
+Stop: 停止活动并释放这一代拥有的资源
 ```
 
-没有 Start 需要就不声明 Starter；没有持续 Health 就不提供空检查。Stop 必须幂等或由 Kernel 严格保证只调用一次，并保留主要错误与所有清理错误。
+组件只声明真实存在的契约，不提供空方法来满足巨型接口。Kernel 根据声明按依赖顺序执行 Build/Start，按反向顺序 Stop。
 
-### 4.4 选择 Reload Policy
+### 3.5 只有 Leased 出口提供 `Access.Use`
 
-在组件包内记录证据：
-
-- `NativeAtomicReload`：链接上游原子性说明并提供失败保留旧状态的测试；
-- `KernelInstanceSwap`：证明新旧可并存、业务使用可租约化、双实例资源预算可接受；
-- `ComponentHandoff`：提供专用交接设计和失败提交点；
-- `RestartRequired`：说明排他约束或不可安全回滚原因；
-- `Ignore`：说明配置不参与运行期变化。
-
-不要让 composition 根据环境临时改变同一组件的安全语义。若不同实现的重载能力不同，应由各实现对应的组件定义显式声明。
-
-### 4.5 收敛业务 Access
-
-若使用 `KernelInstanceSwap`，业务通过 Access 的有界回调使用当前实例：
+若选择 `KernelInstanceSwap`，组件输出稳定 Access：
 
 ```go
 // 目标示意。
@@ -151,99 +171,127 @@ type Access interface {
 }
 ```
 
-回调返回代表本次租约结束。Client 派生的 stream、iterator、Rows、transaction 或 session 必须在回调内完整消费和关闭，否则 Kernel 无法知道实例是否仍被使用。
+一次 `Use` 是一次实例租约。stream、iterator、Rows、transaction 或 session 必须在回调内完整使用和关闭，Kernel 才能准确排空旧实例。
 
-若组件不会运行期换代，不必为了形式统一强制包一层 `Use`；可直接返回稳定的项目能力接口。
+Direct 组件输出普通项目接口，不实现 `Use`。因此 Clock 的调用保持 `clock.Now()`，而不是 `clockAccess.Use(func(clock.Clock) ...)`。
 
-## 5. 第四步：在 composition 手动登记
+## 4. 第三步：在 composition 显式选择并绑定
 
-新增唯一能力装配文件：
+每项能力拥有一个可搜索的装配文件：
 
 ```text
+internal/kernel/composition/clock.go
+internal/kernel/composition/idgen.go
+internal/kernel/composition/validation.go
 internal/kernel/composition/<pkg-app-name1>.go
 ```
 
-目标伪代码：
+简单能力示意：
 
 ```go
-func composePkgName(
-	runtime *kernel.Kernel,
-	deps pkgnameapp.Dependencies,
-) (pkgnameapp.Access, error) {
-	access, err := kernelapp.Register(runtime, pkgnameapp.Definition(deps))
-	if err != nil {
-		return nil, fmt.Errorf("compose <pkg-app-name1>: %w", err)
-	}
-	return access, nil
+// 目标伪代码，尚未实现。
+func composeClock(plan *app.Plan) (app.Binding[clock.Clock], error) {
+	return app.Add(plan, clockapp.System())
 }
 ```
 
-然后在总 `Compose` 中：
+`Binding[O]` 不是实例，也没有 `Get` 或 `Resolve`。它只声明当前进程由哪个组件角色提供输出契约 `O`。总 Compose 先创建一个未安装的本地 Plan，再手工列出所有选择：
 
-1. 按明确顺序调用 `composePkgName`；
-2. 将 Access 放进进程实际需要的组合结果；
-3. 让 Kernel 从登记的 Definition 自行聚合 Defaults 和 CLI Contract；
-4. 任一登记失败返回零值组合结果，不暴露部分可用对象；
-5. 用测试固定启用清单、顺序、重复 ID 和失败行为。
+```go
+plan := app.NewPlan()
 
-目标设计应消除当前 composition 手工拆出 `registration.Access`、`registration.Defaults` 并为每种契约维护并行切片的样板，但仍保留显式登记这一事实。
+clockBinding, err := composeClock(plan)
+if err != nil {
+	return Result{}, fmt.Errorf("compose clock: %w", err)
+}
 
-## 6. 第五步：交给 Kernel 和 Host 运行
-
-本阶段的装配终点是受托管底层组件已经登记到 Kernel，并能由 Host 驱动 Kernel Participant 和可选配置 Watch：
-
-```text
-创建 Kernel -> 显式登记底层组件 -> 创建 Host -> 启动/监听 -> 反向关闭底层组件
+idBinding, err := composeIDGenerator(plan)
+if err != nil {
+	return Result{}, fmt.Errorf("compose id generator: %w", err)
+}
 ```
 
-配置 Watch 是 Host 的可选 Task；单次 Reload 失败由回调记录并继续监听，Watcher 自身失败才终止 Task。报告不增加 HTTP Server、Worker 或业务 Participant 作为验收前提。
+同一 Go 接口可以有多个不同语义角色，例如 primary 与 audit Database；它们使用不同稳定 Component ID，并由 composition 把明确的 Binding 传给消费者，不使用按类型自动挑选或随意字符串 qualifier。同一角色替换底层实现时保留相同 ID。
 
-组件返回的项目能力接口或租约 Access 只做边界级测试；等 handler、service、repository 等真实上层开始建设时，再单独设计其消费与构造方式。
+如果 `<pkg-app-name1>` 依赖这些底层能力，composition 把 Binding 作为 typed Input 传入其 Definition：
 
-## 8. 最小修改集合
+```go
+componentBinding, err := app.Add(plan, pkgnameapp.Definition(
+	pkgnameapp.Inputs{
+		Clock: app.InputOf(clockBinding),
+		IDs:   app.InputOf(idBinding),
+	},
+))
+```
 
-一个新受托管能力通常只需要：
+后加入的组件只能使用前面已经取得、且属于同一 Plan 的 Binding。Plan 冻结时校验零值/跨计划 Input 和重复 Component ID，再按登记顺序把真实接口注入 Builder；关闭时严格反序。前向引用和循环依赖无法表达，因此不需要构建通用 DAG 或执行拓扑排序。计划冻结后禁止动态登记和运行时查询。
 
-1. `pkg/<name>`：能力封装和契约测试；
-2. `internal/kernel/app/<name>`：一个组件定义包；
-3. `internal/kernel/composition/<name>.go`：一处手动选择和登记；
-4. `composition.go`：把该能力加入当前底层组件清单和必要输出；
-5. 权威文档和必要配置示例；
-6. 组件、composition、Kernel 策略语义测试。
+所有 `compose<Name>` 成功后，composition 才调用 `Freeze` 并把完整计划一次性 `Install` 到 Kernel。任一步失败都丢弃本地 Plan，不让 Kernel 留下半登记组件。
 
-若只是无资源通用能力，通常只有第 1 项和应用构造函数调用，不需要第 2 至第 4 项。
+对于 Leased 能力，Binding 的输出类型是组件自有 `Access` 契约，而不是底层 Client。例如 `Binding[databaseapp.Access]` 会注入 Access；`Binding[clock.Clock]` 会注入普通 Clock。前者不能传给要求 `database.Client` 的 Input，后者也没有 `Use`；类型系统直接区分调用协议，避免靠注释或运行时断言约定。
 
-## 9. 验收清单
+## 5. 第四步：由 Kernel 和 Host 自动执行
+
+目标启动流程：
+
+1. composition 显式加入全部底层组件并冻结计划；
+2. composition 把完整计划一次性安装到 Kernel，Kernel 校验有序 typed Binding/Input 和策略组合；
+3. Kernel 聚合存在的 Defaults 与 CLI Contract；
+4. 启动时按登记顺序解析配置并 Build，按需 Start/Ready；
+5. Direct 输出注入稳定接口，Leased 输出注入稳定 Access；
+6. Watch 只把相关变化交给声明了配置契约的组件；
+7. Kernel 按各组件 Reload Policy 原地重载、换代、交接或报告需要重启；
+8. Host 关闭时，Kernel 按反向依赖顺序停止所有已拥有资源。
+
+Clock、ID Generator、Validator 在第 4 步完成一次构造，之后不参与 Watch 或换代。Database 等组件才进入租约、候选、观察期与回滚流程。
+
+当前尚无 HTTP、handler、service、repository 或 model。本阶段通过组件与 composition 测试验证输出，不用虚构业务消费者。
+
+## 6. 最小文件集合
+
+### 6.1 Fixed + Direct 简单能力
+
+1. `pkg/<name>`：项目能力接口、实现与契约测试；
+2. `internal/kernel/app/<name>/component.go`：Definition 与四项策略；
+3. `internal/kernel/app/<name>/component_test.go`：输出契约与声明校验；
+4. `internal/kernel/composition/<name>.go`：选择实现并返回 typed Binding；
+5. composition 聚合入口：显式加入该 Binding；
+6. 权威文档和 composition 测试。
+
+### 6.2 Configured + Lifecycle 资源能力
+
+在上述集合上按需增加 config、defaults、CLI、lifecycle、health、access、reload 文件和相应失败测试。文件可以合并，不能用空实现占位。
+
+## 7. 逐步验收清单
 
 ### `pkg` 边界
 
-- [ ] 业务 API 不暴露未经允许的第三方类型。
-- [ ] Config、错误、Context、超时和 Close 语义明确。
-- [ ] 可脱离 Kernel 独立构造和测试。
-- [ ] 第三方实现可由同一契约测试验证。
+- [ ] 公共能力契约不泄漏未经允许的第三方类型。
+- [ ] 实现可以脱离 Kernel 构造和运行契约测试。
+- [ ] 资源所有权、错误、Context 和并发语义明确。
 
-### 组件边界
+### 组件声明
 
-- [ ] ID 和 ConfigPath 稳定且无重复。
-- [ ] 只有一个 Definition 入口，不自行 Register。
-- [ ] 只声明实际存在的小契约。
-- [ ] 资源所有者、Ready、Health、Stop 和敏感信息边界明确。
-- [ ] Reload Policy 有证据，不靠方法名猜测。
+- [ ] 稳定 Component ID 表达能力角色；同一角色的多态实现共用 ID。
+- [ ] 输出是项目自有能力接口或组件 Access，一个组件只有一个主要输出。
+- [ ] `Fixed/Configured`、`Direct/Leased`、生命周期和 Reload Policy 均显式且组合合法。
+- [ ] 没有真实配置时不存在 ConfigPath、Defaults 或 CLI 空契约。
+- [ ] 没有真实生命周期时只保留 Builder，不存在空 Hooks。
+- [ ] Direct 能力没有 `Access.Use`，Swap 能力必须使用 Leased。
 
-### composition 与能力出口
+### composition
 
-- [ ] 启用清单和顺序显式可搜索。
-- [ ] 只输出项目自有 typed 能力或租约 Access。
-- [ ] 出口不泄漏 Kernel Handle、关闭权或第三方具体类型。
-- [ ] 不为尚未建设的业务层新增构造或依赖规则。
+- [ ] 每个启用能力都能从唯一装配文件找到实现选择。
+- [ ] Clock、ID Generator、Validator 也进入显式清单，没有消费者内部 nil 回退。
+- [ ] 依赖只通过 typed Binding/Input 声明。
+- [ ] 零值/跨计划 Input、重复 ID 和失败均在安装前暴露；前向引用与循环依赖无法表达。
+- [ ] Kernel 只接收完整冻结计划，不保留部分登记。
+- [ ] 不暴露 Kernel Handle、运行时 Resolver 或第三方 Client。
 
-### 重载与停止
+### 运行与重载
 
-- [ ] 配置 Decode 失败不影响当前实例。
-- [ ] 候选 Build/Start/Ready 失败会完整清理。
-- [ ] 租约排空、Context 取消和超时有测试。
-- [ ] 观察失败能回切并清理失败新代。
-- [ ] 观察成功后才清理上一代，清理失败不伪装成回滚。
-- [ ] 连续变化只保留最新配置且不会累积多代资源。
-- [ ] 排他资源使用 Handoff 或明确 RestartRequired。
-- [ ] Host 能停止 Watch 并释放 Kernel 拥有的全部底层资源。
+- [ ] Fixed + Direct 组件只构造一次，不参与配置 Watch。
+- [ ] Native Reload 失败保留旧状态；RestartRequired 变化不偷偷应用。
+- [ ] Swap 候选失败恢复旧入口，切换后观察失败可回切。
+- [ ] 排他资源只使用经过专门验证的 Handoff，否则 RestartRequired。
+- [ ] Host 关闭能按反向依赖顺序释放所有已拥有资源并保留清理错误。

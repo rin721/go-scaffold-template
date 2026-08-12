@@ -23,9 +23,9 @@ Kernel / Host
 其中：
 
 - `pkg/<name>` 隔离第三方库并提供稳定的项目能力契约。“底层可替换”首先在这里实现：未来替换第三方库时，业务契约和 Kernel 装配方式不随之改变。
-- `internal/kernel/app/<name>` 把确实需要托管的底层能力描述成应用组件，只暴露一个定义入口，内部按需组合配置、构建、启动、就绪、关闭、健康和重载等小契约。
+- `internal/kernel/app/<name>` 是所有已选底层能力的统一组件声明层；Clock、ID Generator、Validator 也进入这里，但只选择自己真正需要的构造、配置、出口、生命周期和重载策略。
 - `internal/kernel/composition/<name>.go` 是人工选择实现和登记组件的唯一位置。没有扫描、`init` 注册、Service Locator 或隐藏默认组件。
-- Kernel 负责组件运行治理，并向尚未建设的上层暴露项目自有能力契约。本报告不设计 handler、service、repository 等业务层，也不判断它们未来由谁构造。
+- Kernel 只解析显式登记的底层组件依赖，按声明构造并治理组件；稳定能力可以直接注入项目接口，需要实例换代的能力才注入租约 Access。本报告不设计 handler、service、repository 等业务层，也不判断它们未来由谁构造。
 - 配置重载由组件根据底层库和资源特性选择策略，不能把最重的实例换代协议机械施加给所有能力。
 
 ## 为什么主流框架显得更轻
@@ -36,7 +36,7 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 
 ## 重载策略结论
 
-每个受托管组件必须显式选择：
+每个应用组件必须显式选择：
 
 | 策略 | 适用条件 | Kernel 职责 |
 | --- | --- | --- |
@@ -44,7 +44,7 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 | `KernelInstanceSwap` | 底层库不能原子重载，但新旧实例可并存 | 构建候选、租约排空、切换、观察和回滚 |
 | `ComponentHandoff` | 资源排他，但组件有可靠所有权交接协议 | 编排组件专用交接状态机 |
 | `RestartRequired` | 不能并存，也没有可靠交接协议 | 报告需要重启，不伪装无感重载 |
-| `Ignore` | 变化与组件无关或配置固定 | 不执行重载 |
+| `NoReload` | 组件没有运行期配置，或实现由代码固定 | 不建立配置监听和换代协议 |
 
 `KernelInstanceSwap` 的目标语义是带观察期的两阶段切换：新实例通过 Build、Start、Ready 后接管新租约；上一代暂时保留但不接收新租约；观察期健康失败时排空新租约并切回上一代；观察期通过后才异步关闭上一代。Kernel 同时最多保留当前代和上一代。
 
@@ -65,11 +65,12 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 
 | 内容 | 状态 |
 | --- | --- |
-| `pkg` 与 Kernel 单向依赖、显式 composition、typed `Access.Use` | 当前已实现 |
+| `pkg` 与 Kernel 单向依赖，Logger、Database 显式 composition 和 typed `Access.Use` | 当前已实现 |
 | 初始 Build/Start、Reload 候选构造、旧租约排空、失败恢复旧实例 | 当前已实现 |
 | Supervisor 按顺序启动、反向停止，配置文件 Watch | 当前已实现 |
 | `pkg/health` 健康检查库 | 当前已实现，但未接入 Kernel/Host 组件观察期 |
-| `internal/kernel/app/<name>` 和组件级 Reload Policy | 目标设计，尚未实现 |
+| 所有底层能力统一进入 `internal/kernel/app/<name>` 和 composition | 目标设计，尚未实现 |
+| `Fixed/Configured`、`Direct/Leased`、typed `Binding/Input` 和组件级 Reload Policy | 目标设计，尚未实现 |
 | 切换后观察期、自动回切、最多保留两代 | 目标设计，尚未实现 |
 | HTTP 入站服务及 middleware、handler、service、repository、model | 尚未建设，全部排除在本报告设计与验收之外 |
 

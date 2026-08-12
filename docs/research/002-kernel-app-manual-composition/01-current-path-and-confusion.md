@@ -17,9 +17,9 @@ flowchart LR
     DDef --> Register
     Register --> Access["typed Access"]
     Register --> Kernel["Kernel component list"]
-    Access --> Business["application Participant / future business"]
+    Access --> Application["cmd/app applicationLifecycle"]
     Kernel --> Host["Host + Supervisor"]
-    Business --> Host
+    Application --> Host
 ```
 
 入口需要完成以下动作：
@@ -33,6 +33,18 @@ flowchart LR
 7. 创建 Host 并运行 Supervisor。
 
 `kernel.New` 不会自动发现或登记能力。真正的选择发生在 `internal/kernel/composition`，真正的资源构造要等 `Kernel.Start` 加载配置后才发生。
+
+### 1.1 Clock、ID Generator、Validator 的当前事实
+
+当前仓库已经在 `pkg` 定义了 `clock.Clock`、`idgen.Generator` 和 `validation.Validator` 项目契约，但尚未形成统一装配：
+
+- `internal/kernel/composition.Capabilities` 只有 Logger、Database、Configuration 和 CLI；
+- 三项简单能力都没有对应 `internal/kernel/capability` 或目标 `internal/kernel/app` 组件；
+- 当前部分 `pkg` 代码仍直接调用 `time.Now()`；
+- `pkg/httpx.RequestID` 在 generator 为 nil 时自行创建 UUID Generator；
+- `validation.Struct` 每次调用都自行创建默认 Validator。
+
+这些便利入口本身不是错误，但它们不能代表“当前进程已明确选择并统一注入了哪一种实现”。因此“Clock、ID Generator、Validator 统一进入 `kernel/app + composition`”是本轮新增的目标设计，不是对现有能力的描述。
 
 ## 2. 新增一个能力目前需要理解什么
 

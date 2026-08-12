@@ -12,7 +12,7 @@ pkg/<name>
     -> 项目自有能力契约或租约 Access
 ```
 
-底层组件在这个终点应能够被构建、启动、检查、重载、回滚和关闭；第三方实现、资源关闭权和 Kernel 私有 Handle 不得越过能力出口。
+底层组件在这个终点应按自身声明被构建，并在适用时被启动、检查、重载、回滚和关闭。无资源能力不需要伪造生命周期；第三方实现、资源关闭权和 Kernel 私有 Handle 不得越过能力出口。
 
 ## 2. 当前明确未建设的内容
 
@@ -44,10 +44,10 @@ pkg/<name>
 在没有业务层的情况下，底层组件仍然可以完整验收：
 
 - `pkg` 契约测试验证第三方封装、配置、错误和资源所有权；
-- 组件测试验证 Build、Start、Ready、Health、Stop 和 Reload Policy；
-- Access 测试验证租约、Context 取消、派生资源边界和关闭权限；
+- 组件测试验证所声明的 Build、可选配置、可选生命周期和 Reload Policy；
+- Direct 输出测试验证接口多态和稳定身份，Leased Access 测试验证租约、Context 取消、派生资源边界和关闭权限；
 - Kernel 测试验证配置事务、实例切换、观察期、回切和清理；
-- composition 测试验证显式启用清单、登记顺序和 typed 输出；
+- composition 测试验证显式启用清单、typed Binding/Input、零值/跨计划输入、重复 Component ID 和严格登记顺序；
 - Host 测试验证 Kernel Participant、Watch Task 和进程关闭期间的资源回收。
 
 这些测试都围绕底层组件本身，不需要创建业务目录或伪造业务调用。

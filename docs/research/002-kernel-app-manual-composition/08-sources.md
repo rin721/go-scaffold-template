@@ -16,6 +16,10 @@
 | Logger 组件 | `internal/kernel/capability/logger/logger.go` | 私有 Resource、typed Access 和 Activation |
 | Database 组件 | `internal/kernel/capability/database/database.go` | typed Config、New、Ping、Close 和 Access |
 | 显式组合 | `internal/kernel/composition/*.go` | 固定清单、每能力登记、Defaults/CLI 聚合 |
+| Clock | `pkg/clock/clock.go` | 项目 Clock 契约与 System/Fixed 实现；当前未进入 composition |
+| ID Generator | `pkg/idgen/idgen.go` | 项目 Generator 契约与 UUID 实现；当前未进入 composition |
+| Validator | `pkg/validation/validation.go` | 项目 Validator 契约与默认实现；当前未进入 composition |
+| 当前简单能力使用 | `pkg/httpx/production_middleware.go`、`pkg/storage/watch.go` | UUID nil 回退及直接 `time.Now` 等尚未统一注入的现状 |
 | 健康能力库 | `pkg/health/*.go` | Registry、Kind、Snapshot；当前未接入观察期 |
 | HTTP 排他资源示例 | `pkg/httpx/server.go` | `ListenAndServe` 与 Shutdown 的当前封装 |
 

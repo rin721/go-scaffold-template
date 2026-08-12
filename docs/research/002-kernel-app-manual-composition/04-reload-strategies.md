@@ -8,15 +8,15 @@
 
 ```mermaid
 flowchart TD
-    Change["组件配置可能变化"] --> Native{"底层库是否提供<br/>可靠原子重载？"}
+    Component["组件声明"] --> RuntimeConfig{"是否拥有运行期配置？"}
+    RuntimeConfig -- 否 --> NoReload["NoReload"]
+    RuntimeConfig -- 是 --> Native{"底层库是否提供<br/>可靠原子重载？"}
     Native -- 是 --> N["NativeAtomicReload"]
     Native -- 否 --> Coexist{"新旧实例能否<br/>同时构建并启动？"}
     Coexist -- 是 --> Swap["KernelInstanceSwap"]
     Coexist -- 否 --> Handoff{"组件是否有可靠的<br/>资源交接协议？"}
     Handoff -- 是 --> Hand["ComponentHandoff"]
     Handoff -- 否 --> Restart["RestartRequired"]
-    Change --> Relevant{"变化与组件无关？"}
-    Relevant -- 是 --> Ignore["Ignore"]
 ```
 
 策略必须成为组件定义的显式、可查询元数据。不能通过某个 Hook 是否为 nil、是否实现了同名方法或包目录来猜测。
@@ -143,9 +143,11 @@ Kernel 只编排交接步骤、超时、错误和诊断，不猜测组件内部�
 
 这不是能力缺失，而是对排他资源和失败边界的诚实表达。部署平台通过滚动重启通常比进程内模拟无感切换更可靠。
 
-## 6. `Ignore`
+## 6. `NoReload`
 
-适用于无运行配置、配置只在编译期决定，或本次变化不属于该组件的情况。Ignore 必须由组件配置所有权和摘要判断得出，不能在 Decode 失败后偷偷忽略。
+适用于没有运行期配置，或实现和构造参数由代码中的 Definition/composition 固定选择的组件。Clock、ID Generator、Validator 的默认目标声明属于该策略。
+
+`NoReload` 表示组件根本不参加运行期配置事务，不是“收到了配置但选择忽略”。如果组件声明了 `ConfigContract`，就必须从 `NativeAtomicReload`、`KernelInstanceSwap`、`ComponentHandoff`、`RestartRequired` 中显式选择配置生效方式；不允许用 `NoReload` 掩盖无法处理的配置变化。
 
 ## 7. 错误与日志
 
@@ -165,7 +167,7 @@ Kernel 只编排交接步骤、超时、错误和诊断，不猜测组件内部�
 
 | 行为 | 当前实现 | 目标设计 |
 | --- | --- | --- |
-| 配置变化策略 | 受托管组件统一候选换代 | 每组件显式选择五种策略 |
+| 配置变化策略 | 受托管组件统一候选换代 | 每组件显式选择五种策略；无配置组件选择 `NoReload` |
 | 候选 Build/Start | 已实现 | 保留，并增加可选 Ready |
 | 旧租约排空 | 已实现 | 保留 |
 | 提交前失败保留旧代 | 已实现 | 保留 |

@@ -9,5 +9,6 @@
 - [003 变更确认流程](003-change-confirmation-workflow/README.md)：已完成。
 - [004 Logger Capability 注入](004-logger-capability-injection/README.md)：已完成。
 - [005 全量配置示例](005-full-config-example/README.md)：已完成。
+- [006 Kernel App 多态装配基础](006-kernel-app-polymorphic-composition/README.md)：方案待确认，尚未实施。
 
-下一个任务序号为 `006`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `007`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
