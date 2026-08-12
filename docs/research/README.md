@@ -5,6 +5,6 @@
 ## 报告
 
 - [001 Go 脚手架底层能力装配架构对比](001-go-capability-composition/README.md)：比较当前 Kernel Capability 模型与 Kratos/Wire、go-zero、Uber Fx、go-clean-template 的装配方式，并给出分轨演进建议。
-- [002 Kernel 底层组件手动装配与安全重载](002-kernel-app-manual-composition/README.md)：解释当前扩展路径为何复杂，提出 `pkg -> kernel/app -> composition` 手动装配模型、组件级重载策略和带观察期的安全实例切换目标。
+- [002 Kernel 底层组件手动装配与安全重载](002-kernel-app-manual-composition/README.md)：解释当前扩展路径为何复杂，提出 `pkg -> kernel/app -> composition -> Kernel/Host` 手动装配模型、组件级重载策略和带观察期的安全实例切换目标；不提前设计尚未建设的业务层。
 
 后续研究使用递增三位序号和语义名称建立独立目录；每份报告必须说明研究快照、样本范围、事实与推断边界以及来源。

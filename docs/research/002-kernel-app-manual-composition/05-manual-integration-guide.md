@@ -188,36 +188,17 @@ func composePkgName(
 
 目标设计应消除当前 composition 手工拆出 `registration.Access`、`registration.Defaults` 并为每种契约维护并行切片的样板，但仍保留显式登记这一事实。
 
-## 6. 第五步：注入业务静态对象图
+## 6. 第五步：交给 Kernel 和 Host 运行
 
-应用组合根从组合结果中取出最小依赖：
-
-```go
-// 未来业务示意，不是当前实现。
-repo := orderrepo.New(capabilities.Database)
-service := orderservice.New(repo, capabilities.Clock)
-handler := orderhandler.New(service, capabilities.Logger)
-router := orderhttp.NewRouter(handler, middlewares...)
-server := httpapp.NewServer(serverConfig, router)
-```
-
-禁止：
-
-- 把整个 `Capabilities` 传给每个 service；
-- 让业务接收 Kernel、Handle、Container 或 Resolver；
-- 在 repository 内绕过 Access 再创建第二套第三方 Client；
-- 因为还没有真实业务层就提前发明通用 BaseRepository/BaseService。
-
-## 7. 第六步：交给 Host 运行
-
-受托管底层组件由 Kernel Participant 启动。HTTP Server、Worker 等上层长期服务作为独立 Participant 或 Task 交给 Host：
+本阶段的装配终点是受托管底层组件已经登记到 Kernel，并能由 Host 驱动 Kernel Participant 和可选配置 Watch：
 
 ```text
-启动：Kernel components -> business/server Participants -> long-running Tasks
-停止：停止 Tasks -> business/server Participants -> Kernel components
+创建 Kernel -> 显式登记底层组件 -> 创建 Host -> 启动/监听 -> 反向关闭底层组件
 ```
 
-这样在停止业务入口后，底层 Database、Logger 等资源仍可供在途清理使用。配置 Watch 是 Host 的可选 Task；单次 Reload 失败由回调记录并继续监听，Watcher 自身失败才终止 Task。
+配置 Watch 是 Host 的可选 Task；单次 Reload 失败由回调记录并继续监听，Watcher 自身失败才终止 Task。报告不增加 HTTP Server、Worker 或业务 Participant 作为验收前提。
+
+组件返回的项目能力接口或租约 Access 只做边界级测试；等 handler、service、repository 等真实上层开始建设时，再单独设计其消费与构造方式。
 
 ## 8. 最小修改集合
 
@@ -226,7 +207,7 @@ server := httpapp.NewServer(serverConfig, router)
 1. `pkg/<name>`：能力封装和契约测试；
 2. `internal/kernel/app/<name>`：一个组件定义包；
 3. `internal/kernel/composition/<name>.go`：一处手动选择和登记；
-4. `composition.go`：把该能力加入当前进程清单和结果；
+4. `composition.go`：把该能力加入当前底层组件清单和必要输出；
 5. 权威文档和必要配置示例；
 6. 组件、composition、Kernel 策略语义测试。
 
@@ -249,12 +230,12 @@ server := httpapp.NewServer(serverConfig, router)
 - [ ] 资源所有者、Ready、Health、Stop 和敏感信息边界明确。
 - [ ] Reload Policy 有证据，不靠方法名猜测。
 
-### composition 与业务
+### composition 与能力出口
 
 - [ ] 启用清单和顺序显式可搜索。
-- [ ] 业务只接收最小 typed 依赖。
-- [ ] 没有 Kernel/Container/Resolver 穿透。
-- [ ] 没有调用方自行创建第二套共享 Client。
+- [ ] 只输出项目自有 typed 能力或租约 Access。
+- [ ] 出口不泄漏 Kernel Handle、关闭权或第三方具体类型。
+- [ ] 不为尚未建设的业务层新增构造或依赖规则。
 
 ### 重载与停止
 
@@ -265,4 +246,4 @@ server := httpapp.NewServer(serverConfig, router)
 - [ ] 观察成功后才清理上一代，清理失败不伪装成回滚。
 - [ ] 连续变化只保留最新配置且不会累积多代资源。
 - [ ] 排他资源使用 Handoff 或明确 RestartRequired。
-- [ ] Host 先停业务入口，再释放底层资源。
+- [ ] Host 能停止 Watch 并释放 Kernel 拥有的全部底层资源。

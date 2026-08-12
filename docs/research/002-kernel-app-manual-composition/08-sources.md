@@ -25,7 +25,7 @@
 
 - [Go 脚手架底层能力装配架构对比](../001-go-capability-composition/README.md)：对照 go-clean-template、go-zero、Kratos/Wire 和 Fx，解释当前 Kernel 与普通启动期对象图的差异。
 - [当前架构事实](../001-go-capability-composition/02-current-architecture.md)：记录 `Definition`、Access 租约、初始启动和 Reload 事务。
-- [演进建议](../001-go-capability-composition/05-recommendations.md)：提出受托管能力与业务静态对象图双平面。
+- [演进建议](../001-go-capability-composition/05-recommendations.md)：记录 001 报告当时的分轨建议；其中涉及未来业务对象装配的内容不作为本报告当前阶段结论。
 
 本报告不复制 001 的样本全文，而是回答更具体的问题：新增一个底层能力如何开始、为什么当前入口复杂、怎样按组件特性选择安全重载策略。
 

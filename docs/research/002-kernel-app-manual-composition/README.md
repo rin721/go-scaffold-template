@@ -18,8 +18,6 @@ internal/kernel/app/<name>
 internal/kernel/composition/<name>.go
     ↓
 Kernel / Host
-    ↓
-repository / service / handler / server 的普通构造函数装配
 ```
 
 其中：
@@ -27,7 +25,7 @@ repository / service / handler / server 的普通构造函数装配
 - `pkg/<name>` 隔离第三方库并提供稳定的项目能力契约。“底层可替换”首先在这里实现：未来替换第三方库时，业务契约和 Kernel 装配方式不随之改变。
 - `internal/kernel/app/<name>` 把确实需要托管的底层能力描述成应用组件，只暴露一个定义入口，内部按需组合配置、构建、启动、就绪、关闭、健康和重载等小契约。
 - `internal/kernel/composition/<name>.go` 是人工选择实现和登记组件的唯一位置。没有扫描、`init` 注册、Service Locator 或隐藏默认组件。
-- Kernel 负责组件运行治理，不负责构造 handler、service、repository 等业务对象图。业务依赖继续由普通 Go 构造函数显式连接。
+- Kernel 负责组件运行治理，并向尚未建设的上层暴露项目自有能力契约。本报告不设计 handler、service、repository 等业务层，也不判断它们未来由谁构造。
 - 配置重载由组件根据底层库和资源特性选择策略，不能把最重的实例换代协议机械施加给所有能力。
 
 ## 为什么主流框架显得更轻
@@ -59,7 +57,7 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 3. [目标组件模型](03-target-component-model.md)
 4. [组件级重载策略](04-reload-strategies.md)
 5. [手动接入指南](05-manual-integration-guide.md)
-6. [业务层边界](06-business-layer-boundaries.md)
+6. [当前阶段边界](06-current-stage-boundary.md)
 7. [迁移建议](07-migration-recommendations.md)
 8. [来源与复核入口](08-sources.md)
 
@@ -73,6 +71,6 @@ Fx、Kratos、go-zero 和常见手工 composition root 的默认路径主要解�
 | `pkg/health` 健康检查库 | 当前已实现，但未接入 Kernel/Host 组件观察期 |
 | `internal/kernel/app/<name>` 和组件级 Reload Policy | 目标设计，尚未实现 |
 | 切换后观察期、自动回切、最多保留两代 | 目标设计，尚未实现 |
-| HTTP、middleware、handler、service、repository、model 业务纵切 | 尚未建设，不在本报告中虚构实现 |
+| HTTP 入站服务及 middleware、handler、service、repository、model | 尚未建设，全部排除在本报告设计与验收之外 |
 
 本报告是研究结论和后续设计输入，不是已经确认的源码改造。实施目录迁移、公共契约变更或重载状态机前，必须另建任务级变更方案并获得确认。

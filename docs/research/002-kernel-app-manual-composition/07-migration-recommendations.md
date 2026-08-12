@@ -76,17 +76,7 @@
 pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> 配置变化 -> 业务消费者
 ```
 
-候选应有明确使用场景和资源语义。HTTP Server 属于排他资源，适合验证 Handoff/RestartRequired，但不适合作为最简单的 `KernelInstanceSwap` 样本。无资源 Clock 又不足以验证生命周期。具体能力必须在后续任务中依据真实需求选择。
-
-### 阶段 E：首个外部业务纵切验收
-
-在独立消费者项目中构造 repository、service、handler 和 server，验证：
-
-- 业务对象只接收窄能力；
-- Database 派生资源不逃逸租约；
-- Server 先于 Kernel 资源停止；
-- 重载和回切期间请求结果符合定义；
-- 基础仓库不被具体业务协议和表结构污染。
+候选应有明确使用场景和资源语义，能够验证生命周期与至少一种 Reload Policy，但不得为了验证框架而引入 HTTP 或业务分层。具体能力必须在后续任务中依据真实底层需求选择。
 
 ## 3. Logger 与 Database 的初步策略判断
 
@@ -119,7 +109,7 @@ pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> �
 - 不引入 Fx/Dig 来替换资源代际状态机。
 - 不让 `internal/kernel/app` 组件通过 `init` 自动注册。
 - 不建立万能 `Component`，也不通过大量 nil Hook 模拟可选行为。
-- 不在业务层传播 Kernel Handle、Resolver 或完整 Capabilities。
+- 不为尚未建设的业务层新增 Kernel Handle、Resolver 或 Capabilities 使用规则。
 - 不允许策略失败时静默退化成停旧启新。
 - 不因担心迁移成本永久保留 `capability` 和 `app` 两套目录。
 - 不把观察期旧实例长期保存为隐形备用池。
@@ -149,10 +139,11 @@ pkg 封装 -> kernel/app 组件 -> composition 手动登记 -> Host 运行 -> �
 只有满足以下条件才能宣布架构收敛完成：
 
 - 新组件作者能从单一指南完成接入，无需理解 Kernel 私有状态机；
-- Logger、Database 和至少一个独立消费者完成真实验证；
+- Logger、Database 和至少一个新增底层组件完成组件级真实验证；
 - 旧目录、旧 API、旧测试和旧文档已单轨删除；
 - 全部重载策略都有确定错误、超时、资源和诊断语义；
 - Race、失败注入、连续变化和进程关闭测试通过；
-- 文档准确区分直接能力、租约 Access、排他 Handoff 和 RestartRequired。
+- 文档准确区分直接能力、租约 Access、排他 Handoff 和 RestartRequired；
+- 没有为了验收底层装配而提前引入 HTTP 或业务分层。
 
 在此之前，本报告只能作为目标和迁移依据，不能把 `internal/kernel/app` 或观察期回滚写进根 README 的“已实现能力”。

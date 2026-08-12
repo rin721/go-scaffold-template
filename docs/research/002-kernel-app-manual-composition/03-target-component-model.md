@@ -11,12 +11,6 @@ flowchart TB
     App --> Composition["internal/kernel/composition/<name>.go<br/>人工选择与登记"]
     Composition --> Kernel["Kernel<br/>配置与运行治理"]
     Kernel --> Host["Host / Supervisor<br/>进程生命周期"]
-    Composition --> Root["应用 composition root"]
-    Root --> Repo["repository"]
-    Repo --> Service["service / use case"]
-    Service --> Handler["handler"]
-    Handler --> Server["HTTP/RPC server Participant"]
-    Server --> Host
 ```
 
 ### 1.1 `pkg/<name>`：通用能力层
@@ -99,8 +93,8 @@ Host/Supervisor 负责：
 Kernel 不负责：
 
 - 自动扫描组件；
-- 构造 repository、service、handler、model；
-- 在运行期按类型查找业务依赖；
+- 定义或构造尚未建设的 HTTP、middleware、handler、service、repository、model；
+- 为尚未出现的上层对象预设依赖图、Resolver 或 Container；
 - 通过环境变量偷偷决定启用哪些组件；
 - 替排他资源发明并不存在的无感交接能力。
 
@@ -136,32 +130,22 @@ Kernel 不负责：
 - 必须避免业务调用方取得 Close 权限；
 - 多个上层对象需要共享同一个受治理实例。
 
-通常不进入 Kernel：
+当前阶段通常不进入 Kernel：
 
 - 纯 Clock、ID Generator、Validator、Codec 等无资源值；
-- 单个业务对象私有且生命周期跟随其所有者的依赖；
-- repository、service、handler、middleware、model；
 - 只在一个局部函数内使用的第三方库；
 - 没有真实替换、治理或共享需求的机械接口。
 
-这些能力仍可放在 `pkg`，由应用 composition root 直接构造并通过普通参数注入。
+这些能力仍可保留在 `pkg` 并直接构造。至于未来业务层如何消费，等待真实业务结构形成后另行设计。
 
-## 4. Access 的使用范围
+## 4. Access 的交付边界
 
-稳定 Access 只有在 Kernel 需要知道“当前一代是否仍被使用”时才有价值。目标设计应允许两类交付：
+稳定 Access 只有在 Kernel 需要知道“当前一代是否仍被使用”时才有价值。目标设计允许组件形成两类项目能力出口：
 
-- **直接能力**：不做运行期实例换代的能力，业务直接持有项目自有接口；
-- **租约 Access**：选择 `KernelInstanceSwap` 或需要受控交接的能力，业务在有界回调中使用当前实例。
+- **直接能力**：不做运行期实例换代的能力，对外提供项目自有接口；
+- **租约 Access**：选择 `KernelInstanceSwap` 或需要受控交接的能力，通过有界回调使用当前实例。
 
-不能把完整 `Capabilities` 传给每个业务对象。composition root 应拆出最小依赖：
-
-```go
-repo := orderrepo.New(capabilities.Database)
-service := orderservice.New(repo, capabilities.Clock)
-handler := orderhandler.New(service, capabilities.Logger)
-```
-
-具体构造函数由未来真实业务定义；上例只表达依赖方向，不声明当前已有这些包。
+本阶段只验证出口类型、资源权限、租约和替换语义，不设计它将来被 handler、service 或 repository 怎样持有和传递。`composition.Capabilities` 是否继续作为进程级聚合结果，也应在后续组件 API 变更中单独评估，不能用尚不存在的业务调用方倒推结论。
 
 ## 5. 可替换性的四个检查层次
 
