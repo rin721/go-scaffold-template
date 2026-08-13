@@ -87,3 +87,45 @@ func TestSnapshotSectionDigestTracksOnlySection(t *testing.T) {
 		t.Fatalf("database digest changed with unrelated section: %q != %q", firstDigest, secondDigest)
 	}
 }
+
+func TestEnvironmentOverrideKeepsEffectiveSectionDigestStableAcrossFileChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	t.Setenv("APP_DATABASE__DSN", "environment.db")
+	writeDatabaseDSN(t, path, "file-v1.db")
+	loader := New(FileSource(path), EnvSource("APP_"))
+	first, err := loader.Load(t.Context())
+	if err != nil {
+		t.Fatalf("Load(first) error = %v", err)
+	}
+
+	writeDatabaseDSN(t, path, "file-v2.db")
+	second, err := loader.Load(t.Context())
+	if err != nil {
+		t.Fatalf("Load(second) error = %v", err)
+	}
+	firstDigest, err := first.SectionDigest("database")
+	if err != nil {
+		t.Fatalf("SectionDigest(first) error = %v", err)
+	}
+	secondDigest, err := second.SectionDigest("database")
+	if err != nil {
+		t.Fatalf("SectionDigest(second) error = %v", err)
+	}
+	if firstDigest != secondDigest {
+		t.Fatalf("effective database digest changed under env override: %q != %q", firstDigest, secondDigest)
+	}
+	var decoded databaseConfig
+	if err := second.DecodeSection("database", &decoded); err != nil {
+		t.Fatalf("DecodeSection() error = %v", err)
+	}
+	if decoded.DSN != "environment.db" {
+		t.Fatalf("DSN = %q, want environment override", decoded.DSN)
+	}
+}
+
+func writeDatabaseDSN(t *testing.T, path, dsn string) {
+	t.Helper()
+	if err := os.WriteFile(path, []byte("database:\n  dsn: "+dsn+"\n"), 0o600); err != nil {
+		t.Fatalf("write database config: %v", err)
+	}
+}

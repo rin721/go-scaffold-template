@@ -32,13 +32,17 @@ func (k *Kernel) Watch(ctx context.Context, onReloadError func(error)) error {
 	watchCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	changes := make(chan struct{}, 1)
+	notifyChange := func() {
+		select {
+		case changes <- struct{}{}:
+		default:
+		}
+	}
 	watchDone := make(chan error, 1)
 	go func() {
-		watchDone <- config.WatchFiles(watchCtx, paths, k.options.Debounce, func() {
-			select {
-			case changes <- struct{}{}:
-			default:
-			}
+		watchDone <- config.WatchFiles(watchCtx, paths, k.options.Debounce, config.WatchCallbacks{
+			OnReady:  notifyChange,
+			OnChange: notifyChange,
 		})
 	}()
 

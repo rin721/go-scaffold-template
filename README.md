@@ -67,7 +67,9 @@ go run ./cmd/app config init --force
 
 环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会先发布配置化 Logger，再启动 Database 并完成连接与 Ping；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)。
+无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Kernel Reload 事务；Database 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
+
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)。
 
 ## 本地验证
 

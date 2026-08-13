@@ -9,10 +9,16 @@ import (
 	"github.com/fsnotify/fsnotify"
 )
 
-// WatchFiles 监听配置文件集合，并在事件稳定后通知调用方重新加载。
+// WatchCallbacks 定义 watcher 注册完成和文件变化后的快速通知。
 //
-// onChange 必须快速返回；耗时的配置事务应由调用方在独立的受控循环中执行。
-func WatchFiles(ctx context.Context, paths []string, debounce time.Duration, onChange func()) error {
+// 两个回调都不得执行配置事务；Kernel 会在自身串行循环中重新加载候选。
+type WatchCallbacks struct {
+	OnReady  func()
+	OnChange func()
+}
+
+// WatchFiles 监听配置文件集合，并在目录注册完成和事件稳定后通知调用方。
+func WatchFiles(ctx context.Context, paths []string, debounce time.Duration, callbacks WatchCallbacks) error {
 	if ctx == nil {
 		return fmt.Errorf("config watch context is nil")
 	}
@@ -22,7 +28,10 @@ func WatchFiles(ctx context.Context, paths []string, debounce time.Duration, onC
 	if debounce <= 0 {
 		return fmt.Errorf("config watch debounce must be positive")
 	}
-	if onChange == nil {
+	if callbacks.OnReady == nil {
+		return fmt.Errorf("config watch ready callback is nil")
+	}
+	if callbacks.OnChange == nil {
 		return fmt.Errorf("config watch callback is nil")
 	}
 
@@ -48,6 +57,9 @@ func WatchFiles(ctx context.Context, paths []string, debounce time.Duration, onC
 			return fmt.Errorf("watch config directory %s: %w", directory, err)
 		}
 	}
+	// 注册完成后立即要求调用方重新加载一次，封闭初始 Load 与 watcher ready
+	// 之间的变化窗口。回调只投递通知，不在 fsnotify goroutine 中应用配置。
+	callbacks.OnReady()
 
 	var timer *time.Timer
 	var timerEvents <-chan time.Time
@@ -91,7 +103,7 @@ func WatchFiles(ctx context.Context, paths []string, debounce time.Duration, onC
 			timerEvents = timer.C
 		case <-timerEvents:
 			timerEvents = nil
-			onChange()
+			callbacks.OnChange()
 		case watchErr, ok := <-watcher.Errors:
 			if !ok {
 				return fmt.Errorf("config watcher error channel closed")

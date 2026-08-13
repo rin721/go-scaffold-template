@@ -331,6 +331,34 @@ func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
 	assertAccessVersion(t, access, "v2")
 }
 
+func TestReloadAndStopCloseEachGenerationOnce(t *testing.T) {
+	source := &mutableSource{values: versionValues("service", "v1")}
+	assembly := newTestAssembly(t, source, Options{})
+	log := &eventLog{}
+	access := assembly.add(t, "service", app.KernelInstanceSwap, log, nil, nil)
+	assembly.install(t)
+	if err := assembly.runtime.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	source.set(versionValues("service", "v2"))
+	result, err := assembly.runtime.Reload(t.Context())
+	if err != nil || !result.Applied {
+		t.Fatalf("Reload() = %#v, %v", result, err)
+	}
+	assertAccessVersion(t, access, "v2")
+	if err := assembly.runtime.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	want := []string{
+		"build:service:v1", "start:service:v1",
+		"build:service:v2", "start:service:v2",
+		"stop:service:v1", "stop:service:v2",
+	}
+	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("events = %#v, want %#v", got, want)
+	}
+}
+
 func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
 	source := &mutableSource{values: map[string]any{
 		"swap": map[string]any{"version": "v1"}, "fixed-port": map[string]any{"version": "v1"},
@@ -405,7 +433,6 @@ func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
 	errorsSeen := make(chan error, 2)
 	watchDone := make(chan error, 1)
 	go func() { watchDone <- assembly.runtime.Watch(watchCtx, func(err error) { errorsSeen <- err }) }()
-	time.Sleep(100 * time.Millisecond)
 	writeVersionFile(t, path, "bad")
 	select {
 	case err := <-errorsSeen:

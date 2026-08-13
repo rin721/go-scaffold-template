@@ -8,6 +8,7 @@ import (
 	"os"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
@@ -119,7 +120,11 @@ func (p process) run(ctx context.Context, args []string) error {
 		return nil
 	}
 
-	host, err := kernel.NewHost(runtime, kernel.HostOptions{}, applicationLifecycle{logging: capabilities.Logger})
+	host, err := kernel.NewHost(
+		runtime,
+		serviceHostOptions(capabilities.Logger),
+		applicationLifecycle{logging: capabilities.Logger},
+	)
 	if err != nil {
 		return fmt.Errorf("create application host: %w", err)
 	}
@@ -127,6 +132,30 @@ func (p process) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("run application host: %w", err)
 	}
 	return nil
+}
+
+func serviceHostOptions(logging pkglogger.Logger) kernel.HostOptions {
+	return kernel.HostOptions{
+		Watch: &kernel.WatchOptions{OnReloadError: reloadErrorReporter(logging)},
+	}
+}
+
+func reloadErrorReporter(logging pkglogger.Logger) func(error) {
+	return func(err error) {
+		if logging == nil || err == nil {
+			return
+		}
+		var committed *kernel.CommittedCleanupError
+		fields := []pkglogger.Field{pkglogger.String("error_type", fmt.Sprintf("%T", err))}
+		switch {
+		case errors.As(err, &committed):
+			logging.Error("kernel reload applied but previous resources failed to close", fields...)
+		case errors.Is(err, app.ErrRestartRequired):
+			logging.Warn("kernel reload requires process restart; previous configuration remains active", fields...)
+		default:
+			logging.Error("kernel reload rejected; previous configuration remains active", fields...)
+		}
+	}
 }
 
 type applicationLifecycle struct {
