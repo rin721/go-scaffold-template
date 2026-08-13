@@ -127,4 +127,4 @@ cli.FlagTypeStringSlice
 
 `internal/kernel/cli` 复用本包的 `CommandSpec`、`FlagSpec`、`App`、`CommandError` 和退出码语义，聚合由 composition 显式提供的启动前命令契约。它不会把 Cobra 类型泄漏到 Kernel，也不把 CLI App 纳入 Kernel 生命周期。
 
-当前 composition 只有在 `composition.Options.CLI` 非 nil 时构造 App，并注册 `config init`。该命令调用 DefaultManager 生成配置文件；默认输出 `config.yaml`，支持 `-o/--output` 和 `-f/--force`，且不接受位置参数。CLI 未启用时普通服务启动不构造 App，也不执行命令契约。
+当前进程只有在 `kernel.AssemblyOptions.CLI` 非 nil 时选择 `builtin/cli` 的 `SelectedActivation`，并在 Plan Freeze 后构造 App、注册 `config init`。该命令调用 DefaultManager 生成配置文件；默认输出 `config.yaml`，支持 `-o/--output` 和 `-f/--force`，且不接受位置参数。CLI 未选择时普通服务启动不构造 App，也不执行命令契约。

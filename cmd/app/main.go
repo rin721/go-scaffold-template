@@ -8,10 +8,10 @@ import (
 	"os"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
-	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
+	builtincli "github.com/rin721/go-scaffold2/internal/kernel/builtin/cli"
+	builtinconfig "github.com/rin721/go-scaffold2/internal/kernel/builtin/config"
 	"github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	"github.com/rin721/go-scaffold2/pkg/cli"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 	"github.com/rin721/go-scaffold2/pkg/supervisor"
@@ -32,22 +32,7 @@ func runMain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
 	ctx, stop := supervisor.SignalContext(context.Background())
 	defer stop()
 
-	baseline, err := pkglogger.New(nil)
-	if err != nil {
-		return reportProcessError(stderr, fmt.Errorf("create baseline logger: %w", err), cli.ExitError)
-	}
-	manager, err := kernellogging.New(baseline)
-	if err != nil {
-		closeErr := baseline.Close()
-		return reportProcessError(stderr, errors.Join(fmt.Errorf("create kernel logging manager: %w", err), closeErr), cli.ExitError)
-	}
-
-	process := newProcess(stdin, stdout, stderr, manager)
-	exitCode := execute(ctx, process, args)
-	if err := baseline.Close(); err != nil {
-		return reportProcessError(stderr, fmt.Errorf("close baseline logger: %w", err), cli.ExitError)
-	}
-	return exitCode
+	return execute(ctx, newProcess(stdin, stdout, stderr), args)
 }
 
 // process 保存应用入口拥有的固定装配参数和标准流。
@@ -59,17 +44,15 @@ type process struct {
 	stdin             io.Reader
 	stdout            io.Writer
 	stderr            io.Writer
-	logging           *kernellogging.Manager
 }
 
-func newProcess(stdin io.Reader, stdout, stderr io.Writer, logging *kernellogging.Manager) process {
+func newProcess(stdin io.Reader, stdout, stderr io.Writer) process {
 	return process{
 		configPath:        defaultConfigPath,
 		environmentPrefix: environmentPrefix,
 		stdin:             stdin,
 		stdout:            stdout,
 		stderr:            stderr,
-		logging:           logging,
 	}
 }
 
@@ -81,22 +64,11 @@ func (p process) run(ctx context.Context, args []string) error {
 	if ctx == nil {
 		return fmt.Errorf("application context is nil")
 	}
-	if p.logging == nil {
-		return fmt.Errorf("application logging manager is nil")
-	}
-
-	loader := config.New(
-		config.FileSource(p.configPath),
-		config.EnvSource(p.environmentPrefix),
-	)
-	runtime, err := kernel.New(loader, kernel.Options{Logging: p.logging})
-	if err != nil {
-		return fmt.Errorf("create kernel: %w", err)
-	}
-
-	compositionOptions := composition.Options{}
+	assemblyOptions := kernel.AssemblyOptions{Config: builtinconfig.Options{Sources: []config.Source{
+		config.FileSource(p.configPath), config.EnvSource(p.environmentPrefix),
+	}}}
 	if len(args) > 0 {
-		compositionOptions.CLI = &composition.CLIOptions{App: cli.Config{
+		assemblyOptions.CLI = &builtincli.Options{App: cli.Config{
 			Name:                   applicationName,
 			Description:            applicationDescription,
 			Stdin:                  p.stdin,
@@ -105,7 +77,11 @@ func (p process) run(ctx context.Context, args []string) error {
 			DisableInteractiveHome: true,
 		}}
 	}
-	capabilities, err := composition.Compose(runtime, compositionOptions)
+	assembly, err := kernel.NewAssembly(assemblyOptions)
+	if err != nil {
+		return fmt.Errorf("create kernel assembly: %w", err)
+	}
+	capabilities, err := composition.Compose(assembly)
 	if err != nil {
 		return fmt.Errorf("compose application capabilities: %w", err)
 	}
@@ -114,13 +90,18 @@ func (p process) run(ctx context.Context, args []string) error {
 		if capabilities.CLI == nil {
 			return fmt.Errorf("application CLI is nil")
 		}
-		if err := capabilities.CLI.Run(ctx, args); err != nil {
-			return fmt.Errorf("run application CLI: %w", err)
+		runErr := capabilities.CLI.Run(ctx, args)
+		stopErr := capabilities.Runtime.Stop(context.WithoutCancel(ctx))
+		if runErr != nil {
+			runErr = fmt.Errorf("run application CLI: %w", runErr)
 		}
-		return nil
+		if stopErr != nil {
+			stopErr = fmt.Errorf("stop application kernel: %w", stopErr)
+		}
+		return errors.Join(runErr, stopErr)
 	}
 
-	host, err := kernel.NewHost(runtime, kernel.HostOptions{}, applicationLifecycle{logging: capabilities.Logger})
+	host, err := kernel.NewHost(capabilities.Runtime, kernel.HostOptions{}, applicationLifecycle{logging: capabilities.Logger})
 	if err != nil {
 		return fmt.Errorf("create application host: %w", err)
 	}
@@ -131,7 +112,7 @@ func (p process) run(ctx context.Context, args []string) error {
 }
 
 type applicationLifecycle struct {
-	logging loggerapp.Access
+	logging pkglogger.Access
 }
 
 func (applicationLifecycle) Name() string { return "application" }
@@ -163,11 +144,4 @@ func execute(ctx context.Context, process process, args []string) int {
 		return cli.ExitError
 	}
 	return cli.GetExitCode(err)
-}
-
-func reportProcessError(stderr io.Writer, err error, exitCode int) int {
-	if _, writeErr := fmt.Fprintf(stderr, "%s: %v\n", applicationName, err); writeErr != nil {
-		return cli.ExitError
-	}
-	return exitCode
 }

@@ -1,12 +1,12 @@
 # go-scaffold2
 
-`go-scaffold2` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/kernel/app` 声明底层 App 组件，`internal/kernel/composition` 负责手工选择并冻结有序 Plan，Kernel Runtime 负责生命周期和配置切换。
+`go-scaffold2` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/kernel/builtin` 声明 Kernel 内置 baseline，`internal/kernel/app` 声明可选择实现，`internal/kernel/composition` 负责手工选择并冻结有序 Plan，Kernel Runtime 负责生命周期和配置切换。
 
 ## 当前目标
 
 - 保持 `pkg/*` 通用库不感知 kernel、DI、drain 或热替换。
-- 所有当前进程选择的底层能力都通过 `kernel/app/<name>` 和 composition；Clock、ID Generator、Validator 直接输出普通接口，Logger、Database 输出稳定租约 Access。
-- `app.Plan` 只支持显式有序 `Add` 和 typed `Binding/Input`，不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
+- Config、Logger、CLI 的生产 baseline 只从 Kernel 封闭 builtin catalog 构造；可选择的替代实现或独立实例位于 `kernel/app/<name>`。
+- `app.Plan` 区分 `Add` 与显式 `Replace`：前者创建独立 Binding，后者只替换既有 Role 主槽位；不扫描、不提供运行期 Resolver，也不按相同接口推断替换。
 - 配置变化时先准备全部候选，再反向排空旧租约；失败恢复旧入口，`RestartRequired` 在任何副作用前阻止整轮应用。
 - 配置与默认值是可选组件契约；当前只有 Logger、Database 贡献默认配置，CLI 也只在显式启用时构造。
 
@@ -30,7 +30,7 @@
 
 ## 默认配置与可选 CLI
 
-`composition.Compose(runtime, options)` 按 Logger、Clock、ID Generator、Validator、Database 顺序建立完整 Plan。返回值中三项简单能力是普通接口，两项资源能力是稳定 Access；只有 `options.CLI` 非 nil 时才构造 CLI App。默认配置仍只有 Logger、Database 两段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
+`kernel.NewAssembly` 先构造 Config 与 Logger baseline；`composition.Compose(assembly)` 再显式登记 `logging.main` 对主 Logger Role 的替换、Clock、ID Generator、Validator 和 `database.db1`，冻结 Plan 后按需构造 PreStart CLI，最后一次性安装 Runtime。Logger 与 Database 对外返回稳定 Access；默认配置仍只有 `logger`、`database` 两段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
 根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。
 
@@ -65,7 +65,7 @@ go run ./cmd/app config init --force
 
 生成后必须明确填写 `database.engine` 和 `database.driver`。DSN 仍通过环境变量提供，不写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会先发布配置化 Logger，再启动 Database 并完成连接与 Ping；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式启动时，主 Logger slot 先使用 baseline；`logging.main` 成功构造后显式替换主槽位，`database.db1` 通过 root Binding 跟随当前 Logger，再完成连接与 Ping。应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
 
 本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)。
 

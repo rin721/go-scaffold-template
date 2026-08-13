@@ -1,135 +1,104 @@
-# Kernel 与 App 组件装配
+# Kernel 内置能力与 App 装配
 
-`internal/kernel` 治理当前进程选择的底层 App 组件：加载配置、按计划启动、监控配置变化、执行安全换代并反向关闭资源。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
+`internal/kernel` 负责 Config、Logger、CLI 三项内置 baseline、显式 App Plan、配置事务和反向资源关闭。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
 
-## 固定接入路径
+## 生产装配路径
 
 ```text
 pkg/<name>
-    -> internal/kernel/app/<name>
-    -> internal/kernel/composition/<name>.go
-    -> app.Plan / Kernel.Install
-    -> Kernel / Host
+    -> internal/kernel/builtin/<name>  # Kernel baseline
+    -> internal/kernel/app/<name>      # replacement 或 independent instance
+    -> internal/kernel/composition
+    -> Assembly / Plan / Kernel / Host
 ```
 
-- `pkg/<name>` 定义项目能力契约并隔离第三方库。
-- `internal/kernel/app/<name>` 把选定实现声明为无安装副作用的 `Definition[O]`。
-- `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并在所有检查成功后一次性安装。
-- Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
+生产代码通过 `builtin.NewCatalog` 得到封闭清单，`Assembly.Plan` 构造 Required Bootstrap baseline 并返回 typed Role handle。普通 App 只能使用这些 handle、Binding 和 Input；不能从配置、接口实现、字符串名称、反射或 `init` 动态产生 Role。
 
-当前显式清单固定为 Logger、Clock、ID Generator、Validator、Database。修改清单只发生在 composition，不使用 `init` 自动注册。
+当前 catalog：
 
-## 两类输出
+| Role | 阶段 | 激活 | 可见性 | 策略 | baseline 所有权 |
+| --- | --- | --- | --- | --- | --- |
+| Config | `Bootstrap` | `RequiredActivation` | `KernelOnly` | `StartupReplace` | `AssemblyOwnedBaseline` |
+| Logger | `Bootstrap` | `RequiredActivation` | `AppVisible` | `RuntimeTransaction` | `AssemblyOwnedBaseline` |
+| CLI | `PreStart` | `SelectedActivation` | `KernelOnly` | `StartupReplace` | `AssemblyOwnedBaseline` |
 
-Clock、ID Generator、Validator 使用 `app.Value`，输出普通项目接口：
+Config 与 CLI 本轮完成 baseline 组件化和策略登记，没有生产 replacement。CLI Definition 始终存在，但只在 `AssemblyOptions.CLI` 非 nil 时于 Plan Freeze 后构造 Factory。
 
-```go
-clockAdded, err := app.Add(plan, clockapp.System())
-if err != nil {
-	return err
-}
-clock := clockAdded.Output
-now := clock.Now()
+## Add 与 Replace
+
+- `app.Add(plan, definition)` 创建新实例身份和独立 Binding。
+- `app.Replace(plan, role, replacement)` 改变既有 Role 的主槽位，不返回独立 Binding。
+- 相同 Go 接口只表示类型兼容，不产生替换意图。
+- `Decorate` 尚未实现；不能用 Add 或 Replace 模拟调用链装饰。
+
+Logger 的三个确定场景：
+
+```text
+baseline-only: builtin logger -> root Access -> Kernel / db1
+main replace:  logging.main -> root slot -> Kernel / db1
+independent:   logging.db2 -> independent Access -> db2 only
 ```
 
-它们没有配置、Defaults、CLI、生命周期或换代，因此也没有 `Access.Use`。需要这些能力的后续底层组件通过 `Binding/Input` 声明依赖；当前尚未建设的上层消费者未来只需接收普通接口。
-
-Logger、Database 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，输出稳定 Access：
-
-```go
-err := capabilities.Database.Use(ctx, func(client databaseapp.Client) error {
-	return useDatabase(ctx, client)
-})
-```
-
-一次 `Use` 是一次实例使用租约。回调取得的 Database Client 不含 `Close`；Rows、事务、stream 或 session 不得逃逸回调。这样 Kernel 才能等待旧代使用结束并安全关闭连接池。Logger 回调同样只能取得 `logger.Logger`，不能取得 Resource 的关闭权。
+独立实例失败不会查询或回退 root Access。主槽位 replacement 失败也不会静默当作 baseline-only 成功。
 
 ## Plan 与 typed Input
 
-`app.NewPlan -> app.Add -> app.InputOf -> app.Freeze -> Kernel.Install` 是唯一装配流程：
+`app.NewPlan -> app.Replace/app.Add -> app.InputOf -> app.Freeze -> Assembly.Install` 是显式流程：
 
-- Definition 私有字段不能由 composition 随意拼装；
-- Component ID 在同一 Plan 唯一；
-- Input 必须来自同一 Plan 内更早的 Binding；
-- Binding 没有 `Get/Resolve`，业务运行期不能查询容器；
-- Input 只在组件 Build 前通过声明的 decoder 解析，视图离开 decoder 即失效；
-- Freeze 后不能继续 Add；零值 FrozenPlan 不能安装；
-- Install 只接受 created 状态的空 Kernel，重复安装失败且不替换原计划。
+- Component ID 全局唯一；配置化组件使用 `app.Spec{ID, ConfigPath}`；
+- ConfigPath 按完整分段检查，相等或父子路径冲突；
+- Input 必须来自同一 Plan 的更早 Binding，且不能从较晚阶段反向依赖；
+- root Binding 在普通组件之前产生，Logger 是当前唯一 `AppVisible` root 输出；
+- 一个 Role 最多一个 replacer，且 Replace 必须早于首个消费者；
+- Binding 没有运行期 `Get/Resolve`；`Values` 只在依赖 decoder 调用期间有效；
+- Freeze 后不能 Add/Replace；零值 FrozenPlan 不能安装。
 
-有底层依赖的组件在自身 app 包中定义 typed 依赖：
+低层 `app` 构造器供 builtin 实现与框架 fixture 使用；生产 Plan 的 Role 仍只由 Assembly 从封闭 catalog 登记。
 
-```go
-clockInput := app.InputOf(clockAdded.Binding)
-dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, error) {
-	clock, err := app.Resolve(values, clockInput)
-	return Dependencies{Clock: clock}, err
-}, clockInput)
-```
+## 生命周期与所有权
 
-这里的 `Resolve` 只解析该 Definition 已声明的 Input，不接受字符串或类型查询，也不能保存为运行期 Resolver。
-
-## 配置、Defaults 与 CLI
-
-配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。composition 在本地 Plan Freeze 后聚合真实 Defaults 与 CLI Contract，全部构造成功后才 `Kernel.Install`。
-
-因此 `config init` 仍只生成 Logger、Database 两段：
-
-```powershell
-go run ./cmd/app config init
-```
-
-CLI 未启用时 `Capabilities.CLI` 为 nil；直接配置生成可使用 `Capabilities.Configuration.Generate`。
-
-## 生命周期与重载
-
-初始启动按运行节点顺序执行：
+普通 `ManagedConfigured` 独立实例使用自己的 Lease。`RuntimeTransaction` replacement 使用 Role 主 slot 的 Lease，因此排空覆盖 Kernel、db1 等全部 root 消费者：
 
 ```text
-Decode/Validate -> Build -> optional Start -> optional Ready
--> Publish Access -> optional Activation
+Stage/Build/Ready candidate while current remains visible
+-> drain root slot and wait in-flight Use
+-> Commit target
+-> Resume
+-> close previous replacement Resource
 ```
 
-启动失败时反向排空并关闭已发布节点。Stop 时 Host 先停上层 Participant，Kernel 再反向 drain、Deactivate、Stop。
+初始 replacement 的 Build/Ready 期间 baseline 保持可用；发布成功后后续消费者看到 replacement。停止 replacement 时先排空主 slot、恢复 baseline、恢复调用，再关闭 replacement Resource。Runtime 最终停止后，Assembly 按反序关闭 CLI、Logger、Config 的 owned baseline。`BorrowedRuntimeBuiltin` 仅用于明确保留外部关闭权的测试或嵌入场景。
 
-006 已实现三种策略：
-
-| 策略 | 当前行为 |
-| --- | --- |
-| `NoReload` | 无运行期配置；Fixed Managed 只在初始启动构造 |
-| `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
-| `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
-
-候选准备期间旧 Access 继续服务。Decode、Build、Ready、排空或超时失败时，候选被清理且旧入口恢复。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效，不能伪装成回滚。
-
-`NativeAtomicReload`、`ComponentHandoff`、切换观察期与健康失败自动回切尚未实现；当前成功切换后立即清理旧代。
+普通组件仍支持 `NoReload`、`KernelInstanceSwap`、`RestartRequired`。候选准备失败会清理候选并保留 current；提交后旧资源关闭失败返回 `CommittedCleanupError`。
 
 ## 运行示例
 
 ```go
-runtime, err := kernel.New(loader, kernel.Options{Logging: loggingManager})
-if err != nil {
-	return err
-}
-capabilities, err := composition.Compose(runtime, composition.Options{})
-if err != nil {
-	return err
-}
-host, err := kernel.NewHost(runtime, kernel.HostOptions{
-	Watch: &kernel.WatchOptions{OnReloadError: reportReloadError},
+assembly, err := kernel.NewAssembly(kernel.AssemblyOptions{
+    Config: builtinconfig.Options{Sources: []config.Source{
+        config.FileSource("config.yaml"),
+        config.EnvSource("APP_"),
+    }},
 })
 if err != nil {
-	return err
+    return err
+}
+capabilities, err := composition.Compose(assembly)
+if err != nil {
+    return err
+}
+host, err := kernel.NewHost(capabilities.Runtime, kernel.HostOptions{})
+if err != nil {
+    return err
 }
 return host.Run(ctx)
 ```
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`Compose` 完成底层组件装配；创建 Host 不会新增或查找组件。
+CLI 模式在 `AssemblyOptions.CLI` 中显式选择；命令执行后必须停止 Runtime，以释放尚未启动的运行节点和 Assembly-owned baseline。`cmd/app` 已执行该清理。
 
-## 边界
+## 当前边界
 
+- Clock、ID Generator、Validator 仍是普通 Direct App，不登记 builtin。
+- Database 使用 `Spec + Input[pkglogger.Access]`；生产 `database.db1` 跟随 root Logger。
 - 当前没有 HTTP Server、middleware、handler、service、repository、model 等业务层装配。
-- Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
-- 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
-- Database App 私有实例持有 `Close`，Access 只暴露使用能力。
-- 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
-- HTTP 同端口、文件锁、单消费者等排他资源不能套用双实例 Swap；在专用 Handoff 落地前应选择 `RestartRequired`。
+- 排他资源不能直接套用双实例 Swap；在专用 Handoff 落地前应使用 `RestartRequired`。

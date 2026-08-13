@@ -2,6 +2,8 @@
 package composition
 
 import (
+	"context"
+	"errors"
 	"fmt"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
@@ -12,18 +14,21 @@ import (
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
 	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
+	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
 )
 
-// Options 配置 composition 可选的启动前能力。
-type Options struct{ CLI *CLIOptions }
-
-// CLIOptions 配置可选的启动前 CLI App。
-type CLIOptions struct{ App pkgcli.Config }
+const (
+	mainLoggerID           app.ID = "logging.main"
+	mainLoggerConfigPath          = "logger"
+	mainDatabaseID         app.ID = "database.db1"
+	mainDatabaseConfigPath        = "database"
+)
 
 // Capabilities 保存当前进程已经显式选择的稳定能力入口。
 type Capabilities struct {
-	Logger        loggerapp.Access
+	Runtime       *kernel.Kernel
+	Logger        pkglogger.Access
 	Clock         pkgclock.Clock
 	IDGenerator   pkgidgen.Generator
 	Validator     pkgvalidation.Validator
@@ -32,15 +37,27 @@ type Capabilities struct {
 	CLI           pkgcli.App
 }
 
-// Compose 在本地完整构造并校验 Plan，最后一次性安装到 Kernel。
-func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
-	if runtime == nil {
-		return Capabilities{}, fmt.Errorf("compose runtime is nil")
+// Compose 在 Assembly 的唯一 Plan 中选择组件，冻结后一次性安装 Kernel。
+func Compose(assembly *kernel.Assembly) (capabilities Capabilities, err error) {
+	if assembly == nil {
+		return Capabilities{}, fmt.Errorf("compose assembly is nil")
 	}
-	plan := app.NewPlan()
-	loggerOutput, err := composeLogger(plan, runtime.LoggingManager())
+	installed := false
+	defer func() {
+		if err != nil && !installed {
+			err = errors.Join(err, assembly.Close(context.Background()))
+		}
+	}()
+	plan, builtins, err := assembly.Plan()
 	if err != nil {
-		return Capabilities{}, err
+		return Capabilities{}, fmt.Errorf("create assembly plan: %w", err)
+	}
+	replacement, err := loggerapp.Replacement(app.Spec{ID: mainLoggerID, ConfigPath: mainLoggerConfigPath})
+	if err != nil {
+		return Capabilities{}, fmt.Errorf("define main logger replacement: %w", err)
+	}
+	if err := app.Replace(plan, builtins.Logging.Role, replacement); err != nil {
+		return Capabilities{}, fmt.Errorf("replace builtin logger: %w", err)
 	}
 	clockOutput, err := composeClock(plan)
 	if err != nil {
@@ -54,9 +71,13 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, err
 	}
-	databaseOutput, err := composeDatabase(plan)
+	databaseDefinition, err := databaseapp.Definition(app.Spec{ID: mainDatabaseID, ConfigPath: mainDatabaseConfigPath}, app.InputOf(builtins.Logging.Output.Binding()))
 	if err != nil {
-		return Capabilities{}, err
+		return Capabilities{}, fmt.Errorf("define main database: %w", err)
+	}
+	databaseOutput, err := app.Add(plan, databaseDefinition)
+	if err != nil {
+		return Capabilities{}, fmt.Errorf("compose main database: %w", err)
 	}
 	frozen, err := plan.Freeze()
 	if err != nil {
@@ -66,17 +87,22 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, err
 	}
-	contracts := append(configurationOutput.cliContracts, frozen.CLIContracts()...)
-	cliOutput, err := composeCLI(options.CLI, contracts...)
+	var cliOutput pkgcli.App
+	factory, activateErr := assembly.ActivateCLI()
+	if activateErr != nil {
+		return Capabilities{}, activateErr
+	}
+	if factory != nil {
+		contracts := append(configurationOutput.cliContracts, frozen.CLIContracts()...)
+		cliOutput, err = factory.Build(contracts)
+		if err != nil {
+			return Capabilities{}, fmt.Errorf("compose CLI: %w", err)
+		}
+	}
+	runtime, err := assembly.Install(frozen)
 	if err != nil {
 		return Capabilities{}, err
 	}
-	if err := runtime.Install(frozen); err != nil {
-		return Capabilities{}, fmt.Errorf("install component plan: %w", err)
-	}
-	return Capabilities{
-		Logger: loggerOutput.Output, Clock: clockOutput.Output,
-		IDGenerator: idOutput.Output, Validator: validatorOutput.Output,
-		Database: databaseOutput.Output, Configuration: configurationOutput.manager, CLI: cliOutput,
-	}, nil
+	installed = true
+	return Capabilities{Runtime: runtime, Logger: assembly.Logging(), Clock: clockOutput.Output, IDGenerator: idOutput.Output, Validator: validatorOutput.Output, Database: databaseOutput.Output, Configuration: configurationOutput.manager, CLI: cliOutput}, nil
 }

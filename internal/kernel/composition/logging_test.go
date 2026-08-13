@@ -4,20 +4,21 @@ import (
 	"testing"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
+	builtincli "github.com/rin721/go-scaffold2/internal/kernel/builtin/cli"
+	builtinconfig "github.com/rin721/go-scaffold2/internal/kernel/builtin/config"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
+	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 )
 
-func newTestRuntime(t *testing.T, source config.Source) *kernel.Kernel {
+func newTestAssembly(t *testing.T, source config.Source, cli *pkgcli.Config) *kernel.Assembly {
 	t.Helper()
-	manager, err := kernellogging.New(pkglogger.Noop())
-	if err != nil {
-		t.Fatalf("logging.New() error = %v", err)
+	options := kernel.AssemblyOptions{Config: builtinconfig.Options{Sources: []config.Source{source}}}
+	if cli != nil {
+		options.CLI = &builtincli.Options{App: *cli}
 	}
-	runtime, err := kernel.New(config.New(source), kernel.Options{Logging: manager})
+	assembly, err := kernel.NewAssembly(options)
 	if err != nil {
-		t.Fatalf("kernel.New() error = %v", err)
+		t.Fatalf("kernel.NewAssembly() error = %v", err)
 	}
-	return runtime
+	return assembly
 }

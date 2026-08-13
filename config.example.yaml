@@ -8,6 +8,8 @@
 # 环境变量使用 APP_ 前缀，并以双下划线分隔嵌套字段。
 # 例如 APP_DATABASE__ENGINE、APP_DATABASE__DRIVER、APP_LOGGER__LEVEL。
 
+# 生产 Composition 把本段绑定到 logging.main，并显式替换 Kernel baseline Logger。
+# 额外具名 Logger 使用独立 ConfigPath（例如 loggers.db2），不会自动替换主槽位。
 logger:
   # 运行环境：development（开发）或 production（生产）。
   environment: development
@@ -42,6 +44,7 @@ logger:
   # addStacktrace: false
   # addStacktrace: true
 
+# 生产 Composition 把本段绑定到 database.db1；它通过 root Binding 跟随主 Logger。
 database:
   # Engine：gorm（ORM）或 sql（database/sql + sqlx）。
   engine: gorm

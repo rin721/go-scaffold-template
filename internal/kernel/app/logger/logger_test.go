@@ -5,19 +5,14 @@ import (
 
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
-func TestDefinitionPublishesLeasedLoggerAndRestoresBaseline(t *testing.T) {
-	baseline := pkglogger.NewTestLogger()
-	manager, err := kernellogging.New(baseline)
+func TestInstancePublishesIndependentLeasedLogger(t *testing.T) {
+	spec := app.Spec{ID: "logging.db2", ConfigPath: "loggers.db2"}
+	definition, err := Instance(spec)
 	if err != nil {
-		t.Fatalf("logging.New() error = %v", err)
-	}
-	definition, err := Definition(manager)
-	if err != nil {
-		t.Fatalf("Definition() error = %v", err)
+		t.Fatalf("Instance() error = %v", err)
 	}
 	plan := app.NewPlan()
 	added, err := app.Add(plan, definition)
@@ -28,15 +23,10 @@ func TestDefinitionPublishesLeasedLoggerAndRestoresBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Freeze() error = %v", err)
 	}
-	if len(frozen.Defaults()) != 1 || frozen.Defaults()[0].ConfigPath != ConfigPath {
+	if len(frozen.Defaults()) != 1 || frozen.Defaults()[0].ConfigPath != spec.ConfigPath {
 		t.Fatalf("Defaults() = %#v", frozen.Defaults())
 	}
-	snapshot, err := config.New(config.MapSource("logger", map[string]any{
-		"logger": map[string]any{
-			"environment": "development", "level": "info",
-			"outputPaths": []any{"stdout"}, "errorOutputPaths": []any{"stderr"},
-		},
-	})).Load(t.Context())
+	snapshot, err := config.New(config.MapSource("logger", map[string]any{"loggers": map[string]any{"db2": map[string]any{"environment": "development", "level": "info", "outputPaths": []any{"stdout"}, "errorOutputPaths": []any{"stderr"}}}})).Load(t.Context())
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
@@ -49,10 +39,7 @@ func TestDefinitionPublishesLeasedLoggerAndRestoresBaseline(t *testing.T) {
 		t.Fatalf("Build() error = %v", err)
 	}
 	component.PublishInitial()
-	if err := added.Output.Use(t.Context(), func(log pkglogger.Logger) error {
-		log.Info("configured logger active")
-		return nil
-	}); err != nil {
+	if err := added.Output.Use(t.Context(), func(log pkglogger.Logger) error { log.Info("independent logger active"); return nil }); err != nil {
 		t.Fatalf("Use() error = %v", err)
 	}
 	drained, err := component.BeginDrain()
@@ -64,15 +51,10 @@ func TestDefinitionPublishesLeasedLoggerAndRestoresBaseline(t *testing.T) {
 	if err := component.StopCurrent(t.Context()); err != nil {
 		t.Fatalf("StopCurrent() error = %v", err)
 	}
-	manager.Info("baseline restored")
-	entries := baseline.Entries()
-	if len(entries) != 1 || entries[0].Message != "baseline restored" {
-		t.Fatalf("baseline entries = %#v", entries)
-	}
 }
 
-func TestDefinitionRejectsNilManager(t *testing.T) {
-	if _, err := Definition(nil); err == nil {
-		t.Fatal("Definition(nil) error = nil")
+func TestReplacementRequiresConfiguredSpec(t *testing.T) {
+	if _, err := Replacement(app.Spec{ID: "logging.main"}); err == nil {
+		t.Fatal("Replacement(without config path) error = nil")
 	}
 }

@@ -13,6 +13,11 @@ type Contract interface {
 	Commands() ([]pkgcli.CommandSpec, error)
 }
 
+// Factory 根据冻结后的 CLI Contract 集合构造启动前 App。
+type Factory interface {
+	Build([]Contract) (pkgcli.App, error)
+}
+
 // ContractFunc 把函数适配为 CLI Contract。
 type ContractFunc func() ([]pkgcli.CommandSpec, error)
 

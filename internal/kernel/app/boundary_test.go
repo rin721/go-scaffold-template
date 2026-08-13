@@ -15,6 +15,7 @@ func TestAppLayerDoesNotImportKernelOrComposition(t *testing.T) {
 	forbidden := map[string]struct{}{
 		modulePrefix:                  {},
 		modulePrefix + "/composition": {},
+		modulePrefix + "/logging":     {},
 	}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
@@ -26,6 +27,9 @@ func TestAppLayerDoesNotImportKernelOrComposition(t *testing.T) {
 		}
 		for _, imported := range file.Imports {
 			value := strings.Trim(imported.Path.Value, "\"")
+			if strings.HasPrefix(value, modulePrefix+"/builtin") {
+				t.Fatalf("app layer %s imports forbidden builtin package %s", path, value)
+			}
 			if _, exists := forbidden[value]; exists {
 				t.Fatalf("app layer %s imports forbidden package %s", path, value)
 			}

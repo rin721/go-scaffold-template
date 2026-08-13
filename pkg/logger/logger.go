@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,12 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )
+
+// Access 为调用方提供当前 Logger 代际的受控租约。
+// callback 返回后不得继续保存或使用其中收到的 Logger。
+type Access interface {
+	Use(context.Context, func(Logger) error) error
+}
 
 // Logger 定义业务代码使用的日志能力契约。
 type Logger interface {

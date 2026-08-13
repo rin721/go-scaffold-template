@@ -2,28 +2,21 @@ package composition
 
 import (
 	"bytes"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
+	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
-func TestKernelNewDoesNotComposeCapabilities(t *testing.T) {
-	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	if err := runtime.Start(t.Context()); err != nil {
-		t.Fatalf("Start() without Compose error = %v", err)
-	}
-	if err := runtime.Stop(t.Context()); err != nil {
-		t.Fatalf("Stop() error = %v", err)
-	}
-}
-
 func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
-	disabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	disabled, err := Compose(disabledRuntime, Options{})
+	disabledAssembly := newTestAssembly(t, config.MapSource("empty", map[string]any{}), nil)
+	disabled, err := Compose(disabledAssembly)
 	if err != nil {
 		t.Fatalf("Compose(disabled) error = %v", err)
 	}
@@ -41,12 +34,16 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if disabled.Clock.Now().IsZero() {
 		t.Fatal("Clock.Now() returned zero time")
 	}
+	if err := disabled.Runtime.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop(disabled) error = %v", err)
+	}
 
-	enabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	enabled, err := Compose(enabledRuntime, Options{CLI: &CLIOptions{App: pkgcli.Config{
+	cliConfig := pkgcli.Config{
 		Name:                   "test",
 		DisableInteractiveHome: true,
-	}}})
+	}
+	enabledAssembly := newTestAssembly(t, config.MapSource("empty", map[string]any{}), &cliConfig)
+	enabled, err := Compose(enabledAssembly)
 	if err != nil {
 		t.Fatalf("Compose(enabled) error = %v", err)
 	}
@@ -77,6 +74,12 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if !bytes.Equal(cliPayload, directPayload) {
 		t.Fatalf("CLI and direct generation differ:\nCLI:\n%s\ndirect:\n%s", cliPayload, directPayload)
 	}
+	if err := enabled.Runtime.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop(enabled) error = %v", err)
+	}
+	if err := enabled.Logger.Use(t.Context(), func(pkglogger.Logger) error { return nil }); !errors.Is(err, app.ErrStopped) {
+		t.Fatalf("Logger.Use() after CLI stop = %v, want ErrStopped", err)
+	}
 	loggerIndex := bytes.Index(cliPayload, []byte("logger:"))
 	databaseIndex := bytes.Index(cliPayload, []byte("database:"))
 	if loggerIndex < 0 || databaseIndex < 0 || loggerIndex >= databaseIndex {
@@ -85,25 +88,24 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 }
 
 func TestComposeCLIErrorReturnsZeroCapabilities(t *testing.T) {
-	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	capabilities, err := Compose(runtime, Options{CLI: &CLIOptions{}})
+	invalidCLI := pkgcli.Config{}
+	assembly := newTestAssembly(t, config.MapSource("empty", map[string]any{}), &invalidCLI)
+	capabilities, err := Compose(assembly)
 	if err == nil {
 		t.Fatal("Compose(invalid CLI) error = nil")
 	}
 	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
 		t.Fatalf("Compose(invalid CLI) = %#v, want zero capabilities", capabilities)
 	}
-	if _, err := Compose(runtime, Options{}); err != nil {
-		t.Fatalf("Compose(valid after CLI failure) error = %v", err)
-	}
 }
 
 func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
-	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	if _, err := Compose(runtime, Options{}); err != nil {
+	assembly := newTestAssembly(t, config.MapSource("empty", map[string]any{}), nil)
+	first, err := Compose(assembly)
+	if err != nil {
 		t.Fatalf("first Compose() error = %v", err)
 	}
-	capabilities, err := Compose(runtime, Options{})
+	capabilities, err := Compose(assembly)
 	if err == nil {
 		t.Fatal("second Compose() error = nil")
 	}
@@ -113,7 +115,7 @@ func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
 	if capabilities.Configuration != nil || capabilities.CLI != nil {
 		t.Fatal("second Compose() returned partial configuration or CLI capabilities")
 	}
-	if err := runtime.Stop(t.Context()); err != nil {
+	if err := first.Runtime.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }

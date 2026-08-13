@@ -119,9 +119,6 @@ func (c *managedComponent[C, D, I]) Ready(ctx context.Context) error {
 
 func (c *managedComponent[C, D, I]) PublishInitial() {
 	c.lease.publishInitial(c.candidate)
-	if c.lifecycle.activate != nil {
-		c.lifecycle.activate(c.candidate)
-	}
 	c.currentDigest = c.pendingDigest
 	c.clearCandidate()
 }
@@ -145,9 +142,6 @@ func (c *managedComponent[C, D, I]) BeginDrain() (<-chan struct{}, error) {
 func (c *managedComponent[C, D, I]) Commit() {
 	c.previous = c.lease.replaceWhileDraining(c.candidate)
 	c.hasPrevious = true
-	if c.lifecycle.activate != nil {
-		c.lifecycle.activate(c.candidate)
-	}
 	c.currentDigest = c.pendingDigest
 	c.clearCandidate()
 }
@@ -181,9 +175,6 @@ func (c *managedComponent[C, D, I]) PrepareStop() {
 }
 
 func (c *managedComponent[C, D, I]) StopCurrent(ctx context.Context) error {
-	if c.lifecycle.deactivate != nil {
-		c.lifecycle.deactivate(c.previous)
-	}
 	return c.StopPrevious(ctx)
 }
 

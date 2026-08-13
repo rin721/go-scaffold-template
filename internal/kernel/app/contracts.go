@@ -53,12 +53,10 @@ func Configured[C any](path string, decode Decoder[C], defaults config.DefaultCo
 }
 
 type lifecycle[I any] struct {
-	start      func(context.Context, I) error
-	ready      func(context.Context, I) error
-	stop       func(context.Context, I) error
-	activate   func(I)
-	deactivate func(I)
-	cli        []kernelcli.Contract
+	start func(context.Context, I) error
+	ready func(context.Context, I) error
+	stop  func(context.Context, I) error
+	cli   []kernelcli.Contract
 }
 
 // Option 为 Managed 组件按需附加生命周期或 CLI 契约。
@@ -102,21 +100,6 @@ func WithStop[I any](stop func(context.Context, I) error) Option[I] {
 			return fmt.Errorf("component stop function is duplicated")
 		}
 		target.stop = stop
-		return nil
-	}
-}
-
-// WithActivation 声明不可失败提交区中的稳定 facade 切换动作。
-func WithActivation[I any](activate, deactivate func(I)) Option[I] {
-	return func(target *lifecycle[I]) error {
-		if activate == nil || deactivate == nil {
-			return fmt.Errorf("component activation functions are required")
-		}
-		if target.activate != nil || target.deactivate != nil {
-			return fmt.Errorf("component activation functions are duplicated")
-		}
-		target.activate = activate
-		target.deactivate = deactivate
 		return nil
 	}
 }

@@ -1,4 +1,4 @@
-// Package logger 定义由 Kernel 治理的 Logger App 组件。
+// Package logger 定义可替换主槽位或作为独立实例运行的 Logger App 组件。
 package logger
 
 import (
@@ -7,19 +7,8 @@ import (
 
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
-
-const (
-	ID         app.ID = "logger"
-	ConfigPath        = "logger"
-)
-
-// Access 是调用方接收的稳定日志租约入口。
-type Access interface {
-	Use(context.Context, func(pkglogger.Logger) error) error
-}
 
 // Config 是 Logger App 的 typed 配置契约。
 type Config struct {
@@ -32,33 +21,59 @@ type Config struct {
 	AddStacktrace    *bool                 `mapstructure:"addStacktrace"`
 }
 
-type instance struct{ resource pkglogger.Resource }
-type dependencies struct{ manager *kernellogging.Manager }
-
-// Definition 返回无安装副作用的 Logger 组件声明。
-func Definition(manager *kernellogging.Manager) (app.Definition[Access], error) {
-	if manager == nil {
-		return app.Definition[Access]{}, fmt.Errorf("kernel logging manager is nil")
-	}
-	source, err := app.Configured(ConfigPath, decode, defaults{})
+// Replacement 创建只用于显式替换 Logger Role 的运行期声明。
+func Replacement(spec app.Spec) (app.ReplacementDefinition[pkglogger.Logger], error) {
+	source, err := source(spec)
 	if err != nil {
-		return app.Definition[Access]{}, err
+		return app.ReplacementDefinition[pkglogger.Logger]{}, err
 	}
-	return app.ManagedConfigured(
-		ID,
-		source,
-		app.FixedDependencies(dependencies{manager: manager}),
-		build,
-		app.Leased(newAccess),
-		app.KernelInstanceSwap,
+	return app.ManagedReplacement(
+		spec, source, app.FixedDependencies(struct{}{}), build,
+		func(resource pkglogger.Resource) (pkglogger.Logger, error) { return resource, nil },
 		app.WithStop(stop),
-		app.WithActivation(activate(manager), deactivate(manager)),
 	)
 }
 
-type access struct{ delegate app.Lease[*instance] }
+// Instance 创建拥有独立 Binding 与生命周期的 Logger 实例声明。
+func Instance(spec app.Spec) (app.Definition[pkglogger.Access], error) {
+	source, err := source(spec)
+	if err != nil {
+		return app.Definition[pkglogger.Access]{}, err
+	}
+	return app.ManagedConfigured(
+		spec.ID, source, app.FixedDependencies(struct{}{}), build,
+		app.Leased(newAccess), app.KernelInstanceSwap, app.WithStop(stop),
+	)
+}
 
-func newAccess(delegate app.Lease[*instance]) (Access, error) {
+func source(spec app.Spec) (app.ConfiguredSource[Config], error) {
+	if err := spec.ValidateConfigured(); err != nil {
+		return app.ConfiguredSource[Config]{}, err
+	}
+	return app.Configured(spec.ConfigPath, decoder(spec.ConfigPath), defaults{})
+}
+
+func build(ctx context.Context, cfg Config, _ struct{}) (pkglogger.Resource, error) {
+	if ctx == nil {
+		return nil, app.ErrNilContext
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	packageConfig := cfg.packageConfig()
+	return pkglogger.New(&packageConfig)
+}
+
+func stop(_ context.Context, current pkglogger.Resource) error {
+	if current == nil {
+		return fmt.Errorf("logger resource is nil")
+	}
+	return current.Close()
+}
+
+type access struct{ delegate app.Lease[pkglogger.Resource] }
+
+func newAccess(delegate app.Lease[pkglogger.Resource]) (pkglogger.Access, error) {
 	if delegate == nil {
 		return nil, fmt.Errorf("logger lease is nil")
 	}
@@ -66,59 +81,35 @@ func newAccess(delegate app.Lease[*instance]) (Access, error) {
 }
 
 func (a *access) Use(ctx context.Context, use func(pkglogger.Logger) error) error {
+	if ctx == nil {
+		return app.ErrNilContext
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if use == nil {
 		return fmt.Errorf("logger access callback is nil")
 	}
-	return a.delegate.Use(ctx, func(current *instance) error {
-		if current == nil || current.resource == nil {
+	return a.delegate.Use(ctx, func(current pkglogger.Resource) error {
+		if current == nil {
 			return fmt.Errorf("logger instance is nil")
 		}
-		return use(current.resource)
+		return use(current)
 	})
 }
 
-func build(ctx context.Context, cfg Config, deps dependencies) (*instance, error) {
-	if ctx == nil {
-		return nil, app.ErrNilContext
+func decoder(path string) app.Decoder[Config] {
+	return func(snapshot config.Snapshot) (Config, error) {
+		cfg := defaultConfig()
+		if err := snapshot.DecodeSection(path, &cfg); err != nil {
+			return Config{}, err
+		}
+		packageConfig := cfg.packageConfig()
+		if err := pkglogger.ValidateConfig(&packageConfig); err != nil {
+			return Config{}, err
+		}
+		return cfg, nil
 	}
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	if deps.manager == nil {
-		return nil, fmt.Errorf("kernel logging manager is nil")
-	}
-	resource, err := pkglogger.New(pointerTo(cfg.packageConfig()))
-	if err != nil {
-		return nil, err
-	}
-	return &instance{resource: resource}, nil
-}
-
-func stop(_ context.Context, current *instance) error {
-	if current == nil || current.resource == nil {
-		return fmt.Errorf("logger instance is nil")
-	}
-	return current.resource.Close()
-}
-
-func activate(manager *kernellogging.Manager) func(*instance) {
-	return func(current *instance) { manager.Replace(current.resource) }
-}
-
-func deactivate(manager *kernellogging.Manager) func(*instance) {
-	return func(*instance) { manager.Restore() }
-}
-
-func decode(snapshot config.Snapshot) (Config, error) {
-	cfg := defaultConfig()
-	if err := snapshot.DecodeSection(ConfigPath, &cfg); err != nil {
-		return Config{}, err
-	}
-	packageConfig := cfg.packageConfig()
-	if err := pkglogger.ValidateConfig(&packageConfig); err != nil {
-		return Config{}, err
-	}
-	return cfg, nil
 }
 
 type defaults struct{}
@@ -166,7 +157,5 @@ func stringList(values []string) config.Value {
 	return config.List(elements...)
 }
 
-func pointerTo[T any](value T) *T { return &value }
-
-var _ Access = (*access)(nil)
+var _ pkglogger.Access = (*access)(nil)
 var _ config.DefaultContract = defaults{}

@@ -126,6 +126,17 @@ func (l *lease[I]) replaceWhileDraining(instance I) I {
 	return previous
 }
 
+func (l *lease[I]) replaceServing(instance I) I {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.state != leaseServing || l.activeUses != 0 {
+		panic("component lease initial replacement from invalid state")
+	}
+	previous := l.instance
+	l.instance = instance
+	return previous
+}
+
 func (l *lease[I]) resume() {
 	l.mu.Lock()
 	defer l.mu.Unlock()

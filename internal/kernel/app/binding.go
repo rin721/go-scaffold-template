@@ -118,6 +118,10 @@ func (dependencies Dependencies[D]) resolve(plan *Plan) (D, error) {
 }
 
 func (dependencies Dependencies[D]) validate(plan *Plan, nextIndex int) error {
+	return dependencies.validatePhase(plan, nextIndex, Runtime)
+}
+
+func (dependencies Dependencies[D]) validatePhase(plan *Plan, nextIndex int, maximum BuiltinPhase) error {
 	for index, reference := range dependencies.references {
 		if reference.plan == nil || reference.token == nil {
 			return fmt.Errorf("dependency %d is a zero input", index)
@@ -131,6 +135,19 @@ func (dependencies Dependencies[D]) validate(plan *Plan, nextIndex int) error {
 		if plan.tokens[reference.index] != reference.token {
 			return fmt.Errorf("dependency %d binding is not registered", index)
 		}
+		if reference.index >= len(plan.outputPhases) || plan.outputPhases[reference.index] > maximum {
+			return fmt.Errorf("dependency %d belongs to phase %d after maximum phase %d", index, plan.outputPhases[reference.index], maximum)
+		}
 	}
 	return nil
+}
+
+func (dependencies Dependencies[D]) markBuiltinConsumers(plan *Plan) {
+	for _, reference := range dependencies.references {
+		if role, ok := plan.rootRoles[reference.index]; ok {
+			if typed, supported := role.(interface{ markConsumer() }); supported {
+				typed.markConsumer()
+			}
+		}
+	}
 }

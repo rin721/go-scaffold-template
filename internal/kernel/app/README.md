@@ -1,109 +1,102 @@
 # Kernel App 组件开发
 
-`internal/kernel/app` 是底层能力的统一组件声明层。组件作者只声明“输出什么、怎样构造、需要哪些可选契约、配置变化如何处理”；是否启用以及选择哪个实现由 `internal/kernel/composition` 决定。
+`internal/kernel/app` 提供 typed Definition、Binding/Input、Builtin Role 和生命周期事务。组件作者声明构造、依赖、配置与所有权；是否 Add 独立实例或 Replace 内置主槽位由 composition 明确选择。
 
-## 选择组件形态
+## 选择声明形态
 
-| 能力特征 | 构造入口 | 输出 | 重载 |
-| --- | --- | --- | --- |
-| 代码固定、无资源生命周期 | `app.Value` | 普通项目接口 | 不进入运行节点 |
-| 无运行期配置但需 Start/Stop | `app.ManagedFixed` | 稳定 Lease facade | `NoReload` |
-| 配置化且新旧实例可并存 | `app.ManagedConfigured` | 稳定 Lease facade | `KernelInstanceSwap` |
-| 配置变化只能随进程重启 | `app.ManagedConfigured` | 稳定 Lease facade | `RestartRequired` |
+| 目标 | 构造入口 | 输出 |
+| --- | --- | --- |
+| 固定值能力 | `app.Value` | 普通项目接口 |
+| 固定但需生命周期 | `app.ManagedFixed` | 独立 Lease facade |
+| 配置化独立实例 | `app.ManagedConfigured` | 独立 Lease facade |
+| 启动期替换 | `app.StartupReplacement` | 不发布 Binding |
+| 运行期替换 | `app.ManagedReplacement` | 不发布 Binding |
 
-006 不支持运行时构造后直接暴露裸实例：Managed 组件必须输出稳定 Lease facade。`NativeAtomicReload`、排他资源 Handoff 和切换观察期是后续能力，不应以空接口或先停旧再启新代替。
+`Add` 与 `Replace` 不能互换。`Decorate` 尚未实现，不能以 marker、相同接口、反射或字符串 qualifier 推断。
 
-## Fixed Direct 示例
+## 具名配置实例
 
-Clock 的完整 Definition 只有一个选择：
+配置化 App 接收显式规格：
 
 ```go
-func System() app.Definition[clock.Clock] {
-	definition, err := app.Value(ID, clock.System())
-	if err != nil {
-		panic(err) // 只允许固定常量与内建非 nil 值的不变量失败。
-	}
-	return definition
+spec := app.Spec{
+    ID:         "logging.db2",
+    ConfigPath: "loggers.db2",
+}
+definition, err := loggerapp.Instance(spec)
+added, err := app.Add(plan, definition)
+```
+
+ID 在 Plan 内全局唯一。ConfigPath 必须是合法点分段；`logger` 与 `logger.output`、`databases` 与 `databases.db1` 冲突，`logger` 与 `loggers.db2` 不冲突。
+
+## 显式替换内置 Role
+
+只有 Assembly 返回的 typed handle 可以选择生产 catalog 中的 Role：
+
+```go
+replacement, err := loggerapp.Replacement(app.Spec{
+    ID:         "logging.main",
+    ConfigPath: "logger",
+})
+if err != nil {
+    return err
+}
+if err := app.Replace(plan, builtins.Logging.Role, replacement); err != nil {
+    return err
 }
 ```
 
-composition 显式加入并取得普通接口：
+一个 Role 最多一个 replacer；Replace 必须早于首个 root Binding 消费者。`Fixed`、`StartupReplace`、`RuntimeTransaction` 与 replacement 模式不匹配时原子失败。
+
+## 声明 typed 依赖
 
 ```go
-added, err := app.Add(plan, clockapp.System())
-clock := added.Output
+loggingInput := app.InputOf(builtins.Logging.Output.Binding())
+dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, error) {
+    logging, err := app.Resolve(values, loggingInput)
+    if err != nil {
+        return Dependencies{}, err
+    }
+    return Dependencies{Logging: logging}, nil
+}, loggingInput)
 ```
 
-这里没有 `Access.Use`、ConfigPath、Defaults、CLI 或空生命周期方法。
+Input 必须来自同一 Plan 的更早 Binding，且 producer 阶段不能晚于 consumer。所有 Input 都要传给 `DependencySet`；`Values` 离开 decoder 后失效，运行期没有 Resolver。
 
-## Configured Leased 示例
-
-资源组件通常包含以下步骤：
+## 独立 Leased 组件
 
 ```go
-source, err := app.Configured(ConfigPath, decodeAndValidate, defaults{})
+source, err := app.Configured(spec.ConfigPath, decodeAndValidate, defaults{})
 definition, err := app.ManagedConfigured(
-	ID,
-	source,
-	app.FixedDependencies(Dependencies{}),
-	build,
-	app.Leased(newAccess),
-	app.KernelInstanceSwap,
-	app.WithReady(ready),
-	app.WithStop(stop),
+    spec.ID,
+    source,
+    dependencies,
+    build,
+    app.Leased(newAccess),
+    app.KernelInstanceSwap,
+    app.WithReady(ready),
+    app.WithStop(stop),
 )
 ```
 
-- `decodeAndValidate` 只解码并校验，不打开资源。
-- `build` 接收 Context、typed 配置和 typed 依赖，返回 Kernel 私有实例。
-- `newAccess` 把 `app.Lease[I]` 收窄为组件自己的 Access；不得泄漏 `I` 的关闭权。
-- `WithStart/WithReady/WithStop/WithActivation/WithCLI` 全部可选，只声明真实行为。
-- Builder 返回 typed nil 会失败，实例不会发布。
+- Decode 只解码和校验，不打开资源。
+- Builder 接收 Context、typed 配置与依赖。
+- Access callback 期间持有 Lease；资源及其子对象不得逃逸 callback。
+- 创建 Resource 的组件负责 Stop；消费者不能获得 Close 权。
+- `WithStart`、`WithReady`、`WithStop`、`WithCLI` 只声明真实行为。
 
-## 声明底层组件依赖
+## Builtin 定义边界
 
-后续组件只能依赖同一 Plan 中更早的 Binding：
+生产 builtin Definition 只存在于 `internal/kernel/builtin/config`、`builtin/logger`、`builtin/cli`，由 `builtin.NewCatalog` 收敛。普通 App 不导入 builtin、Kernel、composition 或旧日志控制面。
 
-```go
-clockInput := app.InputOf(clockAdded.Binding)
-dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, error) {
-	clock, err := app.Resolve(values, clockInput)
-	if err != nil {
-		return Dependencies{}, err
-	}
-	return Dependencies{Clock: clock}, nil
-}, clockInput)
-```
-
-组件必须把所有 Input 传给 `DependencySet`。`Values` 只在该 decoder 调用期间有效；未声明 Input、跨 Plan、零值或前向 Input 都失败。composition 不编写 `any`、反射或类型断言，业务运行期也拿不到 Binding、Values 或 Resolver。
-
-## 手工装配步骤
-
-新增 `<name>` 的最小文件集合：
-
-1. `pkg/<name>`：定义项目能力接口、薄封装、错误和所有权。
-2. `internal/kernel/app/<name>`：定义稳定 ID 和一个或多个可选择 Definition。
-3. `internal/kernel/composition/<name>.go`：选择当前实现并 `app.Add`。
-4. `composition.Compose`：在正确顺序调用该 compose 函数，并把 `Added.Output` 放入 `Capabilities`。
-5. 组件、Plan、composition 与文档测试。
-
-验收时逐项确认：
-
-- 第三方类型没有越过 `pkg` 契约；
-- ID 表达稳定能力角色，同一 Plan 不重复；
-- 没有虚构配置、默认值、CLI 或生命周期；
-- Direct 输出是普通接口，Swap 输出只能通过 Lease Access 使用；
-- 创建资源的组件拥有并释放资源，消费者没有 `Close` 权；
-- 配置策略符合资源特性，排他资源使用 `RestartRequired`；
-- composition 失败返回零 Capabilities，Kernel 在最终 Install 前保持为空；
-- Host 先停上层 Participant，再由 Kernel 反向关闭底层资源。
+`RuntimeBuiltin`、`StartupBuiltin` 与 `RegisterBuiltin` 是低层框架入口，由 builtin catalog 与同包测试 fixture 使用；生产 Composition 不自行创建 Role。外部 baseline 需要保留关闭权时使用显式 `BorrowedRuntimeBuiltin`，不能伪装成 Assembly-owned。
 
 ## 当前组件
 
 - `app/clock`：System Clock，Fixed Direct。
 - `app/idgen`：UUID Generator，Fixed Direct。
 - `app/validation`：Default Validator，Fixed Direct。
-- `app/logger`：配置化 Logger，Leased Swap，并在提交/停止时切换或恢复 baseline manager。
-- `app/database`：配置化 Database，Leased Swap，Ready 执行 Ping，Stop 关闭 Kernel 私有 Client。
+- `app/logger`：`Replacement(spec)` 替换主槽位；`Instance(spec)` 创建独立 Logger Binding。
+- `app/database`：`Definition(spec, loggerInput)` 创建具名数据库实例，Ready 执行 Ping，Stop 关闭私有 Client。
 
-当前项目还没有 HTTP、middleware、handler、service、repository、model；本组件模型不替它们定义目录、构造器或容器职责。
+当前没有 HTTP、middleware、handler、service、repository、model；App Plan 不承担业务对象容器职责。

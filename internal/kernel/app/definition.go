@@ -10,10 +10,12 @@ import (
 
 // Definition 是一个无安装副作用的底层组件声明。
 type Definition[O any] struct {
-	id          ID
-	defaults    config.DefaultContract
-	cli         []kernelcli.Contract
-	instantiate func(*Plan, int) (O, RuntimeComponent, error)
+	id            ID
+	configPath    string
+	defaults      config.DefaultContract
+	cli           []kernelcli.Contract
+	markConsumers func(*Plan)
+	instantiate   func(*Plan, int) (O, RuntimeComponent, error)
 }
 
 // Value 创建代码固定、直接输出、无配置和无生命周期的组件声明。
@@ -119,9 +121,11 @@ func newManagedDefinition[C, D, I, O any](
 		}
 	}
 	definition := Definition[O]{
-		id:       id,
-		defaults: defaults,
-		cli:      append([]kernelcli.Contract(nil), lifecycle.cli...),
+		id:            id,
+		configPath:    path,
+		defaults:      defaults,
+		cli:           append([]kernelcli.Contract(nil), lifecycle.cli...),
+		markConsumers: dependencies.markBuiltinConsumers,
 	}
 	definition.instantiate = func(plan *Plan, index int) (O, RuntimeComponent, error) {
 		var zero O

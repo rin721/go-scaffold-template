@@ -23,6 +23,13 @@ type Source interface {
 	Load(context.Context) (map[string]any, error)
 }
 
+// Provider 是 Kernel 使用配置能力时依赖的最小契约。
+// 实现负责加载快照并暴露可监听的文件路径，但不向调用方开放来源变更能力。
+type Provider interface {
+	Load(context.Context) (Snapshot, error)
+	FilePaths() []string
+}
+
 // Loader 按顺序加载配置来源，后加载的来源覆盖先加载的来源。
 type Loader struct {
 	sources []Source

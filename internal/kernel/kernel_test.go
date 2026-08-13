@@ -76,7 +76,7 @@ type testAssembly struct {
 func newTestAssembly(t *testing.T, source config.Source, options Options) *testAssembly {
 	t.Helper()
 	if options.Logging == nil {
-		options.Logging = newTestLoggingManager(t)
+		options.Logging = newTestLoggingAccess(t)
 	}
 	runtime, err := New(config.New(source), options)
 	if err != nil {

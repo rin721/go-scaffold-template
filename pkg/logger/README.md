@@ -1,6 +1,6 @@
 # logger
 
-`pkg/logger` 是项目内通用日志库封装。它使用 `go.uber.org/zap` 作为内部实现，但业务代码只依赖本包暴露的 `Logger`、`Config`、`Field` 和字段构造函数，不直接接触 zap 类型。创建方通过 `Resource` 独占 Sync、Close 和文件 sink，业务调用方不能关闭共享 logger。
+`pkg/logger` 是项目内通用日志库封装。它使用 `go.uber.org/zap` 作为内部实现，但业务代码只依赖本包暴露的 `Logger`、`Access`、`Config`、`Field` 和字段构造函数，不直接接触 zap 类型。创建方通过 `Resource` 独占 Sync、Close 和文件 sink，业务调用方不能关闭共享 logger。
 
 ## 技术选型
 
@@ -123,4 +123,4 @@ func (s *Service) Create(name string) {
 }
 ```
 
-由 Kernel 托管时，应用入口创建基线 Resource，`internal/kernel/logging.Manager` 在 `internal/kernel/app/logger` 提交配置化实例后切换委托目标，调用方通过 `Capabilities.Logger` 的租约回调使用当前 `Logger`。本包仍不提供全局 logger；独立使用和 Kernel 托管都保持显式所有权与注入。
+由 Kernel 托管时，`internal/kernel/builtin/logger` 构造并拥有 baseline Resource，root `Access` 持有当前 Logger slot 的调用租约。`internal/kernel/app/logger.Replacement(spec)` 只通过显式 `app.Replace` 改变主槽位，`Instance(spec)` 则产生互不回退的独立 Access。调用方通过 `Capabilities.Logger.Use` 在 callback 内使用当前 Logger；callback 返回后不得保存 Logger。本包不提供全局 logger，也不暴露 Replace、Restore 或 Close 控制面。

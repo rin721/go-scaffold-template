@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	"github.com/rin721/go-scaffold2/pkg/cli"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
@@ -127,9 +126,5 @@ func (failingWriter) Write([]byte) (int, error) {
 
 func newTestProcess(t *testing.T, stdin io.Reader, stdout, stderr io.Writer) process {
 	t.Helper()
-	manager, err := kernellogging.New(pkglogger.Noop())
-	if err != nil {
-		t.Fatalf("logging.New() error = %v", err)
-	}
-	return newProcess(stdin, stdout, stderr, manager)
+	return newProcess(stdin, stdout, stderr)
 }

@@ -54,7 +54,7 @@ func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
 	}
 
 	path := createHostVersionFile(t, "v1")
-	runtime, err := New(config.New(config.FileSource(path)), Options{Logging: newTestLoggingManager(t)})
+	runtime, err := New(config.New(config.FileSource(path)), Options{Logging: newTestLoggingAccess(t)})
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

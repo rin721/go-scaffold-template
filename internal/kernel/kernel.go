@@ -10,7 +10,6 @@ import (
 
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
@@ -25,7 +24,8 @@ const (
 type Options struct {
 	Debounce      time.Duration
 	ReloadTimeout time.Duration
-	Logging       *kernellogging.Manager
+	Logging       pkglogger.Access
+	builtins      *app.Plan
 }
 
 // ReloadResult 描述一轮配置候选对当前有效状态产生的结果。
@@ -47,7 +47,7 @@ const (
 
 // Kernel 执行一份显式安装的底层 App 组件计划。
 type Kernel struct {
-	loader  *config.Loader
+	loader  config.Provider
 	options Options
 
 	operationMu sync.Mutex
@@ -59,12 +59,12 @@ type Kernel struct {
 }
 
 // New 创建尚未安装组件计划的空 Kernel。
-func New(loader *config.Loader, options Options) (*Kernel, error) {
+func New(loader config.Provider, options Options) (*Kernel, error) {
 	if loader == nil {
 		return nil, fmt.Errorf("kernel config loader is nil")
 	}
 	if options.Logging == nil {
-		return nil, fmt.Errorf("kernel logging manager is nil")
+		return nil, fmt.Errorf("kernel logging access is nil")
 	}
 	if options.Debounce < 0 {
 		return nil, fmt.Errorf("kernel debounce must be non-negative")
@@ -83,14 +83,6 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 
 // Name 返回进程监督参与者名称。
 func (k *Kernel) Name() string { return "kernel" }
-
-// LoggingManager 返回配置加载前也始终可用的基线日志委托。
-func (k *Kernel) LoggingManager() *kernellogging.Manager {
-	if k == nil {
-		return nil
-	}
-	return k.options.Logging
-}
 
 // Install 把完整冻结计划一次性安装到尚未启动的空 Kernel。
 func (k *Kernel) Install(plan app.FrozenPlan) error {
@@ -164,7 +156,9 @@ func (k *Kernel) Start(ctx context.Context) error {
 	k.snapshot = snapshot
 	k.state = kernelRunning
 	k.mu.Unlock()
-	k.options.Logging.Info("kernel started", pkglogger.Int("components", len(components)))
+	if err := k.log(ctx, func(log pkglogger.Logger) { log.Info("kernel started", pkglogger.Int("components", len(components))) }); err != nil {
+		return k.failStart(ctx, components, started, fmt.Errorf("write kernel start log: %w", err))
+	}
 	return nil
 }
 
@@ -176,7 +170,7 @@ func (k *Kernel) failStart(ctx context.Context, components, started []app.Runtim
 	k.mu.Lock()
 	k.state = kernelStopped
 	k.mu.Unlock()
-	return errors.Join(cause, cleanupErr)
+	return errors.Join(cause, cleanupErr, app.CloseBuiltins(context.WithoutCancel(ctx), k.options.builtins))
 }
 
 func prepareComponent(ctx context.Context, component app.RuntimeComponent) error {
@@ -241,7 +235,9 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 		k.snapshot = candidateSnapshot
 		k.mu.Unlock()
 		result.CurrentDigest = candidateSnapshot.Digest()
-		k.options.Logging.Debug("kernel reload unchanged")
+		if err := k.log(ctx, func(log pkglogger.Logger) { log.Debug("kernel reload unchanged") }); err != nil {
+			return result, fmt.Errorf("write unchanged reload log: %w", err)
+		}
 		return result, nil
 	}
 
@@ -278,7 +274,11 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 	if cleanupErr != nil {
 		return result, &CommittedCleanupError{Err: cleanupErr}
 	}
-	k.options.Logging.Info("kernel reload completed", pkglogger.Any("changed", result.Changed))
+	if err := k.log(ctx, func(log pkglogger.Logger) {
+		log.Info("kernel reload completed", pkglogger.Any("changed", result.Changed))
+	}); err != nil {
+		return result, fmt.Errorf("write reload completion log: %w", err)
+	}
 	return result, nil
 }
 
@@ -320,7 +320,7 @@ func (k *Kernel) Stop(ctx context.Context) error {
 		for _, component := range components {
 			component.StopPending()
 		}
-		return nil
+		return app.CloseBuiltins(ctx, k.options.builtins)
 	}
 	k.mu.Unlock()
 
@@ -342,9 +342,14 @@ func (k *Kernel) Stop(ctx context.Context) error {
 		joined = errors.Join(joined, components[index].StopCurrent(ctx))
 	}
 	if joined == nil {
-		k.options.Logging.Info("kernel stopped")
+		joined = errors.Join(joined, k.log(ctx, func(log pkglogger.Logger) { log.Info("kernel stopped") }))
 	}
+	joined = errors.Join(joined, app.CloseBuiltins(ctx, k.options.builtins))
 	return joined
+}
+
+func (k *Kernel) log(ctx context.Context, write func(pkglogger.Logger)) error {
+	return k.options.Logging.Use(ctx, func(current pkglogger.Logger) error { write(current); return nil })
 }
 
 func discardCandidatesAfterFailure(parent context.Context, timeout time.Duration, components []app.RuntimeComponent) error {

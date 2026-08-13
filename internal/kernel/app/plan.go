@@ -16,17 +16,27 @@ const (
 
 // Plan 保存 composition 按人工顺序选择的底层组件。
 type Plan struct {
-	state      planState
-	ids        map[ID]struct{}
-	outputs    []any
-	tokens     []*bindingToken
-	components []RuntimeComponent
-	defaults   []config.Binding
-	cli        []kernelcli.Contract
+	state        planState
+	ids          map[ID]struct{}
+	outputs      []any
+	tokens       []*bindingToken
+	components   []RuntimeComponent
+	defaults     []config.Binding
+	cli          []kernelcli.Contract
+	configPaths  map[string]ID
+	roles        map[RoleID]builtinRuntime
+	roleOrder    []builtinRuntime
+	rootRoles    map[int]builtinRuntime
+	outputPhases []BuiltinPhase
 }
 
 // NewPlan 创建尚未冻结的空组件计划。
-func NewPlan() *Plan { return &Plan{ids: make(map[ID]struct{})} }
+func NewPlan() *Plan {
+	return &Plan{
+		ids: make(map[ID]struct{}), configPaths: make(map[string]ID),
+		roles: make(map[RoleID]builtinRuntime), rootRoles: make(map[int]builtinRuntime),
+	}
+}
 
 // Add 把一个 Definition 原子加入当前 Plan。
 func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
@@ -42,6 +52,9 @@ func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
 	if _, exists := plan.ids[definition.id]; exists {
 		return Added[O]{}, fmt.Errorf("component %s is duplicated", definition.id)
 	}
+	if err := plan.validateIdentity(definition.id, definition.configPath); err != nil {
+		return Added[O]{}, err
+	}
 	index := len(plan.outputs)
 	if definition.instantiate == nil {
 		return Added[O]{}, fmt.Errorf("component %s definition is invalid", definition.id)
@@ -55,8 +68,15 @@ func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
 	}
 	token := &bindingToken{}
 	plan.ids[definition.id] = struct{}{}
+	if definition.configPath != "" {
+		plan.configPaths[definition.configPath] = definition.id
+	}
+	if definition.markConsumers != nil {
+		definition.markConsumers(plan)
+	}
 	plan.outputs = append(plan.outputs, output)
 	plan.tokens = append(plan.tokens, token)
+	plan.outputPhases = append(plan.outputPhases, Runtime)
 	if component != nil {
 		plan.components = append(plan.components, component)
 	}
@@ -76,9 +96,31 @@ func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
 	return Added[O]{Binding: binding, Output: output}, nil
 }
 
+func (p *Plan) validateIdentity(id ID, path string) error {
+	if id == "" {
+		return fmt.Errorf("component id is required")
+	}
+	if _, exists := p.ids[id]; exists {
+		return fmt.Errorf("component %s is duplicated", id)
+	}
+	if path == "" {
+		return nil
+	}
+	if err := validateConfigPath(path); err != nil {
+		return fmt.Errorf("component %s config path: %w", id, err)
+	}
+	for existing, owner := range p.configPaths {
+		if configPathsOverlap(existing, path) {
+			return fmt.Errorf("component %s config path %s overlaps component %s path %s", id, path, owner, existing)
+		}
+	}
+	return nil
+}
+
 // FrozenPlan 是完成校验后的不可变 Kernel 安装输入。
 type FrozenPlan struct {
 	valid      bool
+	origin     *Plan
 	components []RuntimeComponent
 	defaults   []config.Binding
 	cli        []kernelcli.Contract
@@ -92,14 +134,23 @@ func (p *Plan) Freeze() (FrozenPlan, error) {
 	if p.state != planOpen {
 		return FrozenPlan{}, fmt.Errorf("component plan is already frozen")
 	}
+	for _, role := range p.roleOrder {
+		if err := role.validateRuntime(); err != nil {
+			return FrozenPlan{}, fmt.Errorf("validate builtin role %s: %w", role.roleID(), err)
+		}
+	}
 	p.state = planFrozen
 	return FrozenPlan{
 		valid:      true,
+		origin:     p,
 		components: append([]RuntimeComponent(nil), p.components...),
 		defaults:   append([]config.Binding(nil), p.defaults...),
 		cli:        append([]kernelcli.Contract(nil), p.cli...),
 	}, nil
 }
+
+// BelongsTo 确认 FrozenPlan 来自指定 Plan，供 Assembly 阻止跨计划安装。
+func (p FrozenPlan) BelongsTo(plan *Plan) bool { return p.valid && p.origin == plan }
 
 // Validate 确认 FrozenPlan 来自一次成功的 Freeze，且运行节点完整。
 func (p FrozenPlan) Validate() error {
