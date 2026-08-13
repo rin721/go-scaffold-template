@@ -15,6 +15,18 @@ type clockConsumer struct{ clock pkgclock.Clock }
 
 type clockDependencies struct{ clock pkgclock.Clock }
 
+type replaceableTarget interface {
+	Current() string
+	Replace(string)
+	Restore()
+}
+
+type testTarget struct{ current string }
+
+func (t *testTarget) Current() string      { return t.current }
+func (t *testTarget) Replace(value string) { t.current = value }
+func (t *testTarget) Restore()             { t.current = "baseline" }
+
 func TestPlanUsesTypedDirectOutputAndBuildTimeInput(t *testing.T) {
 	plan := app.NewPlan()
 	fixedTime := time.Date(2026, 8, 12, 10, 0, 0, 0, time.UTC)
@@ -229,6 +241,108 @@ func TestValuesCannotBeUsedAfterDependencyDecode(t *testing.T) {
 	if _, err := app.Resolve(escaped, clockInput); err == nil {
 		t.Fatal("Resolve(escaped Values) error = nil")
 	}
+}
+
+func TestReplaceRequiresSamePlanTargetAndIsAtomic(t *testing.T) {
+	first := app.NewPlan()
+	second := app.NewPlan()
+	targetDefinition, err := app.Value[replaceableTarget]("target", &testTarget{current: "baseline"})
+	if err != nil {
+		t.Fatalf("Value(target) error = %v", err)
+	}
+	target, err := app.Add(first, targetDefinition)
+	if err != nil {
+		t.Fatalf("Add(target) error = %v", err)
+	}
+	replacement := newStringReplacement(t, "replacement")
+	if err := app.Replace(second, target.Binding, replacement); err == nil {
+		t.Fatal("Replace(cross-plan target) error = nil")
+	}
+	validTargetDefinition, err := app.Value[replaceableTarget]("second-target", &testTarget{current: "baseline"})
+	if err != nil {
+		t.Fatalf("Value(second target) error = %v", err)
+	}
+	validTarget, err := app.Add(second, validTargetDefinition)
+	if err != nil {
+		t.Fatalf("Add(second target after failure) error = %v", err)
+	}
+	if err := app.Replace(second, validTarget.Binding, replacement); err != nil {
+		t.Fatalf("Replace(valid after failure) error = %v", err)
+	}
+	if err := app.Replace(second, validTarget.Binding, newStringReplacement(t, "other")); err == nil {
+		t.Fatal("Replace(duplicate target) error = nil")
+	}
+	frozen, err := second.Freeze()
+	if err != nil {
+		t.Fatalf("Freeze() error = %v", err)
+	}
+	if len(frozen.Components()) != 1 || len(frozen.Defaults()) != 0 {
+		t.Fatalf("FrozenPlan components/defaults = %d/%d", len(frozen.Components()), len(frozen.Defaults()))
+	}
+	if err := app.Replace(second, validTarget.Binding, newStringReplacement(t, "frozen")); err == nil {
+		t.Fatal("Replace(after Freeze) error = nil")
+	}
+}
+
+func TestReplaceRejectsZeroTargetWithoutReservingComponentID(t *testing.T) {
+	plan := app.NewPlan()
+	replacement := newStringReplacement(t, "replacement")
+	if err := app.Replace(plan, app.Binding[replaceableTarget]{}, replacement); err == nil {
+		t.Fatal("Replace(zero target) error = nil")
+	}
+	value, err := app.Value("replacement", "id remains available")
+	if err != nil {
+		t.Fatalf("Value() error = %v", err)
+	}
+	if _, err := app.Add(plan, value); err != nil {
+		t.Fatalf("Add(same ID after failed Replace) error = %v", err)
+	}
+}
+
+func TestReplaceRejectsDuplicateComponentIDWithoutReservingTarget(t *testing.T) {
+	plan := app.NewPlan()
+	existing, err := app.Value("replacement", "existing")
+	if err != nil {
+		t.Fatalf("Value(existing) error = %v", err)
+	}
+	if _, err := app.Add(plan, existing); err != nil {
+		t.Fatalf("Add(existing) error = %v", err)
+	}
+	targetDefinition, err := app.Value[replaceableTarget]("target", &testTarget{current: "baseline"})
+	if err != nil {
+		t.Fatalf("Value(target) error = %v", err)
+	}
+	target, err := app.Add(plan, targetDefinition)
+	if err != nil {
+		t.Fatalf("Add(target) error = %v", err)
+	}
+	if err := app.Replace(plan, target.Binding, newStringReplacement(t, "replacement")); err == nil {
+		t.Fatal("Replace(duplicate component ID) error = nil")
+	}
+	if err := app.Replace(plan, target.Binding, newStringReplacement(t, "valid-replacement")); err != nil {
+		t.Fatalf("Replace(valid after duplicate ID failure) error = %v", err)
+	}
+}
+
+func newStringReplacement(t *testing.T, id app.ID) app.ReplacementDefinition[replaceableTarget] {
+	t.Helper()
+	source, err := app.Configured("replacement", func(config.Snapshot) (string, error) {
+		return "configured", nil
+	}, nil)
+	if err != nil {
+		t.Fatalf("Configured() error = %v", err)
+	}
+	replacement, err := app.ManagedConfiguredReplacement(
+		id,
+		source,
+		func(context.Context, string, replaceableTarget) (string, error) { return "configured", nil },
+		func(target replaceableTarget, current string) { target.Replace(current) },
+		func(target replaceableTarget, _ string) { target.Restore() },
+	)
+	if err != nil {
+		t.Fatalf("ManagedConfiguredReplacement() error = %v", err)
+	}
+	return replacement
 }
 
 func loadSnapshot(t *testing.T, values map[string]any) config.Snapshot {

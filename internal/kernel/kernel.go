@@ -21,6 +21,9 @@ const (
 	DefaultReloadTimeout = 30 * time.Second
 )
 
+// BuiltinLoggerID 是 Kernel 内置 Logger target 在 App Plan 中的稳定身份。
+const BuiltinLoggerID app.ID = "kernel.logger"
+
 // Options 配置 Kernel 的监听和事务边界。
 type Options struct {
 	Debounce      time.Duration
@@ -84,8 +87,17 @@ func New(loader *config.Loader, options Options) (*Kernel, error) {
 // Name 返回进程监督参与者名称。
 func (k *Kernel) Name() string { return "kernel" }
 
-// LoggingManager 返回配置加载前也始终可用的基线日志委托。
-func (k *Kernel) LoggingManager() *kernellogging.Manager {
+// Logger 返回配置加载前也始终可用、且不暴露替换权的稳定日志入口。
+func (k *Kernel) Logger() pkglogger.Logger {
+	if k == nil {
+		return nil
+	}
+	return k.options.Logging.Logger()
+}
+
+// LoggerTarget 返回 composition 建立内置 Logger typed Binding 所需的替换 target。
+// 该控制入口不得进入普通 Capabilities 或业务调用方。
+func (k *Kernel) LoggerTarget() kernellogging.Target {
 	if k == nil {
 		return nil
 	}

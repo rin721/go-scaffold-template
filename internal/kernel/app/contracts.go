@@ -106,21 +106,6 @@ func WithStop[I any](stop func(context.Context, I) error) Option[I] {
 	}
 }
 
-// WithActivation 声明不可失败提交区中的稳定 facade 切换动作。
-func WithActivation[I any](activate, deactivate func(I)) Option[I] {
-	return func(target *lifecycle[I]) error {
-		if activate == nil || deactivate == nil {
-			return fmt.Errorf("component activation functions are required")
-		}
-		if target.activate != nil || target.deactivate != nil {
-			return fmt.Errorf("component activation functions are duplicated")
-		}
-		target.activate = activate
-		target.deactivate = deactivate
-		return nil
-	}
-}
-
 // WithCLI 声明组件贡献的启动前 CLI 契约。
 func WithCLI[I any](contract kernelcli.Contract) Option[I] {
 	return func(target *lifecycle[I]) error {

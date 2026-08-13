@@ -8,14 +8,23 @@ import (
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
+// Target 是 composition 用来声明 Kernel 内置 Logger 替换关系的 typed target。
+// 普通消费者只接收 pkglogger.Logger，不应取得 Replace 或 Restore 权限。
+type Target interface {
+	Logger() pkglogger.Logger
+	Replace(pkglogger.Logger)
+	Restore()
+}
+
 // Manager 在基线 logger 与当前配置化 logger 之间提供并发安全的稳定入口。
 //
 // Manager 不拥有任何 logger 的关闭责任；基线由应用入口关闭，配置化实例由
-// Logger Capability 关闭。
+// Logger Replacement App 关闭。
 type Manager struct {
 	mu       sync.RWMutex
 	baseline pkglogger.Logger
 	current  pkglogger.Logger
+	view     pkglogger.Logger
 }
 
 // New 创建使用必填基线 logger 的 Manager。
@@ -23,7 +32,17 @@ func New(baseline pkglogger.Logger) (*Manager, error) {
 	if baseline == nil {
 		return nil, fmt.Errorf("kernel baseline logger is nil")
 	}
-	return &Manager{baseline: baseline, current: baseline}, nil
+	manager := &Manager{baseline: baseline, current: baseline}
+	manager.view = &boundLogger{manager: manager}
+	return manager, nil
+}
+
+// Logger 返回不带替换权的稳定只读 view。
+func (m *Manager) Logger() pkglogger.Logger {
+	if m == nil {
+		return nil
+	}
+	return m.view
 }
 
 // Replace 在不可失败的 Kernel 提交区切换到已完成构造的 logger。
@@ -108,4 +127,5 @@ func (l *boundLogger) write(
 }
 
 var _ pkglogger.Logger = (*Manager)(nil)
+var _ Target = (*Manager)(nil)
 var _ pkglogger.Logger = (*boundLogger)(nil)

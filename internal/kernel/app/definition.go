@@ -16,6 +16,15 @@ type Definition[O any] struct {
 	instantiate func(*Plan, int) (O, RuntimeComponent, error)
 }
 
+// ReplacementDefinition 声明一个明确替换既有 typed target、但不发布第二份输出的组件。
+// target 只能由 Replace 从同一 Plan 的 Binding 解析并注入。
+type ReplacementDefinition[T any] struct {
+	id          ID
+	defaults    config.DefaultContract
+	cli         []kernelcli.Contract
+	instantiate func(*Plan, int, T) (RuntimeComponent, error)
+}
+
 // Value 创建代码固定、直接输出、无配置和无生命周期的组件声明。
 func Value[O any](id ID, output O) (Definition[O], error) {
 	if id == "" {
@@ -60,6 +69,66 @@ func ManagedConfigured[C, D, I, O any](
 		reload,
 		options...,
 	)
+}
+
+// ManagedConfiguredReplacement 创建由 typed 配置构造、并在提交区切换既有 target 的替换组件。
+// activate 与 deactivate 必须无失败且不执行 I/O；所有可能失败的准备必须在 build 完成。
+func ManagedConfiguredReplacement[C, T, I any](
+	id ID,
+	source ConfiguredSource[C],
+	build Builder[C, T, I],
+	activate func(T, I),
+	deactivate func(T, I),
+	options ...Option[I],
+) (ReplacementDefinition[T], error) {
+	if id == "" {
+		return ReplacementDefinition[T]{}, fmt.Errorf("replacement component id is required")
+	}
+	if source.path == "" || source.decode == nil {
+		return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s configured source is invalid", id)
+	}
+	if build == nil {
+		return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s builder is nil", id)
+	}
+	if activate == nil || deactivate == nil {
+		return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s activation functions are required", id)
+	}
+	lifecycle := lifecycle[I]{}
+	for index, option := range options {
+		if option == nil {
+			return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s option %d is nil", id, index)
+		}
+		if err := option(&lifecycle); err != nil {
+			return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s option %d: %w", id, index, err)
+		}
+	}
+	definition := ReplacementDefinition[T]{
+		id:       id,
+		defaults: source.defaults,
+		cli:      append([]kernelcli.Contract(nil), lifecycle.cli...),
+	}
+	definition.instantiate = func(plan *Plan, _ int, target T) (RuntimeComponent, error) {
+		if isNil(target) {
+			return nil, fmt.Errorf("replacement component %s target is nil", id)
+		}
+		lease := newLease[I]()
+		componentLifecycle := lifecycle
+		componentLifecycle.activate = func(instance I) { activate(target, instance) }
+		componentLifecycle.deactivate = func(instance I) { deactivate(target, instance) }
+		return &managedComponent[C, T, I]{
+			componentID: id,
+			configPath:  source.path,
+			policy:      KernelInstanceSwap,
+			decode:      source.decode,
+			resolveDependencies: func() (T, error) {
+				return target, nil
+			},
+			build:     build,
+			lifecycle: componentLifecycle,
+			lease:     lease,
+		}, nil
+	}
+	return definition, nil
 }
 
 // ManagedFixed 创建一个无运行期配置但需要 Kernel 生命周期治理的租约组件。

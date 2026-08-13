@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
-	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
 	"github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
@@ -94,7 +93,7 @@ func (p process) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create kernel: %w", err)
 	}
 
-	compositionOptions := composition.Options{}
+	compositionOptions := composition.Options{Logger: composition.ConfiguredLoggerReplacement}
 	if len(args) > 0 {
 		compositionOptions.CLI = &composition.CLIOptions{App: cli.Config{
 			Name:                   applicationName,
@@ -131,7 +130,7 @@ func (p process) run(ctx context.Context, args []string) error {
 }
 
 type applicationLifecycle struct {
-	logging loggerapp.Access
+	logging pkglogger.Logger
 }
 
 func (applicationLifecycle) Name() string { return "application" }
@@ -145,13 +144,17 @@ func (l applicationLifecycle) Stop(ctx context.Context) error {
 }
 
 func (l applicationLifecycle) write(ctx context.Context, message string) error {
-	if l.logging == nil {
-		return fmt.Errorf("application logger access is nil")
+	if ctx == nil {
+		return fmt.Errorf("application logger context is nil")
 	}
-	return l.logging.Use(ctx, func(log pkglogger.Logger) error {
-		log.Info(message, pkglogger.String("application", applicationName))
-		return nil
-	})
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if l.logging == nil {
+		return fmt.Errorf("application logger is nil")
+	}
+	l.logging.Info(message, pkglogger.String("application", applicationName))
+	return nil
 }
 
 func execute(ctx context.Context, process process, args []string) int {

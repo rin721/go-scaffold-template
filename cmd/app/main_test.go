@@ -96,9 +96,9 @@ func TestExecuteReturnsErrorWhenReportingFails(t *testing.T) {
 	}
 }
 
-func TestApplicationLifecycleUsesInjectedLoggerAccess(t *testing.T) {
+func TestApplicationLifecycleUsesInjectedLogger(t *testing.T) {
 	log := pkglogger.NewTestLogger()
-	lifecycle := applicationLifecycle{logging: fixedLoggerAccess{logger: log}}
+	lifecycle := applicationLifecycle{logging: log}
 	if err := lifecycle.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -109,14 +109,6 @@ func TestApplicationLifecycleUsesInjectedLoggerAccess(t *testing.T) {
 	if len(entries) != 2 || entries[0].Message != "application started" || entries[1].Message != "application stopping" {
 		t.Fatalf("lifecycle entries = %#v", entries)
 	}
-}
-
-type fixedLoggerAccess struct {
-	logger pkglogger.Logger
-}
-
-func (a fixedLoggerAccess) Use(_ context.Context, use func(pkglogger.Logger) error) error {
-	return use(a.logger)
 }
 
 type failingWriter struct{}

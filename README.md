@@ -5,10 +5,10 @@
 ## 当前目标
 
 - 保持 `pkg/*` 通用库不感知 kernel、DI、drain 或热替换。
-- 所有当前进程选择的底层能力都通过 `kernel/app/<name>` 和 composition；Clock、ID Generator、Validator 直接输出普通接口，Logger、Database 输出稳定租约 Access。
-- `app.Plan` 只支持显式有序 `Add` 和 typed `Binding/Input`，不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
+- 所有当前进程选择的底层能力都通过 `kernel/app/<name>` 和 composition；Clock、ID Generator、Validator 直接输出普通接口，Database 输出稳定租约 Access，Logger 始终输出 Kernel 内置稳定 facade。
+- `app.Plan` 只支持显式有序 `Add`、typed `Binding/Input` 和针对既有 typed target 的 `Replace`；不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
 - 配置变化时先准备全部候选，再反向排空旧租约；失败恢复旧入口，`RestartRequired` 在任何副作用前阻止整轮应用。
-- 配置与默认值是可选组件契约；当前只有 Logger、Database 贡献默认配置，CLI 也只在显式启用时构造。
+- 配置与默认值是可选组件契约；只有显式选择配置化 Logger replacement 时才贡献 `logger` 段，Database 始终贡献自身默认配置，CLI 也只在显式启用时构造。
 
 ## 已实现底层库
 
@@ -30,7 +30,7 @@
 
 ## 默认配置与可选 CLI
 
-`composition.Compose(runtime, options)` 按 Logger、Clock、ID Generator、Validator、Database 顺序建立完整 Plan。返回值中三项简单能力是普通接口，两项资源能力是稳定 Access；只有 `options.CLI` 非 nil 时才构造 CLI App。默认配置仍只有 Logger、Database 两段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
+`composition.Compose(runtime, options)` 先加入 Kernel 内置 Logger target；`options.Logger` 可以保留基线，也可以显式加入配置化 Logger replacement，随后再按 Clock、ID Generator、Validator、Database 建立完整 Plan。返回的 Logger 是同一个稳定 facade，Database 是租约 Access；只有 `options.CLI` 非 nil 时才构造 CLI App。当前 `cmd/app` 明确选择配置化 replacement，因此默认配置仍为 Logger、Database 两段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
 根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。
 

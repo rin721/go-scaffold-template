@@ -23,10 +23,13 @@ type Plan struct {
 	components []RuntimeComponent
 	defaults   []config.Binding
 	cli        []kernelcli.Contract
+	replaced   map[*bindingToken]struct{}
 }
 
 // NewPlan 创建尚未冻结的空组件计划。
-func NewPlan() *Plan { return &Plan{ids: make(map[ID]struct{})} }
+func NewPlan() *Plan {
+	return &Plan{ids: make(map[ID]struct{}), replaced: make(map[*bindingToken]struct{})}
+}
 
 // Add 把一个 Definition 原子加入当前 Plan。
 func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
@@ -74,6 +77,63 @@ func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
 	plan.cli = append(plan.cli, definition.cli...)
 	binding := Binding[O]{plan: plan, index: index, token: token}
 	return Added[O]{Binding: binding, Output: output}, nil
+}
+
+// Replace 把一个明确的替换声明绑定到同一 Plan 中已经存在的 typed target。
+// Replacement 不发布第二份输出；调用方继续使用 target Binding 对应的稳定对象。
+func Replace[T any](plan *Plan, target Binding[T], replacement ReplacementDefinition[T]) error {
+	if plan == nil {
+		return fmt.Errorf("component plan is nil")
+	}
+	if plan.state != planOpen {
+		return fmt.Errorf("component plan is frozen")
+	}
+	if replacement.id == "" || replacement.instantiate == nil {
+		return fmt.Errorf("replacement component definition is invalid")
+	}
+	if _, exists := plan.ids[replacement.id]; exists {
+		return fmt.Errorf("component %s is duplicated", replacement.id)
+	}
+	if target.plan == nil || target.token == nil {
+		return fmt.Errorf("replacement component %s target is a zero binding", replacement.id)
+	}
+	if target.plan != plan {
+		return fmt.Errorf("replacement component %s target belongs to another plan", replacement.id)
+	}
+	if target.index < 0 || target.index >= len(plan.outputs) || plan.tokens[target.index] != target.token {
+		return fmt.Errorf("replacement component %s target is not registered", replacement.id)
+	}
+	if _, exists := plan.replaced[target.token]; exists {
+		return fmt.Errorf("replacement target component %d is already replaced", target.index)
+	}
+	resolved, ok := plan.outputs[target.index].(T)
+	if !ok {
+		return fmt.Errorf("replacement component %s target has an internal output type mismatch", replacement.id)
+	}
+	component, err := replacement.instantiate(plan, len(plan.outputs), resolved)
+	if err != nil {
+		return err
+	}
+	if component == nil {
+		return fmt.Errorf("replacement component %s runtime node is nil", replacement.id)
+	}
+
+	plan.ids[replacement.id] = struct{}{}
+	plan.replaced[target.token] = struct{}{}
+	plan.components = append(plan.components, component)
+	if replacement.defaults != nil {
+		path := ""
+		if configured, ok := component.(interface{ ConfigPath() string }); ok {
+			path = configured.ConfigPath()
+		}
+		plan.defaults = append(plan.defaults, config.Binding{
+			CapabilityID: string(replacement.id),
+			ConfigPath:   path,
+			Contract:     replacement.defaults,
+		})
+	}
+	plan.cli = append(plan.cli, replacement.cli...)
+	return nil
 }
 
 // FrozenPlan 是完成校验后的不可变 Kernel 安装输入。

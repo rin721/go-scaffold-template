@@ -12,14 +12,9 @@ import (
 )
 
 const (
-	ID         app.ID = "logger"
+	ID         app.ID = "logger.configured"
 	ConfigPath        = "logger"
 )
-
-// Access 是调用方接收的稳定日志租约入口。
-type Access interface {
-	Use(context.Context, func(pkglogger.Logger) error) error
-}
 
 // Config 是 Logger App 的 typed 配置契约。
 type Config struct {
@@ -33,59 +28,32 @@ type Config struct {
 }
 
 type instance struct{ resource pkglogger.Resource }
-type dependencies struct{ manager *kernellogging.Manager }
 
-// Definition 返回无安装副作用的 Logger 组件声明。
-func Definition(manager *kernellogging.Manager) (app.Definition[Access], error) {
-	if manager == nil {
-		return app.Definition[Access]{}, fmt.Errorf("kernel logging manager is nil")
-	}
+// Replacement 返回明确替换 Kernel 内置 Logger target 的配置化组件声明。
+func Replacement() (app.ReplacementDefinition[kernellogging.Target], error) {
 	source, err := app.Configured(ConfigPath, decode, defaults{})
 	if err != nil {
-		return app.Definition[Access]{}, err
+		return app.ReplacementDefinition[kernellogging.Target]{}, err
 	}
-	return app.ManagedConfigured(
+	return app.ManagedConfiguredReplacement(
 		ID,
 		source,
-		app.FixedDependencies(dependencies{manager: manager}),
 		build,
-		app.Leased(newAccess),
-		app.KernelInstanceSwap,
+		activate,
+		deactivate,
 		app.WithStop(stop),
-		app.WithActivation(activate(manager), deactivate(manager)),
 	)
 }
 
-type access struct{ delegate app.Lease[*instance] }
-
-func newAccess(delegate app.Lease[*instance]) (Access, error) {
-	if delegate == nil {
-		return nil, fmt.Errorf("logger lease is nil")
-	}
-	return &access{delegate: delegate}, nil
-}
-
-func (a *access) Use(ctx context.Context, use func(pkglogger.Logger) error) error {
-	if use == nil {
-		return fmt.Errorf("logger access callback is nil")
-	}
-	return a.delegate.Use(ctx, func(current *instance) error {
-		if current == nil || current.resource == nil {
-			return fmt.Errorf("logger instance is nil")
-		}
-		return use(current.resource)
-	})
-}
-
-func build(ctx context.Context, cfg Config, deps dependencies) (*instance, error) {
+func build(ctx context.Context, cfg Config, target kernellogging.Target) (*instance, error) {
 	if ctx == nil {
 		return nil, app.ErrNilContext
 	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	if deps.manager == nil {
-		return nil, fmt.Errorf("kernel logging manager is nil")
+	if target == nil {
+		return nil, fmt.Errorf("kernel logging target is nil")
 	}
 	resource, err := pkglogger.New(pointerTo(cfg.packageConfig()))
 	if err != nil {
@@ -101,12 +69,12 @@ func stop(_ context.Context, current *instance) error {
 	return current.resource.Close()
 }
 
-func activate(manager *kernellogging.Manager) func(*instance) {
-	return func(current *instance) { manager.Replace(current.resource) }
+func activate(target kernellogging.Target, current *instance) {
+	target.Replace(current.resource)
 }
 
-func deactivate(manager *kernellogging.Manager) func(*instance) {
-	return func(*instance) { manager.Restore() }
+func deactivate(target kernellogging.Target, _ *instance) {
+	target.Restore()
 }
 
 func decode(snapshot config.Snapshot) (Config, error) {
@@ -168,5 +136,4 @@ func stringList(values []string) config.Value {
 
 func pointerTo[T any](value T) *T { return &value }
 
-var _ Access = (*access)(nil)
 var _ config.DefaultContract = defaults{}

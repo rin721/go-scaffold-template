@@ -7,23 +7,36 @@ import (
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
-	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
 	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
+	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
 )
 
+// LoggerSelection 表示当前 composition 是否用配置化 App 替换 Kernel 内置 Logger。
+type LoggerSelection uint8
+
+const (
+	// KernelBuiltinLogger 只使用 Kernel 构造时注入的基线 Logger。
+	KernelBuiltinLogger LoggerSelection = iota
+	// ConfiguredLoggerReplacement 显式加入配置化 Logger replacement App。
+	ConfiguredLoggerReplacement
+)
+
 // Options 配置 composition 可选的启动前能力。
-type Options struct{ CLI *CLIOptions }
+type Options struct {
+	Logger LoggerSelection
+	CLI    *CLIOptions
+}
 
 // CLIOptions 配置可选的启动前 CLI App。
 type CLIOptions struct{ App pkgcli.Config }
 
 // Capabilities 保存当前进程已经显式选择的稳定能力入口。
 type Capabilities struct {
-	Logger        loggerapp.Access
+	Logger        pkglogger.Logger
 	Clock         pkgclock.Clock
 	IDGenerator   pkgidgen.Generator
 	Validator     pkgvalidation.Validator
@@ -38,9 +51,18 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 		return Capabilities{}, fmt.Errorf("compose runtime is nil")
 	}
 	plan := app.NewPlan()
-	loggerOutput, err := composeLogger(plan, runtime.LoggingManager())
+	loggerOutput, err := composeBuiltinLogger(plan, runtime.LoggerTarget())
 	if err != nil {
 		return Capabilities{}, err
+	}
+	switch options.Logger {
+	case KernelBuiltinLogger:
+	case ConfiguredLoggerReplacement:
+		if err := composeLoggerReplacement(plan, loggerOutput.Binding); err != nil {
+			return Capabilities{}, err
+		}
+	default:
+		return Capabilities{}, fmt.Errorf("unsupported logger selection %d", options.Logger)
 	}
 	clockOutput, err := composeClock(plan)
 	if err != nil {
@@ -75,7 +97,7 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 		return Capabilities{}, fmt.Errorf("install component plan: %w", err)
 	}
 	return Capabilities{
-		Logger: loggerOutput.Output, Clock: clockOutput.Output,
+		Logger: loggerOutput.Output.Logger(), Clock: clockOutput.Output,
 		IDGenerator: idOutput.Output, Validator: validatorOutput.Output,
 		Database: databaseOutput.Output, Configuration: configurationOutput.manager, CLI: cliOutput,
 	}, nil

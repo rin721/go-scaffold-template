@@ -30,6 +30,9 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if disabled.Logger == nil || disabled.Clock == nil || disabled.IDGenerator == nil || disabled.Validator == nil || disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
 		t.Fatalf("Compose(disabled) = %#v", disabled)
 	}
+	if disabled.Logger != disabledRuntime.Logger() {
+		t.Fatal("Compose(disabled) did not return the Kernel builtin Logger facade")
+	}
 	if _, err := disabled.IDGenerator.New(); err != nil {
 		t.Fatalf("IDGenerator.New() error = %v", err)
 	}
@@ -43,15 +46,20 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	}
 
 	enabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	enabled, err := Compose(enabledRuntime, Options{CLI: &CLIOptions{App: pkgcli.Config{
-		Name:                   "test",
-		DisableInteractiveHome: true,
-	}}})
+	enabled, err := Compose(enabledRuntime, Options{
+		Logger: ConfiguredLoggerReplacement,
+		CLI: &CLIOptions{App: pkgcli.Config{
+			Name:                   "test",
+			DisableInteractiveHome: true,
+		}}})
 	if err != nil {
 		t.Fatalf("Compose(enabled) error = %v", err)
 	}
 	if enabled.CLI == nil {
 		t.Fatal("Compose(enabled) CLI is nil")
+	}
+	if enabled.Logger != enabledRuntime.Logger() {
+		t.Fatal("Compose(enabled) replaced the Logger facade identity")
 	}
 	directory := t.TempDir()
 	target := filepath.Join(directory, "cli.yaml")
@@ -81,6 +89,47 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	databaseIndex := bytes.Index(cliPayload, []byte("database:"))
 	if loggerIndex < 0 || databaseIndex < 0 || loggerIndex >= databaseIndex {
 		t.Fatalf("generated capability order is not Logger then Database:\n%s", cliPayload)
+	}
+}
+
+func TestComposeBuiltinLoggerOmitsConfiguredDefaults(t *testing.T) {
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
+	capabilities, err := Compose(runtime, Options{})
+	if err != nil {
+		t.Fatalf("Compose() error = %v", err)
+	}
+	if capabilities.Logger == nil {
+		t.Fatal("Compose() Logger is nil")
+	}
+	directory := t.TempDir()
+	target := filepath.Join(directory, "builtin.yaml")
+	if _, err := capabilities.Configuration.Generate(t.Context(), config.GenerateRequest{Path: target}); err != nil {
+		t.Fatalf("Configuration.Generate() error = %v", err)
+	}
+	payload, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if bytes.Contains(payload, []byte("logger:")) {
+		t.Fatalf("builtin-only configuration unexpectedly contains logger defaults:\n%s", payload)
+	}
+	if !bytes.Contains(payload, []byte("database:")) {
+		t.Fatalf("builtin-only configuration misses database defaults:\n%s", payload)
+	}
+	capabilities.Logger.Info("builtin logger active")
+}
+
+func TestComposeRejectsUnknownLoggerSelectionWithoutInstallingPlan(t *testing.T) {
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
+	capabilities, err := Compose(runtime, Options{Logger: LoggerSelection(255)})
+	if err == nil {
+		t.Fatal("Compose(unknown logger) error = nil")
+	}
+	if capabilities != (Capabilities{}) {
+		t.Fatalf("Compose(unknown logger) = %#v, want zero capabilities", capabilities)
+	}
+	if _, err := Compose(runtime, Options{}); err != nil {
+		t.Fatalf("Compose(valid after unknown logger) error = %v", err)
 	}
 }
 

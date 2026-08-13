@@ -3,6 +3,7 @@ package logging
 import (
 	"sync"
 	"testing"
+	"time"
 
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
@@ -10,6 +11,26 @@ import (
 func TestManagerRequiresBaseline(t *testing.T) {
 	if manager, err := New(nil); err == nil || manager != nil {
 		t.Fatalf("New(nil) = %#v, %v; want nil, error", manager, err)
+	}
+}
+
+func TestManagerLoggerViewDoesNotExposeReplacementControl(t *testing.T) {
+	manager, err := New(pkglogger.Noop())
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	view := manager.Logger()
+	if view == nil {
+		t.Fatal("Logger() view is nil")
+	}
+	if _, exposed := view.(interface {
+		Replace(pkglogger.Logger)
+		Restore()
+	}); exposed {
+		t.Fatal("Logger() view exposes replacement control")
+	}
+	if view != manager.Logger() {
+		t.Fatal("Logger() did not return a stable view")
 	}
 }
 
@@ -61,6 +82,71 @@ func TestManagerConcurrentWriteAndReplacement(t *testing.T) {
 		manager.Restore()
 	}
 	group.Wait()
+}
+
+func TestManagerReplacementWaitsForInFlightWrite(t *testing.T) {
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	baseline := &blockingLogger{entered: entered, release: release}
+	configured := &recordingLogger{}
+	manager, err := New(baseline)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	writeDone := make(chan struct{})
+	go func() {
+		manager.Info("blocking")
+		close(writeDone)
+	}()
+	select {
+	case <-entered:
+	case <-time.After(time.Second):
+		t.Fatal("logger write did not enter baseline")
+	}
+	replaceDone := make(chan struct{})
+	go func() {
+		manager.Replace(configured)
+		close(replaceDone)
+	}()
+	select {
+	case <-replaceDone:
+		t.Fatal("Replace() completed while baseline write was in flight")
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(release)
+	select {
+	case <-writeDone:
+	case <-time.After(time.Second):
+		t.Fatal("baseline write did not complete")
+	}
+	select {
+	case <-replaceDone:
+	case <-time.After(time.Second):
+		t.Fatal("Replace() did not complete after baseline write")
+	}
+	manager.Info("configured")
+	if got := configured.messages(); !equalStrings(got, []string{"configured"}) {
+		t.Fatalf("configured messages = %#v", got)
+	}
+}
+
+type blockingLogger struct {
+	entered chan<- struct{}
+	release <-chan struct{}
+	once    sync.Once
+}
+
+func (l *blockingLogger) Debug(string, ...pkglogger.Field) { l.block() }
+func (l *blockingLogger) Info(string, ...pkglogger.Field)  { l.block() }
+func (l *blockingLogger) Warn(string, ...pkglogger.Field)  { l.block() }
+func (l *blockingLogger) Error(string, ...pkglogger.Field) { l.block() }
+func (l *blockingLogger) With(...pkglogger.Field) pkglogger.Logger {
+	return l
+}
+
+func (l *blockingLogger) block() {
+	l.once.Do(func() { close(l.entered) })
+	<-l.release
 }
 
 type recordingLogger struct {
