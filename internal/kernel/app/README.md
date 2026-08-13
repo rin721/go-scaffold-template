@@ -124,6 +124,6 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/idgen`：UUID Generator，Fixed Direct。
 - `app/validation`：Default Validator，Fixed Direct。
 - `app/logger`：配置化 Logger Replacement，没有独立 Access；只通过 typed target 在提交/停止时切换或恢复 baseline Manager。
-- `app/database`：配置化 Database，Leased Swap，Ready 执行 Ping，Stop 关闭 Kernel 私有 Client。
+- `app/database`：代码固定选择 GORM，配置化选择 SQLite/PostgreSQL/MySQL，Leased Swap，Ready 执行 Ping，Stop 关闭 Kernel 私有 Resource。
 
 当前项目还没有 HTTP、middleware、handler、service、repository、model；本组件模型不替它们定义目录、构造器或容器职责。

@@ -11,6 +11,8 @@
 - [005 全量配置示例](005-full-config-example/README.md)：已完成。
 - [006 Kernel App 多态装配基础](006-kernel-app-polymorphic-composition/README.md)：已完成。
 - [007 Kernel 内置 Logger 的可选 App 替换](007-app-component-logger-injection/README.md)：已完成。
-- [009 配置重载与生命周期修复](009-config-reload-lifecycle-repair/README.md)：已完成；独立于 008。
+- [008 Web 框架基线建设](008-web-framework-baseline/README.md)：已确认后暂停；Database 范围迁入 010。
+- [009 配置重载与生命周期修复](009-config-reload-lifecycle-repair/README.md)：已完成。
+- [010 数据库单轨 GORM 与稳定访问边界](010-database-gorm-boundary/README.md)：已完成。
 
-下一个任务序号为 `010`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `011`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

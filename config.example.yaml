@@ -2,11 +2,10 @@
 #
 # 使用方式：
 #   Copy-Item config.example.yaml config.yaml
-#   $env:APP_DATABASE__DSN = '<database-dsn>'
 #   go run ./cmd/app
 #
 # 环境变量使用 APP_ 前缀，并以双下划线分隔嵌套字段。
-# 例如 APP_DATABASE__ENGINE、APP_DATABASE__DRIVER、APP_LOGGER__LEVEL。
+# 例如 APP_DATABASE__DRIVER、APP_DATABASE__DSN、APP_LOGGER__LEVEL。
 
 logger:
   # 运行环境：development（开发）或 production（生产）。
@@ -43,20 +42,20 @@ logger:
   # addStacktrace: true
 
 database:
-  # Engine：gorm（ORM）或 sql（database/sql + sqlx）。
-  engine: gorm
-  # engine: sql
-
-  # Driver：postgres 或 mysql；必须与 DSN 格式和实际数据库一致。
-  driver: postgres
+  # GORM 由 internal/kernel/app/database 在代码中明确选择；配置不切换底层实现。
+  # Driver 选择数据库协议：sqlite、postgres 或 mysql。
+  driver: sqlite
+  # driver: postgres
   # driver: mysql
 
-  # DSN 不应写入配置文件。运行前通过环境变量提供，例如：
+  # SQLite 默认路径可直接用于本地启动；目录和文件权限、foreign keys、busy timeout 与 WAL 由包内治理。
+  dsn: .data/app.db
+
+  # PostgreSQL/MySQL 的 DSN 不应写入配置文件，改用环境变量，例如：
   # PostgreSQL:
   #   $env:APP_DATABASE__DSN = 'postgres://<user>:<password>@localhost:5432/<database>?sslmode=disable'
   # MySQL:
   #   $env:APP_DATABASE__DSN = '<user>:<password>@tcp(localhost:3306)/<database>?parseTime=true'
-  dsn: ""
 
   pool:
     # 最大打开连接数；0 使用 database 包默认值，负数非法。

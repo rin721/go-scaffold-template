@@ -89,7 +89,7 @@ func TestNewDefaultManagerRejectsInvalidAndOverlappingBindings(t *testing.T) {
 
 func TestDefaultManagerGeneratesOrderedYAMLAndJSON(t *testing.T) {
 	database := Object{
-		FieldOf("engine", String("")),
+		FieldOf("driver", String("sqlite")),
 		FieldOf("timeout", Duration(5*time.Second)),
 	}
 	manager, err := NewDefaultManager(Binding{
@@ -105,8 +105,8 @@ func TestDefaultManagerGeneratesOrderedYAMLAndJSON(t *testing.T) {
 		ext  string
 		want string
 	}{
-		{name: "yaml", ext: ".YAML", want: "database:\n  engine: \"\"\n  timeout: 5s\n"},
-		{name: "json", ext: ".json", want: "{\n  \"database\": {\n    \"engine\": \"\",\n    \"timeout\": \"5s\"\n  }\n}\n"},
+		{name: "yaml", ext: ".YAML", want: "database:\n  driver: sqlite\n  timeout: 5s\n"},
+		{name: "json", ext: ".json", want: "{\n  \"database\": {\n    \"driver\": \"sqlite\",\n    \"timeout\": \"5s\"\n  }\n}\n"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -144,7 +144,7 @@ func TestDefaultManagerRejectsExistingTargetAndForceReplacesAtomically(t *testin
 	manager, err := NewDefaultManager(Binding{
 		CapabilityID: "database",
 		ConfigPath:   "database",
-		Contract:     fixedDefaults(Object{FieldOf("engine", String(""))}),
+		Contract:     fixedDefaults(Object{FieldOf("driver", String("sqlite"))}),
 	})
 	if err != nil {
 		t.Fatalf("NewDefaultManager() error = %v", err)
@@ -156,7 +156,7 @@ func TestDefaultManagerRejectsExistingTargetAndForceReplacesAtomically(t *testin
 	if _, err := manager.Generate(t.Context(), GenerateRequest{Path: target, Force: true}); err != nil {
 		t.Fatalf("Generate(force) error = %v", err)
 	}
-	assertFileBytes(t, target, []byte("database:\n  engine: \"\"\n"))
+	assertFileBytes(t, target, []byte("database:\n  driver: sqlite\n"))
 	entries, err := os.ReadDir(filepath.Dir(target))
 	if err != nil {
 		t.Fatalf("ReadDir() error = %v", err)

@@ -1,106 +1,107 @@
 # database
 
-`pkg/database` 是项目统一数据库基础能力。根包定义稳定协议、配置、Driver、Engine 和唯一推荐构造入口；`gormdb` 与 `sqldb` 是两个明确实现，分别覆盖成熟 ORM 开发和显式 SQL 开发。
+`pkg/database` 为上层业务提供稳定的 Schema、Repository 和事务能力。底层统一使用 GORM，但 GORM 类型、dialector、session、tag 和错误翻译都留在包内；业务实体和公开接口不依赖第三方类型。
 
-## 技术选型
+## 怎么运行
 
-- `gormdb` 使用 `gorm.io/gorm`、`gorm.io/driver/postgres`、`gorm.io/driver/mysql`。GORM 是 Go 生态成熟 ORM，适合有实体建模、关联、Hook、批量写入和插件需求的业务项目。
-- `sqldb` 使用 Go 标准库 `database/sql`、`github.com/jmoiron/sqlx`、`github.com/jackc/pgx/v5/stdlib` 和 `github.com/go-sql-driver/mysql`。这条路线适合复杂 SQL、报表、批处理、性能敏感查询和需要精确控制 SQL 的场景。
-- 根包不把 GORM 全量 ORM API 抽象成统一接口。统一协议只覆盖应用层和仓储层都能稳定依赖的基础能力，避免为了兼容两种实现而制造难用的大接口。
+Kernel 默认使用 pure-Go SQLite，配置无需选择 ORM：
 
-## 推荐入口
+```yaml
+database:
+  driver: sqlite
+  dsn: .data/app.db
+```
 
-业务入口优先使用 `database.New`，通过 `Config.Engine` 明确选择实现：
+`internal/kernel/app/database` 在构造代码中调用 `database.NewGORM`，因此运行时配置只能选择 `sqlite`、`postgres` 或 `mysql` Driver，不能切换 GORM/SQLX 等底层技术。SQLite 会自动创建目录和文件，并启用 foreign keys、5 秒 busy timeout 与 WAL；私有 `:memory:` 数据库固定使用一个连接，避免连接池切换后得到不同的内存库。
+
+独立使用时，只有资源所有者负责关闭连接池：
 
 ```go
-package main
+cfg := database.DefaultConfig()
+resource, err := database.NewGORM(ctx, &cfg)
+if err != nil {
+	return err
+}
+defer resource.Close()
 
-import (
-	"context"
-	"time"
+client := resource.Client()
+```
 
-	"github.com/rin721/go-scaffold2/pkg/database"
-)
+PostgreSQL 与 MySQL 应通过环境变量注入真实 DSN，不把凭据写入配置、源码或日志。
 
-func main() {
-	ctx := context.Background()
-	db, err := database.New(ctx, &database.Config{
-		Engine: database.EngineGORM,
-		Driver: database.DriverPostgres,
-		DSN:    "postgres://user:password@localhost:5432/app?sslmode=disable",
-		Pool: database.PoolConfig{
-			MaxOpenConns:    25,
-			MaxIdleConns:    5,
-			ConnMaxLifetime: 30 * time.Minute,
-			ConnMaxIdleTime: 5 * time.Minute,
-		},
-		PingTimeout: 5 * time.Second,
-	})
-	if err != nil {
-		panic(err)
-	}
-	defer db.Close()
+## 怎么定义 Schema
+
+业务实体保持普通 Go 结构体，不写 GORM tag。Schema 用项目字段名显式映射数据库列：
+
+```go
+type Account struct {
+	ID      uint64
+	Name    string
+	Version uint64
+}
+
+schema := database.Schema{
+	Table: "accounts",
+	Fields: []database.Field{
+		{Name: "ID", Column: "id", Type: database.FieldUint64, PrimaryKey: true, AutoIncrement: true},
+		{Name: "Name", Column: "name", Type: database.FieldString, Length: 100},
+		{Name: "Version", Column: "version", Type: database.FieldUint64},
+	},
+	Indexes:      []database.Index{{Name: "idx_accounts_name", Fields: []string{"Name"}}},
+	VersionField: "Version",
 }
 ```
 
-`Engine`、`Driver` 和 `DSN` 必须显式配置。数据库连接是高风险外部资源，包内不会偷偷选择默认数据库或默认实现。
+Schema 支持表、列、主键、nullable、长度、默认值、普通/唯一索引和单列外键关系。Reference 的 Field 与 ReferenceField 都填写各自 Schema 的字段名，不填写数据库列名；目标 Schema 必须与引用方一起传给同一次 Migrate，更新/删除动作使用 `ReferenceCascade`、`ReferenceRestrict`、`ReferenceSetNull` 或 `ReferenceNoAction`。Default 只接受与字段类型匹配的 NULL、布尔、数值、CURRENT_TIMESTAMP 或正确转义的 SQL 单引号字符串，不接受任意 DDL 表达式。`Migrate` 只承诺 additive migration：创建缺失的表、列、索引和约束，不删除、重命名或调整已有列，也不承诺跨数据库 DDL 回滚。
 
-## 统一协议
-
-`database.Client` 组合了以下能力：
-
-- `Exec(ctx, query, args...)`：执行写入或 DDL，返回 `Result`。
-- `Query(ctx, query, args...)`：返回标准库 `*sql.Rows`。
-- `QueryRow(ctx, query, args...)`：返回标准库 `*sql.Row`。
-- `Get(ctx, dest, query, args...)`：查询单条记录并映射到结构体。
-- `Select(ctx, dest, query, args...)`：查询多条记录并映射到切片。
-- `WithinTx(ctx, opts, fn)`：统一事务边界，回调返回错误时回滚，成功时提交。
-- `Ping(ctx)`、`Stats()`、`Close()`：健康检查、连接池统计和资源释放。
-- `ValidateConfig(cfg)`：只校验配置和默认值语义，不建立数据库连接。
-
-统一协议面向应用层和仓储层，不暴露 `*gorm.DB` 或 `*sqlx.DB`。如果明确需要 GORM 的 ORM 专用能力，应把依赖限定在基础设施实现层，并使用 `gormdb.Client.DB(ctx)`。
-
-## Engine 选择
-
-| Engine | 适用场景 | 注意事项 |
-| --- | --- | --- |
-| `EngineGORM` | 成熟业务项目默认 ORM 能力；实体建模、关联、Hook、批量操作和插件扩展。 | 不建议把 `*gorm.DB` 传到领域层；复杂 SQL 仍可通过统一协议执行。 |
-| `EngineSQL` | 复杂 SQL、报表、批处理、高性能读模型和需要精确控制 SQL 的仓储。 | 不提供 ORM 关联和模型生命周期能力，结构体映射由 `sqlx` 完成。 |
-
-两种实现都共享 `Config`、连接池配置、启动 `Ping`、事务入口和关闭责任。应用入口创建数据库客户端后，应通过构造函数显式注入业务组件。
-
-需要由 Kernel 管理配置切换时，不修改本包的通用契约；`internal/kernel/app/database` 提供无安装副作用的 Definition，composition 把它加入冻结 Plan。`Capabilities.Database` 是稳定租约 Access，回调只取得不含 `Close` 的窄 Client；连接池仍由 Kernel App 拥有和释放。
-
-## 配置项
-
-| 字段 | 说明 | 默认值 |
-| --- | --- | --- |
-| `Engine` | 底层实现，支持 `gorm` 或 `sql` | 无，必须显式配置 |
-| `Driver` | 数据库驱动，支持 `postgres` 或 `mysql` | 无，必须显式配置 |
-| `DSN` | 数据库连接串 | 无，必须显式配置 |
-| `Pool.MaxOpenConns` | 最大打开连接数 | `25` |
-| `Pool.MaxIdleConns` | 最大空闲连接数 | `5` |
-| `Pool.ConnMaxLifetime` | 单连接最大生命周期 | `30m` |
-| `Pool.ConnMaxIdleTime` | 空闲连接最大保留时间 | `5m` |
-| `PingTimeout` | 构造和健康检查默认超时 | `5s` |
-
-错误信息不得包含完整 DSN、密码或 Token。调用方需要记录配置问题时，应记录数据库类型和环境标识，不记录连接串原文。
-
-## 事务示例
+## 怎么使用 Repository
 
 ```go
-err := db.WithinTx(ctx, nil, func(ctx context.Context, tx database.Tx) error {
-	_, err := tx.Exec(ctx, "UPDATE accounts SET balance = balance - ? WHERE id = ?", 100, 1)
+if err := client.Migrate(ctx, schema); err != nil {
+	return err
+}
+
+accounts, err := database.NewRepository[Account](client, schema)
+if err != nil {
+	return err
+}
+
+created := Account{Name: "Rin"}
+if err := accounts.Create(ctx, &created); err != nil {
+	return err
+}
+
+account, err := accounts.First(ctx, database.Query{Filters: []database.Filter{
+	{Field: "ID", Operator: database.OpEqual, Value: created.ID},
+}})
+```
+
+`BaseRepository[T]` 提供 `Create`、`First`、`Find`、`Count`、`Update` 和 `SoftDelete`。Filter、Order 和 Changes 只接受 Schema 字段名，包内再校验字段和值类型并映射为列名；未知字段、非法值、运算符或排序方向会返回 `ErrInvalidQuery`。`Update` 和 `SoftDelete` 必须有 Filter，且不接受 Order/Page，防止意外全表或含糊修改。
+
+Create 会忽略调用方传入的自增字段值并接收数据库生成值。启用 `VersionField` 后，Create 会把版本统一初始化为 1；Update 必须携带该字段的等值 Filter，包内原子递增版本，零影响行返回 `ErrOptimisticConflict`。启用 `SoftDeleteField` 后，Create 会把该字段统一初始化为 nil，Repository 查询默认排除已经软删除的记录。两个字段均由 Repository 管理，Schema 不能再为其声明 Default、主键或自增语义。
+
+## 怎么使用事务
+
+```go
+err := client.WithinTx(ctx, func(ctx context.Context, tx database.Tx) error {
+	txAccounts, err := accounts.WithTx(tx)
 	if err != nil {
 		return err
 	}
-	_, err = tx.Exec(ctx, "UPDATE accounts SET balance = balance + ? WHERE id = ?", 100, 2)
-	return err
+	return txAccounts.Create(ctx, &Account{Name: "Lin"})
 })
 ```
 
-事务回调返回错误时自动回滚，返回 `nil` 时提交。业务代码不要在回调外保存 `Tx`，也不要自行提交或回滚内部事务。
+`Tx` 只是 Repository 重绑定令牌，不提供 Commit、Rollback 或第三方 session。回调返回 `nil` 时提交，返回错误时回滚；回调 panic 时先回滚再继续抛出原 panic。事务对象不得逃逸回调。
 
-## 不做范围
+## Kernel 租约边界
 
-v1 不内置迁移框架、读写分离、分库分表、多租户、审计字段插件、链路追踪或指标采集。需要这些能力时，应在明确业务场景后扩展，并继续保持根包协议稳定。
+`Capabilities.Database` 是稳定 Access。`Access.Ping` 在资源租约内提供窄就绪检查，但不暴露连接池对象；上层在 `Use` 回调中取得不含 `Close` 的 Borrowed Client。`Access.WithinTx` 的回调同时取得当前租约内 Client 和 Tx，可在回调中创建 Repository 并重绑定事务。回调返回后，逃逸的 Client、Repository 和 Tx 都会返回 `ErrClientUnavailable`。Stats 和 Close 只由 Kernel 私有 Resource 使用，其动态对象不会通过 Access 暴露。
+
+## 错误语义
+
+调用方使用 `errors.Is` 判断 `ErrNotFound`、`ErrDuplicateKey`、`ErrForeignKeyViolation`、`ErrOptimisticConflict`、`ErrInvalidSchema`、`ErrInvalidQuery`、`ErrUnsafeMutation`、`ErrClientUnavailable`、`ErrNilClientFunc` 和 `ErrNilTransactionFunc`。底层驱动错误只保留 `errors.Is` 可识别性，不提供可展开的原始错误文本，避免 DSN、密码或 Token 通过错误链泄漏。
+
+## 当前非目标
+
+不提供任意 SQL 逃逸口、GORM session 逃逸口、破坏性/版本化迁移、读写分离、分库分表或多租户。确有业务需要时，应扩展项目自有契约并重新确认边界，不能让上层直接依赖 GORM。

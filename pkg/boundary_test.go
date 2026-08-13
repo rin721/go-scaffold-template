@@ -141,7 +141,7 @@ func TestStoragePublicAPIHidesSelectedThirdPartyTypes(t *testing.T) {
 
 func TestExportedPackageAPIHidesSelectedThirdPartyTypes(t *testing.T) {
 	root := packageRoot(t)
-	forbidden := []string{"tea.ProgramOption", "afero.", "excelize.", "imaging."}
+	forbidden := []string{"tea.ProgramOption", "afero.", "excelize.", "imaging.", "gorm."}
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return walkErr

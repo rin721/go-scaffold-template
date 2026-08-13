@@ -38,7 +38,7 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated config: %v", err)
 	}
-	for _, expected := range []string{"logger:", "environment: development", "level: info", "database:", "engine: \"\"", "driver: \"\"", "dsn: \"\"", "pingTimeout: 5s"} {
+	for _, expected := range []string{"logger:", "environment: development", "level: info", "database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s"} {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)
 		}

@@ -1,27 +1,47 @@
 package database
 
-import "github.com/rin721/go-scaffold2/pkg/database/internal/core"
+import (
+	"context"
+	"time"
+)
 
-// Result 表示 SQL 执行结果。
-type Result = core.Result
+// Stats 是与具体连接池实现无关的运行状态快照。
+type Stats struct {
+	MaxOpenConnections int
+	OpenConnections    int
+	InUse              int
+	Idle               int
+	WaitCount          int64
+	WaitDuration       time.Duration
+	MaxIdleClosed      int64
+	MaxIdleTimeClosed  int64
+	MaxLifetimeClosed  int64
+}
 
-// Executor 定义数据库查询和执行能力。
-type Executor = core.Executor
+// Tx 是事务作用域令牌，只能传给 Repository.WithTx 使用。
+//
+// 事务不暴露 Commit、Rollback 或第三方 session，提交责任始终属于 WithinTx。
+type Tx interface {
+	databaseTransaction()
+}
 
-// Tx 表示事务中的执行能力。
-type Tx = core.Tx
+// Client 是业务和仓储层可使用的稳定数据库能力，不包含共享资源关闭权。
+type Client interface {
+	WithinTx(context.Context, func(context.Context, Tx) error) error
+	Migrate(context.Context, ...Schema) error
+}
 
-// Transactor 定义事务边界能力。
-type Transactor = core.Transactor
+// Resource 是数据库资源所有者使用的完整能力。
+//
+// Client 返回的非所有者视图与 Resource 不是同一个动态对象，调用方不能通过
+// 类型断言重新取得连接池关闭权。
+type Resource interface {
+	Client() Client
+	Ping(context.Context) error
+	Stats() Stats
+	Close() error
+}
 
-// HealthChecker 定义数据库健康检查能力。
-type HealthChecker = core.HealthChecker
-
-// StatsProvider 定义连接池统计能力。
-type StatsProvider = core.StatsProvider
-
-// Closer 定义资源释放能力。
-type Closer = core.Closer
-
-// Client 定义业务代码使用的统一数据库能力。
-type Client = core.Client
+type sessionProvider interface {
+	databaseSession(context.Context) (any, error)
+}

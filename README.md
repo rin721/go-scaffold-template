@@ -32,7 +32,7 @@
 
 `composition.Compose(runtime, options)` 先加入 Kernel 内置 Logger target；`options.Logger` 可以保留基线，也可以显式加入配置化 Logger replacement，随后再按 Clock、ID Generator、Validator、Database 建立完整 Plan。返回的 Logger 是同一个稳定 facade，Database 是租约 Access；只有 `options.CLI` 非 nil 时才构造 CLI App。当前 `cmd/app` 明确选择配置化 replacement，因此默认配置仍为 Logger、Database 两段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
-根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。
+根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。Database 的 GORM 实现在 `internal/kernel/app/database` 构造代码中固定选择，配置只选择数据库 Driver 和连接参数。
 
 [docs/changes/001-default-config-cli-contracts](docs/changes/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
 
@@ -44,7 +44,7 @@
 Copy-Item config.example.yaml config.yaml
 ```
 
-示例默认选择 `development + gorm + postgres`。按注释切换 Logger、Database Engine 或 Driver 后，通过环境变量提供真实 DSN：
+示例默认选择 `development + sqlite`，可直接创建 `.data/app.db`。切换到 PostgreSQL 或 MySQL 时，按注释选择 Driver，并通过环境变量提供真实 DSN：
 
 ```powershell
 $env:APP_DATABASE__DSN = '<database-dsn>'
@@ -63,9 +63,9 @@ go run ./cmd/app config init
 go run ./cmd/app config init --force
 ```
 
-生成后必须明确填写 `database.engine` 和 `database.driver`。DSN 仍通过环境变量提供，不写入文件。
+生成配置默认包含 `database.driver: sqlite` 和 `database.dsn: .data/app.db`。切换远端数据库时必须明确填写 Driver，并通过环境变量提供 DSN，不把凭据写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__ENGINE`、`APP_DATABASE__DRIVER`。无参数模式会先发布配置化 Logger，再启动 Database 并完成连接与 Ping；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_LOGGER__LEVEL`、`APP_DATABASE__DRIVER`、`APP_DATABASE__DSN`。无参数模式会先发布配置化 Logger，再启动 Database 并完成连接与 Ping；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或数据库不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
 
 无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Kernel Reload 事务；Database 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
 

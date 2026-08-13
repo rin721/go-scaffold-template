@@ -4,79 +4,197 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
+
+	"gorm.io/gorm"
 )
 
-// Migration 表示一个可顺序执行的数据库迁移。
-type Migration struct {
-	Version string
-	Name    string
-	Up      func(context.Context, Executor) error
-}
-
-// Migrator 执行迁移集合。
-type Migrator struct {
-	migrations []Migration
-}
-
-// NewMigrator 创建迁移器。
-func NewMigrator(migrations ...Migration) (*Migrator, error) {
-	seen := map[string]struct{}{}
-	for _, migration := range migrations {
-		version := strings.TrimSpace(migration.Version)
-		if version == "" {
-			return nil, fmt.Errorf("migration version is required")
-		}
-		if migration.Up == nil {
-			return nil, fmt.Errorf("migration %s up function is nil", version)
-		}
-		if _, exists := seen[version]; exists {
-			return nil, fmt.Errorf("duplicate migration version %s", version)
-		}
-		seen[version] = struct{}{}
+func (c *gormClient) Migrate(ctx context.Context, schemas ...Schema) error {
+	if c.unavailable() {
+		return ErrClientUnavailable
 	}
-	return &Migrator{migrations: append([]Migration(nil), migrations...)}, nil
-}
-
-// Apply 按注册顺序执行迁移。
-func (m *Migrator) Apply(ctx context.Context, executor Executor) error {
-	if executor == nil {
-		return fmt.Errorf("database executor is nil")
+	if err := validateContext(ctx); err != nil {
+		return err
 	}
-	for _, migration := range m.migrations {
-		if err := migration.Up(ctx, executor); err != nil {
-			return fmt.Errorf("apply migration %s %s: %w", migration.Version, migration.Name, err)
+	resolvedSchemas := make([]resolvedSchema, 0, len(schemas))
+	byTable := make(map[string]resolvedSchema, len(schemas))
+	for _, schema := range schemas {
+		resolved, err := resolveSchema(schema)
+		if err != nil {
+			return err
+		}
+		if _, exists := byTable[resolved.Table]; exists {
+			return fmt.Errorf("%w: duplicate schema table %q", ErrInvalidSchema, resolved.Table)
+		}
+		resolvedSchemas = append(resolvedSchemas, resolved)
+		byTable[resolved.Table] = resolved
+	}
+	if err := validateReferences(byTable); err != nil {
+		return err
+	}
+	globalIndexes := make(map[string]string)
+	for _, resolved := range resolvedSchemas {
+		for _, index := range resolved.Indexes {
+			if owner, exists := globalIndexes[index.Name]; exists {
+				return fmt.Errorf("%w: index %q is shared by tables %q and %q", ErrInvalidSchema, index.Name, owner, resolved.Table)
+			}
+			globalIndexes[index.Name] = resolved.Table
+		}
+	}
+	// SQLite 不能用 ALTER TABLE 追加外键。先完成整批预检，避免已增加列或索引后才失败。
+	if c.db.Dialector.Name() == "sqlite" {
+		for _, resolved := range resolvedSchemas {
+			if !c.db.Migrator().HasTable(resolved.Table) {
+				continue
+			}
+			for _, reference := range resolved.References {
+				constraint := "fk_" + resolved.Table + "_" + resolved.fields[reference.Field].Column
+				if !c.db.Migrator().HasConstraint(resolved.Table, constraint) {
+					return fmt.Errorf("%w: sqlite cannot add missing constraint %q to an existing table", ErrInvalidSchema, constraint)
+				}
+			}
+		}
+	}
+	for _, resolved := range resolvedSchemas {
+		model := resolved.dynamicModel()
+		db := c.db.WithContext(ctx).Table(resolved.Table)
+		tableExists := db.Migrator().HasTable(resolved.Table)
+		if !tableExists {
+			if db.Dialector.Name() == "sqlite" && len(resolved.References) > 0 {
+				if err := createSQLiteTable(db, resolved, byTable); err != nil {
+					return err
+				}
+			} else if err := db.Migrator().CreateTable(model); err != nil {
+				return fmt.Errorf("create table %q: %w", resolved.Table, translateError(err))
+			}
+		} else {
+			for _, field := range resolved.Fields {
+				if db.Migrator().HasColumn(model, field.Name) {
+					continue
+				}
+				if err := db.Migrator().AddColumn(model, field.Name); err != nil {
+					return fmt.Errorf("add column %q.%q: %w", resolved.Table, field.Column, translateError(err))
+				}
+			}
+		}
+		for _, index := range resolved.Indexes {
+			if db.Migrator().HasIndex(model, index.Name) {
+				continue
+			}
+			if err := db.Migrator().CreateIndex(model, index.Name); err != nil {
+				return fmt.Errorf("create index %q: %w", index.Name, translateError(err))
+			}
+		}
+	}
+	// 所有表和列都准备完成后再创建外键，避免 Schema 输入顺序影响 PostgreSQL/MySQL。
+	for _, resolved := range resolvedSchemas {
+		db := c.db.WithContext(ctx).Table(resolved.Table)
+		for _, reference := range resolved.References {
+			constraint := "fk_" + resolved.Table + "_" + resolved.fields[reference.Field].Column
+			if db.Migrator().HasConstraint(resolved.Table, constraint) {
+				continue
+			}
+			if db.Dialector.Name() == "sqlite" {
+				continue
+			}
+			if err := addReference(db, resolved, reference, byTable); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
 }
 
-// Readiness 执行数据库 readiness 检查。
-func Readiness(ctx context.Context, client HealthChecker, timeout time.Duration) error {
-	if client == nil {
-		return fmt.Errorf("database health checker is nil")
+func addReference(db *gorm.DB, schema resolvedSchema, reference Reference, schemas map[string]resolvedSchema) error {
+	field, exists := schema.fields[reference.Field]
+	if !exists {
+		return fmt.Errorf("%w: reference field %q is missing", ErrInvalidSchema, reference.Field)
 	}
-	if ctx == nil {
-		ctx = context.Background()
+	constraint := "fk_" + schema.Table + "_" + field.Column
+	if db.Migrator().HasConstraint(schema.Table, constraint) {
+		return nil
 	}
-	if timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, timeout)
-		defer cancel()
+	target := schemas[reference.Table]
+	targetField := target.fields[reference.ReferenceField]
+	statement := "ALTER TABLE " + quote(db, schema.Table) +
+		" ADD CONSTRAINT " + quote(db, constraint) +
+		" FOREIGN KEY (" + quote(db, field.Column) + ") REFERENCES " +
+		quote(db, reference.Table) + " (" + quote(db, targetField.Column) + ")"
+	if reference.OnUpdate != "" {
+		statement += " ON UPDATE " + string(reference.OnUpdate)
 	}
-	return client.Ping(ctx)
+	if reference.OnDelete != "" {
+		statement += " ON DELETE " + string(reference.OnDelete)
+	}
+	if err := db.Exec(statement).Error; err != nil {
+		return fmt.Errorf("create constraint %q: %w", constraint, translateError(err))
+	}
+	return nil
 }
 
-// QueryObserver 记录慢查询等数据库事件。
-type QueryObserver interface {
-	ObserveQuery(ctx context.Context, query string, duration time.Duration, err error)
+func createSQLiteTable(db *gorm.DB, schema resolvedSchema, schemas map[string]resolvedSchema) error {
+	columns := make([]string, 0, len(schema.Fields)+len(schema.References))
+	primaryColumns := make([]string, 0, len(schema.Fields))
+	for _, field := range schema.Fields {
+		if field.PrimaryKey {
+			primaryColumns = append(primaryColumns, quote(db, field.Column))
+		}
+	}
+	for _, field := range schema.Fields {
+		definition := quote(db, field.Column) + " " + sqliteColumnType(field)
+		if field.PrimaryKey && len(primaryColumns) == 1 {
+			definition += " PRIMARY KEY"
+			if field.AutoIncrement {
+				definition += " AUTOINCREMENT"
+			}
+		}
+		if !field.Nullable {
+			definition += " NOT NULL"
+		}
+		if field.Default != "" {
+			definition += " DEFAULT " + field.Default
+		}
+		columns = append(columns, definition)
+	}
+	if len(primaryColumns) > 1 {
+		columns = append(columns, "PRIMARY KEY ("+strings.Join(primaryColumns, ", ")+")")
+	}
+	for _, reference := range schema.References {
+		field := schema.fields[reference.Field]
+		targetField := schemas[reference.Table].fields[reference.ReferenceField]
+		definition := "CONSTRAINT " + quote(db, "fk_"+schema.Table+"_"+field.Column) +
+			" FOREIGN KEY (" + quote(db, field.Column) + ") REFERENCES " + quote(db, reference.Table) +
+			" (" + quote(db, targetField.Column) + ")"
+		if reference.OnUpdate != "" {
+			definition += " ON UPDATE " + string(reference.OnUpdate)
+		}
+		if reference.OnDelete != "" {
+			definition += " ON DELETE " + string(reference.OnDelete)
+		}
+		columns = append(columns, definition)
+	}
+	statement := "CREATE TABLE " + quote(db, schema.Table) + " (" + strings.Join(columns, ", ") + ")"
+	if err := db.Exec(statement).Error; err != nil {
+		return fmt.Errorf("create sqlite table %q: %w", schema.Table, translateError(err))
+	}
+	return nil
 }
 
-// RedactSQL 对 SQL 文本做保守脱敏，避免日志记录参数值。
-func RedactSQL(query string) string {
-	query = strings.TrimSpace(query)
-	if query == "" {
-		return ""
+func sqliteColumnType(field Field) string {
+	switch field.Type {
+	case FieldBool, FieldInt, FieldInt64, FieldUint, FieldUint64:
+		return "INTEGER"
+	case FieldFloat64:
+		return "REAL"
+	case FieldBytes:
+		return "BLOB"
+	case FieldTime:
+		return "DATETIME"
+	default:
+		return "TEXT"
 	}
-	return strings.Join(strings.Fields(query), " ")
+}
+
+func quote(db *gorm.DB, value string) string {
+	statement := &gorm.Statement{DB: db}
+	return statement.Quote(value)
 }

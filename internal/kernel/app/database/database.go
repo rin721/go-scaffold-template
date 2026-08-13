@@ -18,20 +18,18 @@ const (
 
 // Client 是调用方在租约内使用的数据库能力，不包含共享连接池关闭权。
 type Client interface {
-	pkgdatabase.Executor
-	pkgdatabase.Transactor
-	pkgdatabase.HealthChecker
-	pkgdatabase.StatsProvider
+	pkgdatabase.Client
 }
 
 // Access 是调用方接收的稳定数据库租约入口。
 type Access interface {
+	Ping(context.Context) error
 	Use(context.Context, func(Client) error) error
+	WithinTx(context.Context, func(context.Context, Client, pkgdatabase.Tx) error) error
 }
 
 // Config 是 Database App 的 typed 配置契约。
 type Config struct {
-	Engine      pkgdatabase.Engine `mapstructure:"engine"`
 	Driver      pkgdatabase.Driver `mapstructure:"driver"`
 	DSN         string             `mapstructure:"dsn"`
 	Pool        PoolConfig         `mapstructure:"pool"`
@@ -64,40 +62,71 @@ func Definition() (app.Definition[Access], error) {
 	)
 }
 
-type access struct{ delegate app.Lease[pkgdatabase.Client] }
+type access struct {
+	delegate app.Lease[pkgdatabase.Resource]
+}
 
-func newAccess(delegate app.Lease[pkgdatabase.Client]) (Access, error) {
+func newAccess(delegate app.Lease[pkgdatabase.Resource]) (Access, error) {
 	if delegate == nil {
 		return nil, fmt.Errorf("database lease is nil")
 	}
 	return &access{delegate: delegate}, nil
 }
 
-func (a *access) Use(ctx context.Context, use func(Client) error) error {
-	if use == nil {
-		return fmt.Errorf("database access callback is nil")
+// Ping 在当前资源租约内执行就绪检查，不向调用方暴露连接池所有权。
+func (a *access) Ping(ctx context.Context) error {
+	if ctx == nil {
+		return pkgdatabase.ErrNilContext
 	}
-	return a.delegate.Use(ctx, func(client pkgdatabase.Client) error {
-		if client == nil {
-			return fmt.Errorf("database instance is nil")
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return a.delegate.Use(ctx, func(resource pkgdatabase.Resource) error {
+		if resource == nil {
+			return pkgdatabase.ErrClientUnavailable
 		}
-		return use(client)
+		return resource.Ping(ctx)
 	})
 }
 
-func build(ctx context.Context, cfg Config, _ struct{}) (pkgdatabase.Client, error) {
-	packageConfig := cfg.packageConfig()
-	return pkgdatabase.New(ctx, &packageConfig)
+func (a *access) Use(ctx context.Context, use func(Client) error) error {
+	if use == nil {
+		return pkgdatabase.ErrNilClientFunc
+	}
+	return a.delegate.Use(ctx, func(client pkgdatabase.Resource) error {
+		if client == nil {
+			return fmt.Errorf("database instance is nil")
+		}
+		return pkgdatabase.Borrow(ctx, client.Client(), func(borrowed pkgdatabase.Client) error {
+			return use(borrowed)
+		})
+	})
 }
 
-func ready(ctx context.Context, client pkgdatabase.Client) error {
+func (a *access) WithinTx(ctx context.Context, use func(context.Context, Client, pkgdatabase.Tx) error) error {
+	if use == nil {
+		return pkgdatabase.ErrNilTransactionFunc
+	}
+	return a.Use(ctx, func(client Client) error {
+		return client.WithinTx(ctx, func(txCtx context.Context, tx pkgdatabase.Tx) error {
+			return use(txCtx, client, tx)
+		})
+	})
+}
+
+func build(ctx context.Context, cfg Config, _ struct{}) (pkgdatabase.Resource, error) {
+	packageConfig := cfg.packageConfig()
+	return pkgdatabase.NewGORM(ctx, &packageConfig)
+}
+
+func ready(ctx context.Context, client pkgdatabase.Resource) error {
 	if err := client.Ping(ctx); err != nil {
 		return fmt.Errorf("verify database readiness: %w", err)
 	}
 	return nil
 }
 
-func stop(_ context.Context, client pkgdatabase.Client) error { return client.Close() }
+func stop(_ context.Context, client pkgdatabase.Resource) error { return client.Close() }
 
 func decode(snapshot config.Snapshot) (Config, error) {
 	cfg := defaultConfig()
@@ -130,9 +159,8 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 		return nil, config.Continue, err
 	}
 	return config.Object{
-		config.FieldOf("engine", config.String("")),
-		config.FieldOf("driver", config.String("")),
-		config.FieldOf("dsn", config.String("")),
+		config.FieldOf("driver", config.String(string(values.Driver))),
+		config.FieldOf("dsn", config.String(values.DSN)),
 		config.FieldOf("pool", config.ObjectValue(config.Object{
 			config.FieldOf("maxOpenConns", maxOpen),
 			config.FieldOf("maxIdleConns", maxIdle),
@@ -145,7 +173,7 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 
 func defaultConfig() Config {
 	values := pkgdatabase.DefaultConfig()
-	return Config{Pool: PoolConfig{
+	return Config{Driver: values.Driver, DSN: values.DSN, Pool: PoolConfig{
 		MaxOpenConns: values.Pool.MaxOpenConns, MaxIdleConns: values.Pool.MaxIdleConns,
 		ConnMaxLifetime: values.Pool.ConnMaxLifetime, ConnMaxIdleTime: values.Pool.ConnMaxIdleTime,
 	}, PingTimeout: values.PingTimeout}
@@ -153,7 +181,7 @@ func defaultConfig() Config {
 
 func (c Config) packageConfig() pkgdatabase.Config {
 	return pkgdatabase.Config{
-		Engine: c.Engine, Driver: c.Driver, DSN: c.DSN,
+		Driver: c.Driver, DSN: c.DSN,
 		Pool: pkgdatabase.PoolConfig{
 			MaxOpenConns: c.Pool.MaxOpenConns, MaxIdleConns: c.Pool.MaxIdleConns,
 			ConnMaxLifetime: c.Pool.ConnMaxLifetime, ConnMaxIdleTime: c.Pool.ConnMaxIdleTime,

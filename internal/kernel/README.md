@@ -42,7 +42,9 @@ err := capabilities.Database.Use(ctx, func(client databaseapp.Client) error {
 })
 ```
 
-一次 `Use` 是一次实例使用租约。回调取得的 Database Client 不含 `Close`；Rows、事务、stream 或 session 不得逃逸回调。这样 Kernel 才能等待旧代使用结束并安全关闭连接池。
+一次 `Use` 是一次实例使用租约。回调取得的 Database Client 不含 `Close`，动态对象也不是 Resource；回调结束后逃逸的 Client、Repository 和 Tx 返回 `ErrClientUnavailable`。这样 Kernel 才能等待旧代使用结束并安全关闭连接池。
+
+Database App 在 `build` 中明确调用 `pkg/database.NewGORM`，配置只选择 `sqlite/postgres/mysql` Driver 与连接参数，不包含可切换底层实现的 Engine。业务仓储通过项目 `Schema`、`BaseRepository` 和 `Tx` 使用数据库，不接触 GORM 类型；就绪检查通过 `Database Access.Ping` 在当前资源租约内执行，不暴露 Stats 或 Close。
 
 Logger 不是第二个 Leased Access。Kernel 构造时强制接收 baseline Manager，并把同一 Manager 作为 typed target 加入 Plan：
 
