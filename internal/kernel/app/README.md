@@ -2,6 +2,8 @@
 
 `internal/kernel/app` 是底层能力的统一组件声明层。组件作者只声明“输出什么、怎样构造、需要哪些可选契约、配置变化如何处理”；是否启用以及选择哪个实现由 `internal/kernel/composition` 决定。
 
+本指南只处理已经被 [应用模块开发指南](../../../docs/development/application-module-development.md) 判定为“由当前进程选择并注入的底层 Capability”。模块专属 Adapter、业务对象和长期任务不会因为需要外部系统就自动进入 Kernel App；应先分别确认能力归属、资源 owner 和运行 owner。
+
 ## 选择组件形态
 
 | 能力特征 | 构造入口 | 输出 | 重载 |
@@ -13,6 +15,8 @@
 | 明确替换既有稳定 target | `app.ManagedConfiguredReplacement` | 复用 target 输出，不发布第二份输出 | `KernelInstanceSwap` |
 
 006 不支持运行时构造后直接暴露裸实例：Managed 组件必须输出稳定 Lease facade。`NativeAtomicReload`、排他资源 Handoff 和切换观察期是后续能力，不应以空接口或先停旧再启新代替。
+
+需要这些未支持语义、复杂资源依赖、多资源原子性，或者无法证明借用对象与后台任务排空边界时，停止组件接入并回到项目研究。优先比较 `RestartRequired`、模块级受管运行单元和扩展 Kernel 契约；改变公共生命周期或依赖模型时建立独立变更，难以逆转的决策进入 ADR。
 
 ## Fixed Direct 示例
 

@@ -14,6 +14,8 @@
 4. 内部研究从代码、配置、测试、运行入口和 Git 事实出发；外部研究优先官方源码、官方文档、标准、官方示例和测试，二手材料只作为导航。
 5. 打开命中记录的 `report.md` 核对完整证据，不只引用 metadata 的一行摘要。易漂移或会决定当前计划的事实必须重新验证。
 
+新增应用模块、通用能力或外部系统接入时，还必须按 [应用模块开发指南](../development/application-module-development.md) 完成能力评估。研究报告必须显式说明真实用例和外部副作用、现有 Capability 复用、新 Capability 与第三方边界、资源/运行/配置 owner、生命周期与 Reload 分类、当前契约适配性，以及 composition、Host、入口、迁移和验证影响。结论为“无新能力”时也要列出核对证据；当前契约无法表达真实需求时，研究门禁不得通过。
+
 每个 `docs/changes/<seq-num-name>/research/` 至少包含一个 `Rxxx-<semantic-name>/`，其中固定包含 `metadata.yaml` 和 `report.md`。任务级 `research/README.md` 负责说明研究范围、检索方式和记录索引。
 
 `metadata.yaml` 使用以下最小结构；任务可以增加语言、框架、技术等检索字段，但不得删除这些语义：

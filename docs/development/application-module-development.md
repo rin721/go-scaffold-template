@@ -1,0 +1,239 @@
+# 应用模块开发指南
+
+本文是当前项目新增应用模块的权威开发入口。目录职责和允许依赖见 [`internal/module`](../../internal/module/README.md)，当前与暂缓的底层 Capability 见 [`pkg`](../../pkg/README.md)，Kernel App 组件形态和接入 API 见 [Kernel App 组件开发](../../internal/kernel/app/README.md)。
+
+应用模块是由唯一 application composition root 显式选择的进程内纵向业务单元，不是 Go module、Kernel Component、动态插件或自动发现的 Provider 集合。普通 Model、Service、Repository、Handler 和 binding 不进入 Kernel Plan。
+
+## 1. 开始条件
+
+收到“新增应用模块”请求后，不先复制 Todo 目录，也不先创建空 Handler、Repository、配置或 CLI。研究阶段先写清：
+
+- 业务能力名称、actor、触发条件、成功结果和不变量；
+- 输入缺失、重复、冲突、取消和依赖失败的语义；
+- 真实需要的 HTTP、Application CLI、后台运行单元或其他入口；
+- 数据所有权、事务范围、一致性和迁移要求；
+- 所有外部副作用和依赖能力；
+- 验收示例与明确非目标。
+
+如果这些问题不足以判断依赖、资源和失败边界，继续研究，不预建模块骨架。
+
+## 2. 必答能力评估
+
+每个新增模块的研究报告必须填写以下评估。字段必须出现；不适用时写明原因。即使结论为“不需要新能力”，也必须列出现有能力复用证据，不能用未提及表示已经检查。
+
+| 维度 | 必答问题 | 交付结果 |
+| --- | --- | --- |
+| 用例 | 哪个 actor 触发什么行为，有哪些外部副作用 | 用例、约束与非目标 |
+| 现有能力 | `pkg` 和 production composition 已有哪些能力可复用 | 能力、入口与代码证据 |
+| 新能力 | 是否新增外部系统、SDK、协议或跨模块能力 | 有/无及理由 |
+| 归属 | 是模块专属 Adapter、跨模块通用 Capability，还是进程选择的底层能力 | 唯一语义 owner |
+| 资源 | 是否有连接、Client、listener、订阅、goroutine、缓存或派生句柄 | 构造和释放 owner |
+| 运行 | 是否需要 Start、Ready、Health、Run、Stop、Wait | 运行 owner 和顺序 |
+| 配置 | 是否有配置、Secret、Defaults、严格校验和变化分类 | section owner 与失败语义 |
+| 出口 | 普通接口、稳定 facade 还是 Lease Access | 最小调用契约 |
+| Reload | 新旧实例能否并存、排空和回滚，还是只能重启 | 适用策略与证据 |
+| 契约适配 | 当前项目契约能否表达全部保证 | 适用、不适用或待研究 |
+| 失败 | 取消、超时、重试、幂等、背压、降级和清理错误如何处理 | 可识别错误与诊断 |
+| 影响 | composition、Host、HTTP、CLI、配置、迁移和测试受何影响 | 文件与验收清单 |
+
+能力评估的第一步是核对真实代码，而不是只读能力名称：
+
+1. 从 [`composition.Capabilities`](../../internal/kernel/composition/composition.go) 确认当前进程实际选择并输出的稳定能力。
+2. 从 [`pkg/README.md`](../../pkg/README.md) 确认项目能力契约、第三方边界和暂缓路线。
+3. 追踪候选能力的构造位置、调用方、配置、资源 owner、停止和测试。
+4. 只在现有能力确实不满足真实用例时提出新 Capability。
+
+## 3. 能力归属决策
+
+对每项依赖作出以下四类结论之一。
+
+### 3.1 复用现有 Capability
+
+composition root 从现有稳定能力取出模块真正需要的最小接口并显式注入。不得把完整 `Capabilities`、Kernel、Resolver 或共享可变容器传入模块。
+
+### 3.2 模块专属 Adapter 或运行单元
+
+只服务单个业务语义、没有跨模块稳定契约价值的协议转换留在模块 Adapter。模块专属 migration、消费者循环、索引同步或清理任务以有明确 owner 的 contribution/Participant 接入 Host；它们不因此自动成为 Kernel Component。
+
+### 3.3 新的通用或进程级底层 Capability
+
+跨业务域复用、需要项目稳定契约的能力先在 `pkg/<name>` 定义最小接口、错误和资源边界。凡由当前进程统一选择和注入的底层能力，再按 [Kernel App 组件开发](../../internal/kernel/app/README.md) 进入 `internal/kernel/app/<name>` 与 production composition。
+
+### 3.4 证据不足
+
+不能确定调用语义、资源 owner、一致性或失败保证时，保持研究状态。不得用占位 Adapter、空生命周期 Hook、虚构配置或 `TODO` 冒充接入完成。
+
+## 4. 模块开发路径
+
+能力评估通过后，按真实复杂度建立模块，不为了目录对称创建空层：
+
+```text
+internal/module/<capability>/
+├── model/          # 业务状态、值与不变量
+├── service/        # 用例与调用方拥有的窄 port
+├── repo/           # 持久化 Adapter；仅在真实需要时建立
+├── handler/        # 入站协议转换；仅在真实需要时建立
+├── middleware/     # 模块拥有的 HTTP 横切策略
+├── binding/
+│   ├── config/     # 模块配置 owner
+│   ├── model/      # Schema/migration 等完成品
+│   ├── http/       # 已绑定路由 contribution
+│   └── cli/        # 已绑定命令 contract
+└── module.go       # 纯内存局部装配
+```
+
+Todo 是当前完整示例，但只复制依赖方向和验证方法，不复制业务字段或无关入口：
+
+```text
+model <- service <- repo/handler <- binding <- module.go <- internal/composition
+                         middleware ─┘
+```
+
+开发顺序：
+
+1. 用 Model 表达业务状态与不变量；没有独立领域行为时不制造空领域层。
+2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
+3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
+4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换和资源边界。
+5. 实现真实验收需要的 HTTP、CLI 或后台入口；不同入口复用同一 Service，不互相回环。
+6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回完成品 contribution。
+7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、合并 contribution 并建立 Host。
+
+## 5. 资源和运行 owner
+
+一个功能可以同时包含底层共享资源和模块专属运行单元，必须分别确定 owner：
+
+- 共享连接、连接池、可换代 Client 或稳定能力出口可以由 Kernel App 管理；
+- 业务消费者、migration、索引任务和模块 Cleanup 由模块 contribution 声明并由 Host/Supervisor 管理；
+- listener、Server 和进程级 runner 由 application owner 管理，模块不自行创建第二套 Server；
+- 创建资源的一方负责关闭，借用者不获得共享资源 `Close` 权；
+- 每个 goroutine 必须能指出 owner、取消来源和 Wait 位置；
+- Stop、Wait、Close 同时失败时保留主错误与全部清理错误。
+
+构造阶段只建立普通对象图，不能访问数据库、网络、打开 listener 或启动 goroutine。需要依赖已启动资源的探测、migration 和长期运行必须进入显式生命周期阶段。
+
+## 6. Kernel App 形态选择
+
+只有能力评估已经判定为“由当前进程选择并注入的底层 Capability”后，才进入本节。可编译 API 和完整约束以 [Kernel App 组件开发](../../internal/kernel/app/README.md) 为准。
+
+| 真实能力特征 | 当前形态 | 输出与 Reload |
+| --- | --- | --- |
+| 代码固定且无资源生命周期 | `app.Value` | 普通项目接口，不进入运行节点 |
+| 无运行期配置但需要 Start/Stop | `app.ManagedFixed` | 稳定 Lease facade，`NoReload` |
+| 配置化且新旧实例可安全并存 | `app.ManagedConfigured` | 稳定 Lease facade，`KernelInstanceSwap` |
+| 配置变化不能安全热换 | `app.ManagedConfigured` | 稳定 Lease facade，`RestartRequired` |
+| 明确替换同一既有稳定 target | `app.ManagedConfiguredReplacement` | 复用 target 输出，`KernelInstanceSwap` |
+
+分别回答以下问题，不能因为某个 API 已存在就机械套用：
+
+- 构造参数由代码固定还是来自 typed Config；
+- 是否真正需要 Defaults、CLI、Ready、Health、Start 或 Stop；
+- 调用是否能被一次 Lease 回调完整包围，派生句柄是否可能逃逸；
+- 候选与当前实例能否并存，旧实例何时允许排空；
+- 失败时继续使用旧实例是否有明确价值；
+- 配置改变的是底层资源，还是整个模块对象图、路由或订阅关系。
+
+配置存在不等于能够热重载。影响模块对象图、路由、命令、排他订阅或其他无法加入同一事务的变化，初版使用 `RestartRequired`，不能让 Kernel 单独接受整个候选。
+
+## 7. 当前契约不适用时
+
+出现以下任一事实时，明确记录“当前契约不适用”，停止能力实现并建立独立研究或 ADR：
+
+- 新旧资源不能并存，但需求要求不中断切换；
+- 需要排他资源 Handoff、消费者组原子交接或监听端口移交；
+- 需要资源自身 Native Atomic Reload；
+- 需要提交后的观察期、自动回切或跨代结果比较；
+- 需要当前前向 typed Input 无法表达的复杂资源依赖或多资源原子性；
+- 无法确定借用对象、派生句柄、活跃请求或后台任务的排空边界；
+- 失败、重试、幂等、补偿、一致性或恢复保证尚未定义。
+
+升级流程：
+
+1. 在当前模块研究中记录具体用例、缺口和受影响契约。
+2. 比较 `RestartRequired`、模块级受管运行单元和扩展 Kernel 契约三条路径。
+3. 改变公共生命周期、依赖模型或资源切换语义时建立新的 `docs/changes/<seq-num-name>/`。
+4. 难以逆转的长期决策使用 ADR。
+5. 新方案确认前，模块任务保持待确认，不增加空 Hook、静默回退或临时兼容层。
+
+## 8. 典型能力示例
+
+以下示例只展示必须研究的问题和所有权拆分。项目当前没有选择或实现通用消息、邮件、搜索 Capability，真实任务必须重新研究技术选型和契约。
+
+### 8.1 消息系统
+
+共享连接、连接池或稳定 Publisher/Subscriber 出口可能是底层 Capability；具体业务 Consumer、消息转换和订阅语义属于拥有用例的模块，其长期消费循环作为 Participant 交给 Host/Supervisor。
+
+研究必须回答：
+
+- at-most-once、at-least-once 或其他交付语义；
+- ack/nack、幂等、排序、重试、死信和背压；
+- 断线恢复、订阅就绪和停机排空；
+- 消息处理与数据库提交的一致性或补偿；
+- 配置变化是否要求消费者组排他 Handoff。
+
+如果消费者组切换要求无损原子交接，不能把普通 `KernelInstanceSwap` 当作已经支持；应选择重启生效或建立新的生命周期设计。
+
+### 8.2 邮件
+
+无长期资源的同步 API 调用可以是窄项目 Adapter；持久连接、模板缓存、异步投递队列和重试 Worker 会引入资源与长期运行 owner。
+
+研究必须区分：
+
+- “发送请求已接受”与“邮件最终送达”；
+- 模板、附件、地址和敏感字段的所有权；
+- 幂等键、限流、可重试错误和永久失败；
+- 同步失败、异步补偿和投递诊断；
+- Client 连接、队列和 Worker 的关闭与排空。
+
+### 8.3 搜索
+
+共享搜索 Client 可能是底层 Capability；查询模型、索引文档转换、增量同步和重建任务属于拥有数据语义的模块。
+
+研究必须回答：
+
+- Database 与索引之间的一致性目标和延迟窗口；
+- 写入失败、重复事件、乱序和补偿；
+- 全量重建、断点恢复和流量切换；
+- 索引 schema/version、别名和回滚；
+- 查询不可用时失败还是可观测降级。
+
+需要原子索引或别名切换时，必须验证具体搜索系统的原生保证；不能从 Kernel Swap 自动推导支持。
+
+## 9. 研究报告最小输出
+
+新增模块的 `research/Rxxx-<semantic-name>/report.md` 至少包含：
+
+```text
+## 用例与外部副作用
+## 现有 Capability 复用清单
+## 新 Capability 与第三方边界
+## 资源、运行和配置 owner
+## 生命周期与 Reload 分类
+## 当前契约适配性
+## 错误、一致性和诊断
+## composition、Host、入口和迁移影响
+## 结论、未知与升级决定
+```
+
+允许合并标题，但所有语义必须可检索。结论必须是以下之一：
+
+- 现有能力足够，可以形成模块实施计划；
+- 需要模块专属 Adapter/Participant，当前公共契约足够；
+- 需要新的底层 Capability，先形成独立接入设计；
+- 当前契约无法表达需求，停止计划并升级研究或 ADR；
+- 证据不足，研究门禁未通过。
+
+## 10. 验证与完成标准
+
+模块最低验证按实际入口和资源选择，不为目录完整制造无关测试：
+
+- Model/Service 成功、输入、冲突、依赖失败、取消和超时测试；
+- Repository/远程 Adapter 的转换、错误链、资源借用与清理合约；
+- HTTP/CLI/后台入口的协议边界和同一 Service 复用；
+- route、command、module ID、Participant owner 和 import 架构检查；
+- startup、ready、运行失败、反向停止、超时和资源泄漏测试；
+- 配置 strict binding、Secret、RestartRequired 或候选切换测试；
+- 真实垂直切片验收及当前文档同步；
+- 搜索确认没有旧入口、重复客户端、旁路构造或失效文档。
+
+构建通过不能替代资源生命周期或产品验收。交付必须区分已通过、未执行和被外部环境阻断的验证。

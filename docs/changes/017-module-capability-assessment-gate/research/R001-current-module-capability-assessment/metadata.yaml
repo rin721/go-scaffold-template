@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前应用模块能力评估缺口"
+question: "当用户要求新增应用模块时，当前规则与项目入口能否稳定促使 AI Agent 判断现有能力复用、新底层 Capability、资源生命周期和 Kernel 契约适配性？"
+research_type: current-project
+topics: ["application module", "capability assessment", "kernel lifecycle", "agent governance", "documentation navigation"]
+keywords: ["internal/module", "pkg capability", "Kernel App", "resource owner", "reload policy", "RestartRequired"]
+languages: ["Go"]
+frameworks: []
+technologies: ["Go package graph", "manual composition"]
+applicable_scenarios: ["新增应用模块", "接入外部系统", "新增底层能力", "生命周期契约复核"]
+non_applicable_scenarios: ["具体消息中间件选型", "邮件服务商选型", "搜索产品选型", "证明尚未实现的能力"]
+status: active
+summary: "当前规则能较强触发第三方边界与资源治理思考，但能力评估分散且不是新模块研究的必答输出；应由通用 AGENTS 导航到项目级单一权威指南。"
+evidence:
+  types: ["source-code", "project-rules", "current-documentation", "existing-research", "local-static-analysis"]
+  primary_sources:
+    - title: "AI Agent 工程规则与研究门禁"
+      locator: "AGENTS.md"
+      snapshot: "2a0b454969b90076e937eab37d250f39006dfd90"
+    - title: "当前项目、应用模块与底层能力入口"
+      locator: "README.md; docs/README.md; internal/module/README.md; pkg/README.md"
+      snapshot: "2a0b454969b90076e937eab37d250f39006dfd90"
+    - title: "Kernel App 组件形态与当前 composition"
+      locator: "internal/kernel/app/README.md; internal/kernel/composition/composition.go"
+      snapshot: "2a0b454969b90076e937eab37d250f39006dfd90"
+    - title: "Todo 模块研究先例与 package graph 门禁"
+      locator: "docs/changes/014-todo-business-vertical-slice/research/R001-current-todo-vertical-slice-feasibility; internal/kernel/composition/architecture_test.go"
+      snapshot: "2a0b454969b90076e937eab37d250f39006dfd90"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["AGENTS 研究规则变化", "应用模块开发入口变化", "Kernel App 生命周期策略变化", "新增第二个应用模块或新底层 Capability"]
+relations:
+  extends: ["012-R001", "014-R001"]
+  related: ["012-R015", "016-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

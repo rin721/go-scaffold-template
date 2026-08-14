@@ -2,7 +2,9 @@
 
 `internal/module` 保存由应用组合根显式选择的纵向模块。这里的 Module 是进程内业务单元，不是 Go module、Kernel Component 或动态插件。每个模块按业务名称收口 Model、Service、Repository/协议 Adapter 和显式 binding；底层资源仍由 Kernel 统一创建，模块对象不进入 Kernel Plan。
 
-当前首个模块是 [Todo](todo/README.md)。新增模块时先复制它的依赖方向和验证方式，不复制业务字段：
+新增模块必须先按 [应用模块开发指南](../../docs/development/application-module-development.md) 完成真实用例、现有能力、新 Capability、资源 owner、生命周期和当前契约适配性评估，再进入目录与接口设计。
+
+当前首个模块是 [Todo](todo/README.md)。它是代码与验证示例；只复制依赖方向和验证方式，不复制业务字段或无关入口：
 
 ```text
 model <- service <- repo/handler <- binding <- module.go <- internal/composition
