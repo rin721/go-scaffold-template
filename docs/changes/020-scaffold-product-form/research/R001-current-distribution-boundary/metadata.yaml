@@ -1,0 +1,36 @@
+schema_version: 1
+id: R001
+title: "当前脚手架分发与消费边界"
+question: "当前 go-scaffold2 能否被外部项目作为 library、template 或 generator 产品安全消费和升级？"
+research_type: current-project
+topics: ["scaffold product", "distribution", "public API", "upgrade"]
+keywords: ["go.mod", "internal", "pkg", "cmd/app", "module path", "APP_", "Todo", "Git tag"]
+languages: ["Go"]
+applicable_scenarios: ["020 产品形态决策", "外部消费者验证", "生成和升级边界设计"]
+non_applicable_scenarios: ["证明候选方案已实现", "承诺现有公共 API 稳定", "授权移动 internal 包"]
+status: active
+summary: "完整运行与装配位于 internal，外部只能导入 pkg；仓库又有大量固定身份且没有 generator、tag、所有权或升级协议，因此当前形态不能支撑成熟脚手架消费。"
+evidence:
+  types: ["source-code", "tests", "repository-layout", "git-metadata", "local-tool-documentation"]
+  primary_sources:
+    - title: "模块、入口与运行装配"
+      locator: "go.mod; cmd/app; internal/kernel; internal/composition; internal/module"
+      snapshot: "af7fdadc3ebe9f6c6895a60a9ee0794494c7037e"
+    - title: "外部可导入能力与边界测试"
+      locator: "pkg; pkg/boundary_test.go"
+      snapshot: "af7fdadc3ebe9f6c6895a60a9ee0794494c7037e"
+    - title: "生成、身份与版本资产清单"
+      locator: "tracked files; git tag --list; config.example.yaml"
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["新增 generator 或 template manifest", "移动 internal runtime", "新增 Git release tag", "修改 module path 或应用身份配置"]
+relations:
+  extends: ["019-R001"]
+  related: ["020-R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md
