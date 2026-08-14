@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
-	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcache "github.com/rin721/go-scaffold2/pkg/cache"
-	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
-	pkgstorage "github.com/rin721/go-scaffold2/pkg/storage"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
+	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgcache "github.com/rin721/go-scaffold-template/pkg/cache"
+	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
+	pkgstorage "github.com/rin721/go-scaffold-template/pkg/storage"
 )
 
 func TestComposeSwapsI18nAndStorageAndPreflightsCacheRestart(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 // RuntimeComponent 是 Kernel 执行 FrozenPlan 时使用的组件状态机边界。

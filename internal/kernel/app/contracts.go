@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 // ID 是一个底层组件角色在当前进程中的稳定标识。

@@ -1,0 +1,36 @@
+schema_version: 1
+id: R002
+title: "仓库身份迁移后验证"
+question: "021 实施后，canonical remote、Go module/import、运行品牌、当前文档和历史残留是否满足单轨迁移要求？"
+research_type: current-project
+topics: ["repository rename", "Go module path", "post-migration verification", "Git remote"]
+keywords: ["go-scaffold-template", "origin", "go list -m", "go test -race", "residual scan"]
+languages: ["Go"]
+applicable_scenarios: ["021 完成审计", "新 canonical module 使用", "020 后续 baseline 刷新"]
+non_applicable_scenarios: ["Linux baseline 已验证声明", "正式 release 已发布", "另一个 go-scaffold 仓库迁移"]
+status: active
+summary: "本地 origin、Go module/import、运行品牌和当前文档已统一为 go-scaffold-template，旧身份只保留在明确历史证据中，完整 Go 门禁通过。"
+evidence:
+  types: ["git-metadata", "source-code", "tests", "static-analysis", "documentation"]
+  primary_sources:
+    - title: "Canonical remote 与分支关系"
+      locator: "git remote -v; git fetch --prune origin; git rev-list --left-right --count origin/main...HEAD"
+      snapshot: "origin/main 1b60d16; local base cc20b62; verified 2026-08-15"
+    - title: "Module、imports、品牌与残留扫描"
+      locator: "go.mod; cmd/app; internal; pkg; README.md; config.example.yaml; git grep; rg"
+      snapshot: "implementation worktree based on cc20b62, verified 2026-08-15"
+    - title: "Go 完整门禁"
+      locator: "go list -m; go mod tidy -diff; go build ./...; go test ./...; go test -race ./...; go vet ./..."
+      snapshot: "passed on Windows 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["repository 再次改名或转移", "module path 修改", "applicationName 修改", "历史文档治理规则变化"]
+relations:
+  extends: ["021-R001"]
+  related: ["020-R003"]
+  supersedes: ["021-R001"]
+  superseded_by: []
+report: report.md

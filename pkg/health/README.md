@@ -22,7 +22,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/health"
+	"github.com/rin721/go-scaffold-template/pkg/health"
 )
 
 func BuildRegistry(dbPing func(context.Context) error) (*health.Registry, error) {

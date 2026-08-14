@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/fault"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 const testID = "11111111-1111-4111-8111-111111111111"

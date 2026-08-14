@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/health"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/pkg/health"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 const configWatchTaskName = "kernel-config-watch"

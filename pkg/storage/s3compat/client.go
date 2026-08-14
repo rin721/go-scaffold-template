@@ -14,7 +14,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
 
-	storageclient "github.com/rin721/go-scaffold2/pkg/storage/client"
+	storageclient "github.com/rin721/go-scaffold-template/pkg/storage/client"
 )
 
 const (

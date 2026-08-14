@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func TestValidateContributionsAcceptsCanonicalRoute(t *testing.T) {

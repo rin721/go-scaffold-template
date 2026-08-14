@@ -19,7 +19,7 @@ package runtime
 import (
 	"io"
 
-	"github.com/rin721/go-scaffold2/pkg/resource"
+	"github.com/rin721/go-scaffold-template/pkg/resource"
 )
 
 func Register(file io.Closer, sharedCache io.Closer) (*resource.Registry, error) {

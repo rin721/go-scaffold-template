@@ -3,8 +3,8 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 )
 
 func composeStorage(plan *app.Plan) (app.Added[storageapp.Access], error) {

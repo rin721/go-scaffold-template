@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/concurrency"
+	"github.com/rin721/go-scaffold-template/pkg/concurrency"
 )
 
 // GetOrLoad 使用 singleflight 防止热点缓存击穿。

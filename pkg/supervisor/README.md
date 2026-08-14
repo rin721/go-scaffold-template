@@ -21,7 +21,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 type Server struct{}

@@ -34,7 +34,7 @@ func TestNoOldStorageModuleImportsRemain(t *testing.T) {
 
 func TestPackageLayerDoesNotImportInternal(t *testing.T) {
 	root := packageRoot(t)
-	internalPrefix := strings.Join([]string{"github.com", "rin721", "go-scaffold2", "internal"}, "/") + "/"
+	internalPrefix := strings.Join([]string{"github.com", "rin721", "go-scaffold-template", "internal"}, "/") + "/"
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
 			return walkErr
@@ -63,7 +63,7 @@ func TestOldConfigPackageIsRemoved(t *testing.T) {
 	}
 
 	root := repoRoot(t)
-	oldImport := strings.Join([]string{"github.com", "rin721", "go-scaffold2", "pkg", "config"}, "/")
+	oldImport := strings.Join([]string{"github.com", "rin721", "go-scaffold-template", "pkg", "config"}, "/")
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil || entry.IsDir() || !(strings.HasSuffix(path, ".go") || strings.HasSuffix(path, ".md")) {
 			return walkErr

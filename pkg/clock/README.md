@@ -18,7 +18,7 @@ package audit
 import (
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
 )
 
 type Recorder struct {

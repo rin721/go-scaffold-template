@@ -4,8 +4,8 @@ package clock
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	pkgclock "github.com/rin721/go-scaffold-template/pkg/clock"
 )
 
 const ID app.ID = "clock"

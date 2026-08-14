@@ -3,7 +3,7 @@ package configbinding
 import (
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 func TestBindingDefaultsAndStrictDecode(t *testing.T) {

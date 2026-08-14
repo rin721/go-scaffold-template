@@ -3,15 +3,15 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
-	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
-	i18napp "github.com/rin721/go-scaffold2/internal/kernel/app/i18n"
-	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
-	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	i18napp "github.com/rin721/go-scaffold-template/internal/kernel/app/i18n"
+	loggerapp "github.com/rin721/go-scaffold-template/internal/kernel/app/logger"
+	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
+	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgcli "github.com/rin721/go-scaffold-template/pkg/cli"
 )
 
 // Bootstrap 保存 one-shot 启动命令所需的最小装配结果。

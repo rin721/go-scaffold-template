@@ -3,9 +3,9 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	idgenapp "github.com/rin721/go-scaffold2/internal/kernel/app/idgen"
-	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	idgenapp "github.com/rin721/go-scaffold-template/internal/kernel/app/idgen"
+	pkgidgen "github.com/rin721/go-scaffold-template/pkg/idgen"
 )
 
 func composeIDGenerator(plan *app.Plan) (app.Added[pkgidgen.Generator], error) {

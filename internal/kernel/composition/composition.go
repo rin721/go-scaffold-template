@@ -4,16 +4,16 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
-	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
-	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
-	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
-	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
-	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
-	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
+	pkgclock "github.com/rin721/go-scaffold-template/pkg/clock"
+	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
+	pkgidgen "github.com/rin721/go-scaffold-template/pkg/idgen"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
+	pkgvalidation "github.com/rin721/go-scaffold-template/pkg/validation"
 )
 
 // LoggerSelection 表示当前 composition 是否用配置化 App 替换 Kernel 内置 Logger。

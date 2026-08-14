@@ -1,4 +1,4 @@
-module github.com/rin721/go-scaffold2
+module github.com/rin721/go-scaffold-template
 
 go 1.25.7
 

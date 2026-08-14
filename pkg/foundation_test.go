@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/health"
-	"github.com/rin721/go-scaffold2/pkg/httpx"
-	"github.com/rin721/go-scaffold2/pkg/idgen"
-	"github.com/rin721/go-scaffold2/pkg/logger"
-	"github.com/rin721/go-scaffold2/pkg/storage"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/pkg/health"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/storage"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func TestFoundationLibrariesCanBeCreatedIndependently(t *testing.T) {

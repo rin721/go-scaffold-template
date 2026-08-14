@@ -3,9 +3,9 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	i18napp "github.com/rin721/go-scaffold2/internal/kernel/app/i18n"
-	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	i18napp "github.com/rin721/go-scaffold-template/internal/kernel/app/i18n"
+	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
 func composeI18n(plan *app.Plan) (app.Added[pkgi18n.Translator], error) {

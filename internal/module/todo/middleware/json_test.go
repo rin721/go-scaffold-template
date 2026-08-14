@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 func TestRequireJSONContentTypeAllowsJSONAndPreservesDownstreamError(t *testing.T) {

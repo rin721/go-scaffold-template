@@ -20,8 +20,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/fault"
-	"github.com/rin721/go-scaffold2/pkg/resilience"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
+	"github.com/rin721/go-scaffold-template/pkg/resilience"
 )
 
 func Query(ctx context.Context, call func(context.Context) error) error {

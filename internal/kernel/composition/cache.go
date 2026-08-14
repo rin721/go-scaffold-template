@@ -3,8 +3,8 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 )
 
 func composeCache(plan *app.Plan) (app.Added[cacheapp.Access], error) {

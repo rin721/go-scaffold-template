@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 // ID 是应用模块在单个进程内的稳定唯一标识。

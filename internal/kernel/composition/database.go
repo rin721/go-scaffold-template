@@ -3,8 +3,8 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 )
 
 func composeDatabase(plan *app.Plan) (app.Added[databaseapp.Access], error) {

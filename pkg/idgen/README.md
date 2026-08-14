@@ -13,7 +13,7 @@
 ```go
 package requestid
 
-import "github.com/rin721/go-scaffold2/pkg/idgen"
+import "github.com/rin721/go-scaffold-template/pkg/idgen"
 
 type Factory struct {
 	generator idgen.Generator

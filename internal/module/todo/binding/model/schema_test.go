@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/pkg/database"
+	"github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 func TestSchemaAndMigratorContract(t *testing.T) {

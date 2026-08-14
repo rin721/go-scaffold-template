@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
 const (

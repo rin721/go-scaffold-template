@@ -30,7 +30,7 @@ validity:
   refresh_triggers: ["复制范围或身份迁移流程落地", "新增 Git release tag", "修改 module path 或应用身份配置", "用户改变 copy-owned 产品决策"]
 relations:
   extends: ["019-R001"]
-  related: ["020-R002"]
+  related: ["020-R002", "021-R001"]
   supersedes: []
   superseded_by: []
 report: report.md

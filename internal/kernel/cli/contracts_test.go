@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgcli "github.com/rin721/go-scaffold-template/pkg/cli"
 )
 
 func TestNewAppRejectsInvalidContractsWithoutReturningPartialApp(t *testing.T) {

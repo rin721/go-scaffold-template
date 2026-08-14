@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgclock "github.com/rin721/go-scaffold-template/pkg/clock"
 )
 
 type clockConsumer struct{ clock pkgclock.Clock }

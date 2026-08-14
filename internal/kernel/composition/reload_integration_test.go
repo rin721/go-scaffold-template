@@ -14,12 +14,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	pkgdatabase "github.com/rin721/go-scaffold-template/pkg/database"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func TestHostReloadsRealSQLiteAndKeepsCrossComponentTransactionAtomic(t *testing.T) {

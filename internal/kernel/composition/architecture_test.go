@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-const modulePath = "github.com/rin721/go-scaffold2"
+const modulePath = "github.com/rin721/go-scaffold-template"
 
 type packageNode struct {
 	ImportPath string

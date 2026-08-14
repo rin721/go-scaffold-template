@@ -49,7 +49,7 @@ pkg/logger/
 package main
 
 import (
-	"github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func main() {
@@ -74,7 +74,7 @@ func main() {
 package main
 
 import (
-	"github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func main() {
@@ -108,7 +108,7 @@ func main() {
 ```go
 package user
 
-import "github.com/rin721/go-scaffold2/pkg/logger"
+import "github.com/rin721/go-scaffold-template/pkg/logger"
 
 type Service struct {
 	log logger.Logger

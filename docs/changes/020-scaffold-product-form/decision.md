@@ -46,7 +46,7 @@ pkg capability contract/adapter
 
 ## 后续独立工作
 
-1. 021 完成 repository/module/产品身份迁移。
+1. 021 已完成 repository/module/产品身份迁移；正式复制指南仍需使用新身份复核 baseline。
 2. 建立正式 copy checklist、identity migration matrix 与 Linux CI。
 3. 定义 release baseline、provenance 文件模板、安全公告和人工迁移指南模板。
 4. 在 019 的后续变更中研究单一 API authority；不以 generator 模板或外部 Runtime 为前提。

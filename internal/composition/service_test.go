@@ -10,10 +10,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	"github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func TestExampleConfigSatisfiesApplicationBindings(t *testing.T) {
@@ -22,7 +22,7 @@ func TestExampleConfigSatisfiesApplicationBindings(t *testing.T) {
 		t.Fatalf("logging.New() error = %v", err)
 	}
 	application, err := New(Config{
-		Name: "go-scaffold2", Description: "test application",
+		Name: "go-scaffold-template", Description: "test application",
 		ConfigPath:        filepath.Join("..", "..", "config.example.yaml"),
 		EnvironmentPrefix: "GO_SCAFFOLD2_TEST_014_EXAMPLE_", Logging: manager,
 	})
@@ -72,7 +72,7 @@ http:
 		t.Fatalf("logging.New() error = %v", err)
 	}
 	application, err := New(Config{
-		Name: "go-scaffold2", Description: "test application", ConfigPath: configPath,
+		Name: "go-scaffold-template", Description: "test application", ConfigPath: configPath,
 		EnvironmentPrefix: "GO_SCAFFOLD2_TEST_014_RELOAD_", Logging: manager,
 	})
 	if err != nil {

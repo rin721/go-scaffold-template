@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/testkit"
+	"github.com/rin721/go-scaffold-template/pkg/testkit"
 )
 
 func TestClock(t *testing.T) {

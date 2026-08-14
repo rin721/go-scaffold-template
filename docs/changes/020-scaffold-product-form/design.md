@@ -2,7 +2,7 @@
 
 ## 1. 决策
 
-用户已选择 **copy-owned source scaffold**：canonical 源仓库 `go-scaffold-template` 发布完整源码基线，开发者复制源码后一次性迁移身份，所有代码从此归新项目。当前 checkout 的 remote/module/产品名迁移由 021 先完成。
+用户已选择 **copy-owned source scaffold**：canonical 源仓库 `go-scaffold-template` 发布完整源码基线，开发者复制源码后一次性迁移身份，所有代码从此归新项目。当前 checkout 的 remote/module/产品名已由 021 独立迁移。
 
 此前研究比较过 template、generator、library 和组合模式。比较结论仍作为历史依据，但 generator/library/组合模式已被用户决策排除，不再进入验证或后续实现。
 

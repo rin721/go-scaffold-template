@@ -1,4 +1,4 @@
-# go-scaffold2 全量配置示例。
+# go-scaffold-template 全量配置示例。
 #
 # 使用方式：
 #   Copy-Item config.example.yaml config.yaml

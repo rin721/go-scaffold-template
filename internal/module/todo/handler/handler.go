@@ -7,12 +7,12 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/fault"
-	"github.com/rin721/go-scaffold2/pkg/httpx"
-	"github.com/rin721/go-scaffold2/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
 const acceptLanguageHeader = "Accept-Language"

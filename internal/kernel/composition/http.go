@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkghttpx "github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkghttpx "github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 const (

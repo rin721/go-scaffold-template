@@ -83,7 +83,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
 func main() {
@@ -119,7 +119,7 @@ import (
 	"embed"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
 //go:embed locales/*.yaml locales/*.json
@@ -155,7 +155,7 @@ func main() {
 ```go
 package user
 
-import "github.com/rin721/go-scaffold2/pkg/i18n"
+import "github.com/rin721/go-scaffold-template/pkg/i18n"
 
 type Service struct {
 	translator i18n.Translator

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgdatabase "github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 const (

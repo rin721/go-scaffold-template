@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/health"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/health"
 )
 
 // Clock 返回固定测试时钟。

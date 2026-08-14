@@ -21,7 +21,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/rin721/go-scaffold2/pkg/fault"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 func Call(ctx context.Context, query func(context.Context) error) error {

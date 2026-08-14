@@ -7,15 +7,15 @@ import (
 	"io"
 	"os"
 
-	applicationcomposition "github.com/rin721/go-scaffold2/internal/composition"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	"github.com/rin721/go-scaffold2/pkg/cli"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	applicationcomposition "github.com/rin721/go-scaffold-template/internal/composition"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/pkg/cli"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 const (
-	applicationName        = "go-scaffold2"
+	applicationName        = "go-scaffold-template"
 	applicationDescription = "Go 后端服务与 CLI 工具基础设施脚手架"
 	defaultConfigPath      = "config.yaml"
 	environmentPrefix      = "APP_"

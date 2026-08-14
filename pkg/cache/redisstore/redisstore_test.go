@@ -10,7 +10,7 @@ import (
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
-	scaffoldcache "github.com/rin721/go-scaffold2/pkg/cache"
+	scaffoldcache "github.com/rin721/go-scaffold-template/pkg/cache"
 )
 
 func TestNewRejectsNilClient(t *testing.T) {

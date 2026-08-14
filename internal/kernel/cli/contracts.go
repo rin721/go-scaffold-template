@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"reflect"
 
-	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
+	pkgcli "github.com/rin721/go-scaffold-template/pkg/cli"
 )
 
 // Contract 向启动前 CLI 贡献一个或多个项目自有命令声明。

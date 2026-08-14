@@ -52,8 +52,8 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rin721/go-scaffold2/pkg/cache"
-	"github.com/rin721/go-scaffold2/pkg/cache/redisstore"
+	"github.com/rin721/go-scaffold-template/pkg/cache"
+	"github.com/rin721/go-scaffold-template/pkg/cache/redisstore"
 )
 
 type Profile struct {

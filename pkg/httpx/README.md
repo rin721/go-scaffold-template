@@ -79,7 +79,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 func main() {
@@ -115,7 +115,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 func main() {
@@ -152,7 +152,7 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 func main() {
@@ -194,7 +194,7 @@ package user
 import (
 	"context"
 
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 type Gateway struct {

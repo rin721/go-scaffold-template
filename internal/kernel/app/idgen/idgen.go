@@ -4,8 +4,8 @@ package idgen
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	pkgidgen "github.com/rin721/go-scaffold-template/pkg/idgen"
 )
 
 const ID app.ID = "idgen"

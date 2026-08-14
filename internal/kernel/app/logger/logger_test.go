@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func TestReplacementSwitchesTypedTargetAndRestoresBaseline(t *testing.T) {

@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	modelbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/repo"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/database"
-	"github.com/rin721/go-scaffold2/pkg/fault"
+	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/database"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 func TestRepositorySQLiteContract(t *testing.T) {

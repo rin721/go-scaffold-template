@@ -11,7 +11,7 @@ import (
 
 func TestAppLayerDoesNotImportKernelOrComposition(t *testing.T) {
 	root := appRoot(t)
-	modulePrefix := strings.Join([]string{"github.com", "rin721", "go-scaffold2", "internal", "kernel"}, "/")
+	modulePrefix := strings.Join([]string{"github.com", "rin721", "go-scaffold-template", "internal", "kernel"}, "/")
 	forbidden := map[string]struct{}{
 		modulePrefix:                  {},
 		modulePrefix + "/composition": {},

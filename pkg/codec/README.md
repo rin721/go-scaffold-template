@@ -19,7 +19,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/rin721/go-scaffold2/pkg/codec"
+	"github.com/rin721/go-scaffold-template/pkg/codec"
 )
 
 type Profile struct {

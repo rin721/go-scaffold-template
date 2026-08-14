@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	storageclient "github.com/rin721/go-scaffold2/pkg/storage/client"
+	storageclient "github.com/rin721/go-scaffold-template/pkg/storage/client"
 )
 
 func TestClientExerciseWithPathStyleEndpoint(t *testing.T) {

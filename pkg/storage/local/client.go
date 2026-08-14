@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	storageclient "github.com/rin721/go-scaffold2/pkg/storage/client"
+	storageclient "github.com/rin721/go-scaffold-template/pkg/storage/client"
 )
 
 // Config configures the local object-storage adapter.

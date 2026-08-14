@@ -19,7 +19,7 @@ package input
 import (
 	"errors"
 
-	"github.com/rin721/go-scaffold2/pkg/validation"
+	"github.com/rin721/go-scaffold-template/pkg/validation"
 )
 
 type CreateUser struct {

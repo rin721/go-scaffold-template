@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
-	"github.com/rin721/go-scaffold2/internal/module/todo/repo"
-	"github.com/rin721/go-scaffold2/pkg/database"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
+	"github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 // databaseAccessAdapter 把 Kernel-owned Access 转成 Todo Adapter 使用方拥有的窄契约。

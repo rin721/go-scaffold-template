@@ -3,9 +3,9 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	validationapp "github.com/rin721/go-scaffold2/internal/kernel/app/validation"
-	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	validationapp "github.com/rin721/go-scaffold-template/internal/kernel/app/validation"
+	pkgvalidation "github.com/rin721/go-scaffold-template/pkg/validation"
 )
 
 func composeValidator(plan *app.Plan) (app.Added[pkgvalidation.Validator], error) {

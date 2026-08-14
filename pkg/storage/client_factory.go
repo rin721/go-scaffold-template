@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	storageclient "github.com/rin721/go-scaffold2/pkg/storage/client"
-	"github.com/rin721/go-scaffold2/pkg/storage/local"
-	"github.com/rin721/go-scaffold2/pkg/storage/s3compat"
+	storageclient "github.com/rin721/go-scaffold-template/pkg/storage/client"
+	"github.com/rin721/go-scaffold-template/pkg/storage/local"
+	"github.com/rin721/go-scaffold-template/pkg/storage/s3compat"
 )
 
 type StorageClient = storageclient.StorageClient

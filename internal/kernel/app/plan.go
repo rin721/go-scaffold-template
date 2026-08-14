@@ -3,7 +3,7 @@ package app
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 type planState uint8

@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
-	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	"github.com/rin721/go-scaffold2/internal/kernel/logging"
-	clibinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/cli"
-	configbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/config"
-	"github.com/rin721/go-scaffold2/pkg/cli"
+	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
+	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	clibinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/cli"
+	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
+	"github.com/rin721/go-scaffold-template/pkg/cli"
 )
 
 // Config 保存进程组合需要的固定输入，不包含运行期配置值。

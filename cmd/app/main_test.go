@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
-	"github.com/rin721/go-scaffold2/pkg/cli"
-	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/pkg/cli"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
@@ -396,7 +396,7 @@ func TestExecuteUsesCLIExitCodeAndReportsError(t *testing.T) {
 	if exitCode != cli.ExitUsage {
 		t.Fatalf("exit code = %d, want %d", exitCode, cli.ExitUsage)
 	}
-	if !strings.Contains(stderr.String(), "go-scaffold2: run application CLI") {
+	if !strings.Contains(stderr.String(), "go-scaffold-template: run application CLI") {
 		t.Fatalf("stderr = %q, want application context", stderr.String())
 	}
 }

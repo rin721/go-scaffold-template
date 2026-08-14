@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 // Watch 持续监听 FileSource，并由唯一 Coordinator 加载每个候选。

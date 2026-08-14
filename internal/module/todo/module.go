@@ -4,17 +4,17 @@ package todo
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/module"
-	configbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/config"
-	httpbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/http"
-	modelbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/handler"
-	"github.com/rin721/go-scaffold2/internal/module/todo/repo"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/i18n"
-	"github.com/rin721/go-scaffold2/pkg/idgen"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/internal/module"
+	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
+	httpbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/handler"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/i18n"
+	"github.com/rin721/go-scaffold-template/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 const moduleID module.ID = "todo"

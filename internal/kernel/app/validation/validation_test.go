@@ -3,8 +3,8 @@ package validation
 import (
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	pkgvalidation "github.com/rin721/go-scaffold-template/pkg/validation"
 )
 
 func TestDefaultProvidesDirectValidator(t *testing.T) {

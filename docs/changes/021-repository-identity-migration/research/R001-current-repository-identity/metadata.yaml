@@ -1,0 +1,42 @@
+schema_version: 1
+id: R001
+title: "GitHub 改名后的当前仓库身份核验"
+question: "GitHub 仓库改名后，当前 checkout 的 remote、Go module、源码、运行品牌和文档分别处于什么状态，迁移应排除哪些相邻仓库与历史事实？"
+research_type: current-project
+topics: ["repository rename", "Go module path", "product identity", "Git remote"]
+keywords: ["go-scaffold-template", "go-scaffold2", "go-scaffold", "origin", "go.mod", "applicationName", ".github"]
+languages: ["Go"]
+applicable_scenarios: ["021 仓库身份迁移", "020 复制型脚手架 baseline 刷新", "GitHub 改名后的本地 checkout 同步"]
+non_applicable_scenarios: ["迁移另一个 go-scaffold 仓库", "下游复制项目身份初始化", "证明 remote 或 module 已经迁移"]
+status: superseded
+summary: "GitHub canonical 仓库已是 go-scaffold-template，但本地 origin 和代码身份仍是 go-scaffold2；go-scaffold 是独立仓库，必须排除。"
+evidence:
+  types: ["repository-layout", "git-metadata", "source-code", "tests", "official-repository-page"]
+  primary_sources:
+    - title: "本地 Git、module、入口与身份引用"
+      locator: "git status; git remote -v; go.mod; cmd/app; README.md; tracked-file search"
+      snapshot: "bba1802 verified 2026-08-15"
+    - title: "当前 identity 文件分类清单"
+      locator: "git grep by extension and ownership; .github; .agents; scripts; package README files"
+      snapshot: "verified 2026-08-15"
+    - title: "新 canonical GitHub 仓库"
+      locator: "https://github.com/rin721/go-scaffold-template"
+      snapshot: "verified 2026-08-15"
+    - title: "go-scaffold2 重定向"
+      locator: "https://github.com/rin721/go-scaffold2"
+      snapshot: "redirected to go-scaffold-template on 2026-08-15"
+    - title: "独立 go-scaffold 仓库"
+      locator: "https://github.com/rin721/go-scaffold"
+      snapshot: "verified independent repository on 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["GitHub 仓库再次改名或转移", "origin URL 修改", "Go module path 修改", "021 实施完成"]
+relations:
+  extends: ["020-R001"]
+  related: ["020-R002"]
+  supersedes: []
+  superseded_by: ["021-R002"]
+report: report.md

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgstorage "github.com/rin721/go-scaffold2/pkg/storage"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgstorage "github.com/rin721/go-scaffold-template/pkg/storage"
 )
 
 const (

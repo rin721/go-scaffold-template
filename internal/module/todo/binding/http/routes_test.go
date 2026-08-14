@@ -6,9 +6,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/handler"
-	todomiddleware "github.com/rin721/go-scaffold2/internal/module/todo/middleware"
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/handler"
+	todomiddleware "github.com/rin721/go-scaffold-template/internal/module/todo/middleware"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 func TestRoutesExposeTodoContractInStableOrder(t *testing.T) {

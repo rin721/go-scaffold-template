@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	pkgdatabase "github.com/rin721/go-scaffold2/pkg/database"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	pkgdatabase "github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 func TestDefinitionContributesConfigWithoutExposingClose(t *testing.T) {

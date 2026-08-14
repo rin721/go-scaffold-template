@@ -3,9 +3,9 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	clockapp "github.com/rin721/go-scaffold2/internal/kernel/app/clock"
-	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	clockapp "github.com/rin721/go-scaffold-template/internal/kernel/app/clock"
+	pkgclock "github.com/rin721/go-scaffold-template/pkg/clock"
 )
 
 func composeClock(plan *app.Plan) (app.Added[pkgclock.Clock], error) {

@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/fault"
-	"github.com/rin721/go-scaffold2/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
+	"github.com/rin721/go-scaffold-template/pkg/idgen"
 )
 
 // Policy 是已由配置边界校验的 Todo 业务策略。

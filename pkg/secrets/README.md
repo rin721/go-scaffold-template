@@ -19,7 +19,7 @@
 ```go
 package datasource
 
-import "github.com/rin721/go-scaffold2/pkg/secrets"
+import "github.com/rin721/go-scaffold-template/pkg/secrets"
 
 type Config struct {
 	DSN secrets.Secret

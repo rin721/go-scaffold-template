@@ -2,7 +2,7 @@
 
 ## 1. 已确认目标
 
-用户已决定将当前仓库设计为完整源码脚手架：开发者复制一个版本化源码快照，在本地一次性迁移项目身份，然后由新项目独立拥有和演进全部代码。GitHub canonical 仓库已改名为 `go-scaffold-template`；本地源身份同步属于后续 021。产品形态研究依据见 [R001](research/R001-current-distribution-boundary/report.md) 与 [R002](research/R002-go-distribution-versioning/report.md)。
+用户已决定将当前仓库设计为完整源码脚手架：开发者复制一个版本化源码快照，在本地一次性迁移项目身份，然后由新项目独立拥有和演进全部代码。GitHub canonical 仓库与本地源身份已由 021 统一为 `go-scaffold-template`。产品形态研究依据见 [R001](research/R001-current-distribution-boundary/report.md) 与 [R002](research/R002-go-distribution-versioning/report.md)。
 
 这不是 library，也不是 generator。脚手架只承诺“复制时的基线质量和迁移说明”，不承诺复制后自动同步上游。
 
@@ -62,4 +62,4 @@
 
 - `BASELINE-001`、`COPY-001`、`OWNERSHIP-001`、`IDENTITY-001/002`、`ASSEMBLY-001`、`EXAMPLE-001`、`VERIFY-001`、`PROVENANCE-001`、`UPGRADE-001` 与 `SECURITY-001` 已由 [R003](research/R003-isolated-copy-validation/report.md) 和 [ADR-001](decision.md) 验证或固化。
 - `PORTABLE-001` 的 Windows 路径已通过；当前环境没有可运行 WSL 发行版，Linux 路径未验证并转为正式指南/CI 的后续门禁。
-- 验证没有修改生产源码或交付正式复制工具；021 完成后仍需基于新 canonical identity 刷新正式 baseline 值。
+- 020 验证没有修改生产源码或交付正式复制工具；021 已迁移源仓库 identity，正式复制指南仍需基于新 canonical identity 刷新 baseline 值。

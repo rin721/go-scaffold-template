@@ -1,6 +1,6 @@
-# go-scaffold2
+# go-scaffold-template
 
-`go-scaffold2` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/kernel/app` 声明底层 App 组件，`internal/kernel/composition` 负责手工选择并冻结有序 Plan，Kernel Runtime 负责生命周期和配置切换。
+`go-scaffold-template` 是面向后端服务与 CLI 工具的 Go 基础设施脚手架。`pkg` 提供可独立使用的通用能力库，`internal/kernel/app` 声明底层 App 组件，`internal/kernel/composition` 负责手工选择并冻结有序 Plan，Kernel Runtime 负责生命周期和配置切换。
 
 ## 当前目标
 

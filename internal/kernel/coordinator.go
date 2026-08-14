@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 )
 
 // LifecycleState 表示配置协调者拥有的 Kernel 进程状态。

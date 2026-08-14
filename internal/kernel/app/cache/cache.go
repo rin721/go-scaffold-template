@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcache "github.com/rin721/go-scaffold2/pkg/cache"
-	"github.com/rin721/go-scaffold2/pkg/cache/redisstore"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgcache "github.com/rin721/go-scaffold-template/pkg/cache"
+	"github.com/rin721/go-scaffold-template/pkg/cache/redisstore"
 )
 
 const (

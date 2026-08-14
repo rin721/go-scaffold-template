@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
-	"github.com/rin721/go-scaffold2/internal/module"
-	"github.com/rin721/go-scaffold2/pkg/httpx"
-	"github.com/rin721/go-scaffold2/pkg/logger"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
+	"github.com/rin721/go-scaffold-template/internal/module"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func (a *Application) runService(ctx context.Context) error {

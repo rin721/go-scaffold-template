@@ -5,8 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/repo"
-	"github.com/rin721/go-scaffold2/pkg/database"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
+	"github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 const participantName = "module.todo.schema"

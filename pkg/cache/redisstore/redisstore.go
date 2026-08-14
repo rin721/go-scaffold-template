@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/redis/go-redis/v9"
-	scaffoldcache "github.com/rin721/go-scaffold2/pkg/cache"
+	scaffoldcache "github.com/rin721/go-scaffold-template/pkg/cache"
 )
 
 // Store 是基于 go-redis UniversalClient 的远端缓存实现。

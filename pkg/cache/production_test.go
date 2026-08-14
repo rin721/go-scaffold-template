@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/concurrency"
+	"github.com/rin721/go-scaffold-template/pkg/concurrency"
 )
 
 func TestGetOrLoadStoresLoadedValue(t *testing.T) {

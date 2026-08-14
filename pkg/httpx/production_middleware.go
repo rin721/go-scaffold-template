@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/rin721/go-scaffold2/pkg/idgen"
-	"github.com/rin721/go-scaffold2/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/idgen"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 const headerRequestID = "X-Request-ID"

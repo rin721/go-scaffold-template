@@ -4,10 +4,10 @@ package httpbinding
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/module"
-	"github.com/rin721/go-scaffold2/internal/module/todo/handler"
-	todomiddleware "github.com/rin721/go-scaffold2/internal/module/todo/middleware"
-	"github.com/rin721/go-scaffold2/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/internal/module"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/handler"
+	todomiddleware "github.com/rin721/go-scaffold-template/internal/module/todo/middleware"
+	"github.com/rin721/go-scaffold-template/pkg/httpx"
 )
 
 // Routes 返回 Todo 模块的完整 HTTP 路由贡献。

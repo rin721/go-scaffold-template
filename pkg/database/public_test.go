@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/rin721/go-scaffold2/pkg/database"
+	"github.com/rin721/go-scaffold-template/pkg/database"
 )
 
 type publicAccount struct {

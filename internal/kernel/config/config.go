@@ -16,7 +16,7 @@ import (
 	"github.com/go-viper/mapstructure/v2"
 	"gopkg.in/yaml.v3"
 
-	"github.com/rin721/go-scaffold2/pkg/secrets"
+	"github.com/rin721/go-scaffold-template/pkg/secrets"
 )
 
 // Source 表示一个配置来源。

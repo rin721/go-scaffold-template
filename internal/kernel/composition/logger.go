@@ -3,10 +3,10 @@ package composition
 import (
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	loggerapp "github.com/rin721/go-scaffold2/internal/kernel/app/logger"
-	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	loggerapp "github.com/rin721/go-scaffold-template/internal/kernel/app/logger"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
 )
 
 func composeBuiltinLogger(plan *app.Plan, target kernellogging.Target) (app.Added[kernellogging.Target], error) {

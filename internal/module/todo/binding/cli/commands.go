@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/cli"
-	"github.com/rin721/go-scaffold2/pkg/clock"
-	"github.com/rin721/go-scaffold2/pkg/fault"
+	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/cli"
+	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 // Executor 在命令解析完成后进入受管 application operation。

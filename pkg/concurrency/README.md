@@ -18,7 +18,7 @@ package batch
 import (
 	"context"
 
-	"github.com/rin721/go-scaffold2/pkg/concurrency"
+	"github.com/rin721/go-scaffold-template/pkg/concurrency"
 )
 
 func Process(ctx context.Context, ids []string, handle func(context.Context, string) error) error {
@@ -39,7 +39,7 @@ func Process(ctx context.Context, ids []string, handle func(context.Context, str
 package profile
 
 import (
-	"github.com/rin721/go-scaffold2/pkg/concurrency"
+	"github.com/rin721/go-scaffold-template/pkg/concurrency"
 )
 
 type Loader struct {

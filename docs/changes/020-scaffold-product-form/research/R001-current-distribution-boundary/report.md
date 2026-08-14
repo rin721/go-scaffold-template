@@ -1,6 +1,6 @@
 # R001：当前脚手架分发与消费边界
 
-> 后续决策：用户于 2026-08-15 选择完整源码复制模型。本文的候选比较保留为研究证据；“组合模式值得优先验证”不再是当前计划。
+> 后续决策：用户于 2026-08-15 选择完整源码复制模型。GitHub canonical 仓库随后改名为 `go-scaffold-template`；本报告仍保留 `af7fdadc` 时 `go-scaffold2` module 的真实快照，当前 repository identity 见 [021-R001](../../../021-repository-identity-migration/research/R001-current-repository-identity/report.md)。
 
 ## 1. 研究问题
 

@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/database"
-	"github.com/rin721/go-scaffold2/pkg/fault"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/database"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 // Record 是 Todo 的持久化模型；它不向 Service 或协议边界传播。

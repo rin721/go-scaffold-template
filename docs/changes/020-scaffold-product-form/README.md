@@ -5,7 +5,7 @@
 - 任务类型：用户决策后的产品形态固化与隔离复制验证。
 - 研究门禁：已通过，证据为 [R001 当前分发边界](research/R001-current-distribution-boundary/report.md)、[R002 Go 分发和版本语义](research/R002-go-distribution-versioning/report.md) 与 [R003 隔离复制验证](research/R003-isolated-copy-validation/report.md)。
 - 产品形态决策：用户于 2026-08-15 明确选择“复制脚手架源码”，不由脚手架创建项目，不采用 generator、library-only 或 Runtime + generator 形态。
-- 源仓库变化：GitHub canonical 仓库已改名为 `go-scaffold-template`；本地 remote/module/产品身份迁移属于后续 021，不在 020 实施。
+- 源仓库变化：GitHub canonical 仓库已改名为 `go-scaffold-template`；020 完成后，[021](../021-repository-identity-migration/README.md) 已独立迁移本地 remote、module 与产品身份。
 - 计划状态：已确认并完成隔离复制验证；[ADR-001](decision.md) 已接受 copy-owned 单轨产品形态。
 - 验证快照：`main@bba180266cba99ec84e2da0296df7fca373764b4`。
 - 平台范围：Windows 已通过；当前机器没有可运行 WSL 发行版，Linux 未验证。

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/alicebob/miniredis/v2"
-	"github.com/rin721/go-scaffold2/internal/kernel/app"
-	kernelconfig "github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcache "github.com/rin721/go-scaffold2/pkg/cache"
+	"github.com/rin721/go-scaffold-template/internal/kernel/app"
+	kernelconfig "github.com/rin721/go-scaffold-template/internal/kernel/config"
+	pkgcache "github.com/rin721/go-scaffold-template/pkg/cache"
 )
 
 func TestDefinitionContributesRestartRequiredCacheAccess(t *testing.T) {

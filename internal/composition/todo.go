@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/kernel"
-	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	"github.com/rin721/go-scaffold2/internal/module/todo"
-	configbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/config"
-	"github.com/rin721/go-scaffold2/internal/module/todo/model"
-	"github.com/rin721/go-scaffold2/internal/module/todo/service"
-	"github.com/rin721/go-scaffold2/pkg/supervisor"
+	"github.com/rin721/go-scaffold-template/internal/kernel"
+	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/module/todo"
+	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
+	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 type preparedTodo struct {
