@@ -1,6 +1,10 @@
 package idgen
 
-import "github.com/google/uuid"
+import (
+	"fmt"
+
+	"github.com/google/uuid"
+)
 
 // Generator 生成跨组件复用的稳定 ID。
 type Generator interface {
@@ -20,6 +24,15 @@ func (uuidGenerator) New() (string, error) {
 		return "", err
 	}
 	return value.String(), nil
+}
+
+// Validate 校验项目 ID 是否为规范 UUID 字符串。
+func Validate(value string) error {
+	parsed, err := uuid.Parse(value)
+	if err != nil || parsed.String() != value {
+		return fmt.Errorf("id is not a canonical UUID")
+	}
+	return nil
 }
 
 // MustNew 在启动构造等不可恢复路径生成 ID。

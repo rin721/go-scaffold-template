@@ -20,10 +20,17 @@ type Bootstrap struct {
 	CLI           pkgcli.App
 }
 
+// BootstrapOptions 显式接收 application-owned 配置节和启动前命令契约。
+// 构造这些契约不得创建 Kernel、资源、listener 或 goroutine。
+type BootstrapOptions struct {
+	Configuration []config.Binding
+	Commands      []kernelcli.Contract
+}
+
 // ComposeBootstrap 只构造配置节契约、默认配置管理器和命令树。
 // 它不会创建 Kernel、稳定能力 facade、资源连接、listener 或 goroutine。
-func ComposeBootstrap(cfg pkgcli.Config) (Bootstrap, error) {
-	bindings, err := bootstrapConfigBindings()
+func ComposeBootstrap(cfg pkgcli.Config, options BootstrapOptions) (Bootstrap, error) {
+	bindings, err := bootstrapConfigBindings(options.Configuration...)
 	if err != nil {
 		return Bootstrap{}, err
 	}
@@ -31,15 +38,18 @@ func ComposeBootstrap(cfg pkgcli.Config) (Bootstrap, error) {
 	if err != nil {
 		return Bootstrap{}, fmt.Errorf("compose bootstrap configuration: %w", err)
 	}
-	command, err := kernelcli.NewApp(cfg, kernelcli.ConfigCommands(manager))
+	contracts := make([]kernelcli.Contract, 0, len(options.Commands)+1)
+	contracts = append(contracts, kernelcli.ConfigCommands(manager))
+	contracts = append(contracts, options.Commands...)
+	command, err := kernelcli.NewApp(cfg, contracts...)
 	if err != nil {
 		return Bootstrap{}, fmt.Errorf("compose bootstrap CLI: %w", err)
 	}
 	return Bootstrap{Configuration: manager, CLI: command}, nil
 }
 
-func bootstrapConfigBindings() ([]config.Binding, error) {
-	bindings := make([]config.Binding, 0, 6)
+func bootstrapConfigBindings(application ...config.Binding) ([]config.Binding, error) {
+	bindings := make([]config.Binding, 0, 6+len(application))
 	loggerDefinition, err := loggerapp.Replacement()
 	if err != nil {
 		return nil, fmt.Errorf("define bootstrap logger configuration: %w", err)
@@ -81,6 +91,7 @@ func bootstrapConfigBindings() ([]config.Binding, error) {
 		bindings = append(bindings, binding.value)
 	}
 	bindings = append(bindings, HTTPConfiguration())
+	bindings = append(bindings, application...)
 	return bindings, nil
 }
 

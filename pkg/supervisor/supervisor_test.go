@@ -185,6 +185,94 @@ func TestSupervisorWithoutTasksWaitsForCancellation(t *testing.T) {
 	}
 }
 
+func TestSupervisorRunOperationStartsExecutesAndStopsInOrder(t *testing.T) {
+	var events []string
+	process := New(Config{},
+		&recordParticipant{name: "database", events: &events},
+		&recordParticipant{name: "schema", events: &events},
+	)
+	err := process.RunOperation(t.Context(), func(context.Context) error {
+		events = append(events, "operation")
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("RunOperation() error = %v", err)
+	}
+	want := []string{"start:database", "start:schema", "operation", "stop:schema", "stop:database"}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+	if snapshot := process.Snapshot(); snapshot.State != StateStopped || snapshot.Ready {
+		t.Fatalf("Snapshot() = %#v, want stopped and not ready", snapshot)
+	}
+}
+
+func TestSupervisorRunOperationJoinsOperationAndStopErrors(t *testing.T) {
+	operationErr := errors.New("operation failed")
+	stopErr := errors.New("stop failed")
+	process := New(Config{}, &recordParticipant{name: "database", stopErr: stopErr})
+	err := process.RunOperation(t.Context(), func(context.Context) error { return operationErr })
+	if !errors.Is(err, operationErr) || !errors.Is(err, stopErr) {
+		t.Fatalf("RunOperation() error = %v, want operation and stop errors", err)
+	}
+	if snapshot := process.Snapshot(); snapshot.State != StateFailed || snapshot.Ready {
+		t.Fatalf("Snapshot() = %#v, want failed", snapshot)
+	}
+}
+
+func TestSupervisorRunOperationStopsStartedParticipantsAfterStartFailure(t *testing.T) {
+	startErr := errors.New("schema start failed")
+	var events []string
+	process := New(Config{},
+		&recordParticipant{name: "database", events: &events},
+		&recordParticipant{name: "schema", events: &events, startErr: startErr},
+	)
+	err := process.RunOperation(t.Context(), func(context.Context) error {
+		t.Fatal("operation ran after startup failure")
+		return nil
+	})
+	if !errors.Is(err, startErr) {
+		t.Fatalf("RunOperation() error = %v, want start error", err)
+	}
+	want := []string{"start:database", "start:schema", "stop:database"}
+	if !reflect.DeepEqual(events, want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+}
+
+func TestSupervisorRunOperationRejectsInvalidUse(t *testing.T) {
+	if err := New(Config{}).RunOperation(nil, func(context.Context) error { return nil }); err == nil {
+		t.Fatal("RunOperation(nil context) error = nil")
+	}
+	if err := New(Config{}).RunOperation(t.Context(), nil); err == nil {
+		t.Fatal("RunOperation(nil operation) error = nil")
+	}
+	withTask := New(Config{})
+	if err := withTask.AddTask("runner", func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+	if err := withTask.RunOperation(t.Context(), func(context.Context) error { return nil }); err == nil {
+		t.Fatal("RunOperation(with task) error = nil")
+	}
+	process := New(Config{})
+	if err := process.RunOperation(t.Context(), func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("first RunOperation() error = %v", err)
+	}
+	if err := process.RunOperation(t.Context(), func(context.Context) error { return nil }); err == nil {
+		t.Fatal("second RunOperation() error = nil")
+	}
+}
+
+func TestSupervisorRunOperationBoundsStop(t *testing.T) {
+	release := make(chan struct{})
+	process := New(Config{ShutdownTimeout: 20 * time.Millisecond}, blockingStopParticipant{release: release})
+	err := process.RunOperation(t.Context(), func(context.Context) error { return nil })
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RunOperation() error = %v, want shutdown deadline", err)
+	}
+	close(release)
+}
+
 func TestSupervisorJoinsParticipantStopErrors(t *testing.T) {
 	firstErr := errors.New("first stop failed")
 	secondErr := errors.New("second stop failed")
@@ -276,6 +364,15 @@ type recordParticipant struct {
 	onStart  func()
 	starts   int
 	stops    int
+}
+
+type blockingStopParticipant struct{ release <-chan struct{} }
+
+func (blockingStopParticipant) Name() string                { return "blocking" }
+func (blockingStopParticipant) Start(context.Context) error { return nil }
+func (p blockingStopParticipant) Stop(context.Context) error {
+	<-p.release
+	return nil
 }
 
 func (p *recordParticipant) Name() string { return p.name }

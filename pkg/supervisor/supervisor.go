@@ -199,6 +199,65 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	return finalErr
 }
 
+// RunOperation 正序启动参与者、同步执行一次操作，再在同一总期限内反序停止。
+//
+// one-shot operation 与长期 Task 语义互斥：正常返回表示操作完成，不会被解释为
+// UnexpectedCompletionError。RunOperation 只能调用一次，并完整保留操作与清理错误。
+func (s *Supervisor) RunOperation(ctx context.Context, operation func(context.Context) error) error {
+	if ctx == nil {
+		return fmt.Errorf("supervisor context is nil")
+	}
+	if operation == nil {
+		return fmt.Errorf("supervisor operation is nil")
+	}
+	if err := validateParticipants(s.participants); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	if len(s.tasks) != 0 {
+		s.mu.Unlock()
+		return fmt.Errorf("supervisor operation does not accept long-running tasks")
+	}
+	if s.state != supervisorCreated {
+		s.mu.Unlock()
+		return fmt.Errorf("supervisor already run")
+	}
+	s.state = supervisorRunning
+	s.setDiagnosticsLocked(StateStarting, false, nil, nil)
+	participants := append([]Participant(nil), s.participants...)
+	s.mu.Unlock()
+
+	started := make([]Participant, 0, len(participants))
+	for _, participant := range participants {
+		if err := participant.Start(ctx); err != nil {
+			wrapped := fmt.Errorf("start participant %s: %w", participant.Name(), err)
+			s.setDiagnostics(StateDraining, false, wrapped, nil)
+			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
+			stopErr := s.stopStarted(shutdownCtx, started)
+			cancel()
+			finalErr := errors.Join(wrapped, stopErr)
+			s.setDiagnostics(StateFailed, false, finalErr, nil)
+			s.finish()
+			return finalErr
+		}
+		started = append(started, participant)
+	}
+
+	s.setDiagnostics(StateRunning, true, nil, nil)
+	operationErr := operation(ctx)
+	s.setDiagnostics(StateDraining, false, operationErr, nil)
+	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
+	s.setDiagnostics(StateStopping, false, operationErr, nil)
+	stopErr := s.stopStarted(shutdownCtx, started)
+	cancel()
+	finalErr := errors.Join(operationErr, stopErr)
+	if finalErr != nil {
+		s.setDiagnostics(StateFailed, false, finalErr, nil)
+	}
+	s.finish()
+	return finalErr
+}
+
 type taskResult struct {
 	name string
 	err  error

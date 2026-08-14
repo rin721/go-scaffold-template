@@ -2,15 +2,15 @@
 
 ## 状态
 
-- 当前状态：**FND 与 GOV-F 已实施并完成本地门禁；业务详细设计继续被真实用例门禁阻塞**。
+- 当前状态：**FND 与 GOV-F 已实施；业务解锁门禁已由 014 的真实 Todo 用例、独立研究计划和后续确认满足**。
 - 文档建立、契约校正与基础实施日期：2026-08-14。
 - 方案代码基线：`main@2daf47ad111141b27a1d8e100bb3d6e4cc1ea743`；实施从分支提交 `7eaba7174fb54c06c8bd31c7f7bc345d3f161936` 开始。
 - 用户已在方案报告后的独立消息中明确要求“开始实施 `012` 方案计划”，授权范围为 FND 与 GOV-F；没有授权虚构业务用例或进入 VSL。
-- 实施快照、验证命令与剩余边界见 [R021](research/R021-foundation-closure-implementation/report.md)。
+- 012 基础实施快照见 [R021](research/R021-foundation-closure-implementation/report.md)；首个业务切片的当前实现与验收见 [014 Todo 业务垂直切片](../014-todo-business-vertical-slice/README.md)。
 
 ## 一句话结论
 
-当前已形成从 mode-specific Bootstrap、严格配置、全应用单候选，到 Supervisor、HTTP lifecycle、readiness/degraded、重载/终止和 package graph 门禁的基础闭环。实现保留显式 Kernel Plan、stable facade、Lease、默认配置安全发布和候选事务，没有引入第二个 DI/生命周期容器，也没有把普通业务对象塞入 Kernel。基础门禁通过只允许重新讨论真实业务设计；因首个真实用例尚未确认，BIZ-D/VSL 仍保持阻塞。
+012 形成了从 mode-specific Bootstrap、严格配置、全应用单候选，到 Supervisor、HTTP lifecycle、readiness/degraded、重载/终止和 package graph 门禁的基础闭环。实现保留显式 Kernel Plan、stable facade、Lease、默认配置安全发布和候选事务，没有引入第二个 DI/生命周期容器，也没有把普通业务对象塞入 Kernel。随后 014 以真实 Todo actor、不变量、SQLite 数据边界、HTTP/CLI 入口和验收数据完成独立研究、计划、确认与实施；业务对象仍由 application composition root 手工构造。
 
 ## 实施判定
 
@@ -27,18 +27,18 @@
 - 同一配置节 registration 同时提供 defaults 与 strict typed validator；Source、重复字段、unknown/type、Snapshot 值域和默认生成回环均有失败测试。
 - Coordinator 是 Loader 唯一调用者；Kernel 与 application-owned HTTP 从同一候选读取，RestartRequired 在资源副作用前预检。
 - Supervisor 监督 blocking runner 的 ready、异常 error/nil 完成和不合作退出；终止先取消、反序 Stop，再在总期限内等待。
-- HTTP Server 由单一 owner 预绑定并执行阻塞 Serve、有界 Shutdown/Close/Wait；默认 Service 有 listener，但没有业务路由。
+- HTTP Server 由单一 owner 预绑定并执行阻塞 Serve、有界 Shutdown/Close/Wait；默认 Service 现由 014 安装 Todo 路由，未匹配请求仍返回 404。
 - Host 接入 process readiness/liveness 与安全 diagnostics；committed cleanup failure 进入 degraded、要求重启并阻断后续 reload。
 - 解析后的 Go package graph、注册冲突、生命周期、race 和静态检查进入可执行门禁。
 
-### 继续阻塞
+### 已由 014 解锁
 
-- 尚无用户确认的首个真实业务 actor、不变量、数据/事务 owner、入站协议和验收数据。
-- 因此 Handler、Service、Repository、Model、业务 Route/Command contribution 与公开错误协议仍不得实施。
+- Todo 明确了 actor、标题/状态/完成不变量、SQLite 数据 owner、HTTP/CLI 入站协议和跨入口验收数据。
+- Handler、Service、Repository、Model、Route/Command contribution 和业务错误映射只在 014 已确认范围内实施；这不构成自动生成未来业务模块的授权。
 
 ## 方案性质
 
-原 012 的“Kernel 资源平面 + 手工业务对象图”方向继续保留；R021 记录 FND/GOV-F 的实现快照并替代实施前事实 R017 和方案综合结论 R020。历史记录继续保留，但当前行为以根主题文档和代码为准。Handler、Service、Repository、Model、Route contribution 仍只是不冻结接口的候选约束。
+原 012 的“Kernel 资源平面 + 手工业务对象图”方向继续保留；R021 记录 FND/GOV-F 的历史实现快照并替代实施前事实 R017 和方案综合结论 R020。014 冻结当前 Todo 所需的最小业务契约，但不把它提升为所有业务模块的万能框架。历史记录继续保留，当前行为以根主题文档和代码为准。
 
 ## 阅读顺序
 
@@ -86,4 +86,4 @@
 
 ## 交付边界
 
-本轮没有为尚不存在的业务需求创造 `User`、`Order`、空 CRUD、Module SDK 或公开 contribution API。底层闭环已经通过；仍必须先获得首个真实业务用例、数据边界和入口验收，并重新确认业务方案，才能恢复业务模块详细设计。
+012 本身没有为尚不存在的业务需求创造 `User`、`Order`、空 CRUD 或 Module SDK。首个真实 Todo 用例已在 014 中单轨落地；未来模块仍必须先明确真实业务用例、数据边界和入口验收，并独立研究、计划和确认，不能把 Todo 目录机械复制为通用方案。

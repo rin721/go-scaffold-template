@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -47,6 +48,7 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		"database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s",
 		"cache:", "driver: disabled", "i18n:", "defaultLanguage: zh-CN",
 		"storage:", "basePath: .data/storage",
+		"todo:", "titleMaxRunes: 120", "defaultListLimit: 20", "maxListLimit: 100",
 		"http:", "addr: :8080",
 	} {
 		if !bytes.Contains(content, []byte(expected)) {
@@ -96,6 +98,10 @@ storage:
   driver: local
   local:
     basePath: %q
+todo:
+  titleMaxRunes: 120
+  defaultListLimit: 20
+  maxListLimit: 100
 http:
   addr: %q
 `, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), httpAddress)
@@ -121,15 +127,32 @@ http:
 			t.Fatalf("service exited before readiness: %v", err)
 		case <-ticker.C:
 			if fileExists(databasePath) && directoryExists(storagePath) {
-				response, requestErr := httpClient.Get("http://" + httpAddress + "/not-registered")
+				request, requestErr := http.NewRequest(http.MethodPost, "http://"+httpAddress+"/api/v1/todos", strings.NewReader(`{"title":"学习 Go"}`))
+				if requestErr != nil {
+					t.Fatalf("NewRequest() error = %v", requestErr)
+				}
+				request.Header.Set("Content-Type", "application/json")
+				response, requestErr := httpClient.Do(request)
 				if requestErr != nil {
 					continue
 				}
 				response.Body.Close()
-				if response.StatusCode != http.StatusNotFound {
+				if response.StatusCode != http.StatusCreated {
 					cancel()
 					<-done
-					t.Fatalf("default service HTTP status = %d, want %d", response.StatusCode, http.StatusNotFound)
+					t.Fatalf("Todo create status = %d, want %d", response.StatusCode, http.StatusCreated)
+				}
+				notFound, requestErr := httpClient.Get("http://" + httpAddress + "/not-registered")
+				if requestErr != nil {
+					cancel()
+					<-done
+					t.Fatalf("GET(not registered) error = %v", requestErr)
+				}
+				notFound.Body.Close()
+				if notFound.StatusCode != http.StatusNotFound {
+					cancel()
+					<-done
+					t.Fatalf("not registered status = %d, want %d", notFound.StatusCode, http.StatusNotFound)
 				}
 				cancel()
 				select {
@@ -151,6 +174,152 @@ http:
 				t.Fatal("service neither became ready nor stopped after cancellation")
 			}
 		}
+	}
+}
+
+func TestProcessTodoCLIUsesSQLiteAcrossInvocations(t *testing.T) {
+	directory := t.TempDir()
+	databasePath := filepath.Join(directory, "todo.db")
+	storagePath := filepath.Join(directory, "storage")
+	configPath := filepath.Join(directory, "config.yaml")
+	address := reserveLoopbackAddress(t)
+	payload := fmt.Sprintf(`logger:
+  environment: development
+  level: info
+database:
+  driver: sqlite
+  dsn: %q
+cache:
+  driver: disabled
+i18n:
+  defaultLanguage: zh-CN
+  messageFiles: []
+  missingBehavior: error
+storage:
+  driver: local
+  local:
+    basePath: %q
+todo:
+  titleMaxRunes: 120
+  defaultListLimit: 20
+  maxListLimit: 100
+http:
+  addr: %q
+`, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), address)
+	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write CLI config: %v", err)
+	}
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	process := newTestProcess(t, strings.NewReader(""), &stdout, &stderr)
+	process.configPath = configPath
+	process.environmentPrefix = "GO_SCAFFOLD2_TEST_014_"
+
+	if err := process.run(t.Context(), []string{"todo", "create", "--title", "学习 Go"}); err != nil {
+		t.Fatalf("todo create error = %v, stderr=%s", err, stderr.String())
+	}
+	var created struct {
+		ID     string `json:"id"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &created); err != nil || created.ID == "" || created.Status != "pending" {
+		t.Fatalf("create output = %q, parsed=%#v, err=%v", stdout.String(), created, err)
+	}
+
+	stdout.Reset()
+	if err := process.run(t.Context(), []string{"todo", "list"}); err != nil {
+		t.Fatalf("todo list error = %v", err)
+	}
+	var listed struct {
+		Total int `json:"total"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &listed); err != nil || listed.Total != 1 {
+		t.Fatalf("list output = %q, parsed=%#v, err=%v", stdout.String(), listed, err)
+	}
+
+	stdout.Reset()
+	if err := process.run(t.Context(), []string{"todo", "complete", "--id", created.ID}); err != nil {
+		t.Fatalf("todo complete error = %v", err)
+	}
+	var completed struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &completed); err != nil || completed.Status != "completed" {
+		t.Fatalf("complete output = %q, parsed=%#v, err=%v", stdout.String(), completed, err)
+	}
+	if !fileExists(databasePath) {
+		t.Fatal("Todo CLI did not create SQLite database")
+	}
+
+	serviceContext, cancelService := context.WithCancel(t.Context())
+	serviceDone := make(chan error, 1)
+	go func() {
+		serviceDone <- process.run(serviceContext, nil)
+	}()
+
+	baseURL := "http://" + address
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		response, err := http.Get(baseURL + "/api/v1/todos/" + created.ID)
+		if err == nil {
+			var fetched struct {
+				Status string `json:"status"`
+			}
+			decodeErr := json.NewDecoder(response.Body).Decode(&fetched)
+			response.Body.Close()
+			if response.StatusCode == http.StatusOK && decodeErr == nil {
+				if fetched.Status != "completed" {
+					cancelService()
+					<-serviceDone
+					t.Fatalf("HTTP fetched status = %q, want completed", fetched.Status)
+				}
+				break
+			}
+		}
+		if time.Now().After(deadline) {
+			cancelService()
+			<-serviceDone
+			t.Fatal("service did not expose Todo created by CLI")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	response, err := http.Post(
+		baseURL+"/api/v1/todos",
+		"application/json",
+		strings.NewReader(`{"title":"通过 HTTP 创建"}`),
+	)
+	if err != nil {
+		cancelService()
+		<-serviceDone
+		t.Fatalf("HTTP create error = %v", err)
+	}
+	var createdByHTTP struct {
+		ID string `json:"id"`
+	}
+	decodeErr := json.NewDecoder(response.Body).Decode(&createdByHTTP)
+	response.Body.Close()
+	if response.StatusCode != http.StatusCreated || decodeErr != nil || createdByHTTP.ID == "" {
+		cancelService()
+		<-serviceDone
+		t.Fatalf("HTTP create status = %d, body=%#v, decodeErr=%v", response.StatusCode, createdByHTTP, decodeErr)
+	}
+	cancelService()
+	select {
+	case err := <-serviceDone:
+		if err != nil {
+			t.Fatalf("service shutdown error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not stop after cancellation")
+	}
+
+	stdout.Reset()
+	if err := process.run(t.Context(), []string{"todo", "complete", "--id", createdByHTTP.ID}); err != nil {
+		t.Fatalf("CLI complete HTTP Todo error = %v", err)
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &completed); err != nil || completed.Status != "completed" {
+		t.Fatalf("cross-mode complete output = %q, parsed=%#v, err=%v", stdout.String(), completed, err)
 	}
 }
 
@@ -232,21 +401,6 @@ func TestExecuteReturnsErrorWhenReportingFails(t *testing.T) {
 	process := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, failingWriter{})
 	if exitCode := execute(context.Background(), process, []string{"unknown"}); exitCode != cli.ExitError {
 		t.Fatalf("exit code = %d, want %d", exitCode, cli.ExitError)
-	}
-}
-
-func TestApplicationLifecycleUsesInjectedLogger(t *testing.T) {
-	log := pkglogger.NewTestLogger()
-	lifecycle := applicationLifecycle{logging: log}
-	if err := lifecycle.Start(t.Context()); err != nil {
-		t.Fatalf("Start() error = %v", err)
-	}
-	if err := lifecycle.Stop(t.Context()); err != nil {
-		t.Fatalf("Stop() error = %v", err)
-	}
-	entries := log.Entries()
-	if len(entries) != 2 || entries[0].Message != "application started" || entries[1].Message != "application stopping" {
-		t.Fatalf("lifecycle entries = %#v", entries)
 	}
 }
 

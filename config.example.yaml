@@ -133,6 +133,14 @@ storage:
     usePathStyle: true
     publicBaseUrl: ""
 
+todo:
+  # 标题按 Unicode 字符数校验，不能只包含空白。
+  titleMaxRunes: 120
+  # list 未显式指定 limit 时使用的数量。
+  defaultListLimit: 20
+  # list 单次查询允许的最大数量。
+  maxListLimit: 100
+
 http:
   # HTTP listener 在进程 ready 前同步绑定；端口占用会使启动失败。
   addr: :8080

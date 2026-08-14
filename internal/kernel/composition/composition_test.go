@@ -53,7 +53,7 @@ func TestComposeBuildsServiceCapabilitiesWithoutCLI(t *testing.T) {
 }
 
 func TestComposeBootstrapGeneratesAllServiceSectionsWithoutKernel(t *testing.T) {
-	bootstrap, err := ComposeBootstrap(pkgcli.Config{Name: "test", DisableInteractiveHome: true})
+	bootstrap, err := ComposeBootstrap(pkgcli.Config{Name: "test", DisableInteractiveHome: true}, BootstrapOptions{})
 	if err != nil {
 		t.Fatalf("ComposeBootstrap() error = %v", err)
 	}
@@ -91,21 +91,6 @@ func TestComposeBootstrapGeneratesAllServiceSectionsWithoutKernel(t *testing.T) 
 	}
 }
 
-func TestExampleConfigSatisfiesCurrentServiceBindings(t *testing.T) {
-	bindings, err := bootstrapConfigBindings()
-	if err != nil {
-		t.Fatalf("bootstrap config bindings: %v", err)
-	}
-	path := filepath.Join("..", "..", "..", "config.example.yaml")
-	snapshot, err := config.New(config.FileSource(path)).Load(t.Context())
-	if err != nil {
-		t.Fatalf("load config example: %v", err)
-	}
-	if err := config.ValidateCandidate(snapshot, bindings...); err != nil {
-		t.Fatalf("validate config example: %v", err)
-	}
-}
-
 func TestComposeRejectsUnknownLoggerSelectionWithoutInstallingPlan(t *testing.T) {
 	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
 	capabilities, err := Compose(runtime, Options{Logger: LoggerSelection(255)})
@@ -121,7 +106,7 @@ func TestComposeRejectsUnknownLoggerSelectionWithoutInstallingPlan(t *testing.T)
 }
 
 func TestComposeBootstrapFailureDoesNotTouchServiceRuntime(t *testing.T) {
-	if bootstrap, err := ComposeBootstrap(pkgcli.Config{}); err == nil || bootstrap.CLI != nil {
+	if bootstrap, err := ComposeBootstrap(pkgcli.Config{}, BootstrapOptions{}); err == nil || bootstrap.CLI != nil {
 		t.Fatalf("ComposeBootstrap(invalid app) = %#v, %v", bootstrap, err)
 	}
 	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))

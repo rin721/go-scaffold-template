@@ -2,10 +2,10 @@
 
 ## 1. 当前门禁
 
-- 012 状态：**FND/GOV-F 已实施并通过本地验证；BIZ-D/VSL 阻塞**。
+- 012 状态：**FND/GOV-F 已实施；BIZ-D/VSL 的真实用例门禁已转由 014 满足并完成实施**。
 - 实施授权：用户在 Round 5 方案报告后的独立消息中明确要求“开始实施 `012` 方案计划”。
 - 实施范围：授权覆盖 FND-001..010 与 GOV-F-001..004；没有授权业务对象、业务协议或外部部署。
-- 业务实施：即使 FND/GOV 获确认，也不授权虚构业务；只有 `AC-BIZ-GATE-001` 通过并另行确认真实用例后才解锁 VSL。
+- 业务实施：`AC-BIZ-GATE-001` 后由 014 提供 Todo 真实用例、研究、计划与独立确认；实现证据统一记录在 [014 tasks](../014-todo-business-vertical-slice/tasks.md)，不回写伪造为 012 的原实施。
 
 状态说明：`已完成（实现）` 代表代码、测试与权威文档已同步；`阻塞` 代表真实业务需求或后续确认尚不存在。
 
@@ -16,9 +16,9 @@
 | DOC | 深化当前闭环审计、外部研究和单轨方案 | 无 | 已完成（文档） |
 | FND | CLI/Config 契约、单候选、监督、HTTP、状态、重载/终止闭环 | 用户明确确认 012 当前方案 | 已完成（实现） |
 | GOV-F | 基础 package/注册/lifecycle 门禁和权威文档同步 | FND | 已完成（实现） |
-| BIZ-D | 以真实用例恢复业务模块详细设计 | `AC-BIZ-GATE-001` + 真实用例确认 | 阻塞 |
-| VSL | 首个真实业务垂直切片 | BIZ-D 再确认 | 阻塞 |
-| GOV-B | 业务边界门禁与最终验证 | VSL | 阻塞 |
+| BIZ-D | 以真实用例恢复业务模块详细设计 | `AC-BIZ-GATE-001` + 真实用例确认 | 转入 014 并完成 |
+| VSL | 首个真实业务垂直切片 | BIZ-D 再确认 | 转入 014 并完成 |
+| GOV-B | 业务边界门禁与最终验证 | VSL | 转入 014 并完成 |
 
 详细任务见 [foundation.md](tasks/foundation.md)、[first-vertical-slice.md](tasks/first-vertical-slice.md) 和 [governance-and-verification.md](tasks/governance-and-verification.md)。
 
@@ -98,6 +98,12 @@ AC-BIZ-GATE-001 + real use case + reconfirmation -> BIZ-D -> VSL -> GOV-B
 - 本地验证：`go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./cmd/app`、`git diff --check` 与旧符号搜索；最终结果记录在 R021 和任务提交报告。
 - 业务结论：`AC-BIZ-GATE-001` 的基础条件通过；`AC-BIZ-GATE-002` 因真实用例未确认继续阻塞，所以 BIZ-D/VSL 不启动。
 
+### Round 7：2026-08-15，真实业务门禁转入 014
+
+- Todo 真实用例在独立 [014 变更](../014-todo-business-vertical-slice/README.md) 中完成研究、计划，并由用户在计划报告后的后续消息明确确认实施。
+- 014 实现 Model、Service、SQLite Repository/migration、Todo 配置、HTTP route contribution、Application CLI、one-shot Supervisor 与 application composition；不把业务对象加入 Kernel Plan。
+- Round 6 的 NotFound-only 与业务阻塞描述保留为当时快照，不再代表当前运行行为；当前代码与验收以 014 为准。
+
 ## 6. 完成与提交原则
 
-FND/GOV-F 已逐项关闭 [acceptance-matrix.md](requirements/acceptance-matrix.md) 的基础门禁并同步根权威文档。任务提交只纳入已确认实现与 012 既有未提交方案文档；既有 `.agents/skills` 迁移和 `tmp/` 不属于本任务，不纳入提交。业务实现仍需真实用例、业务方案和后续独立确认。
+FND/GOV-F 已逐项关闭 [acceptance-matrix.md](requirements/acceptance-matrix.md) 的基础门禁并同步根权威文档。012 的提交原则与历史范围保持不变；Todo 业务实现及其提交边界由 014 单独记录。既有 `.agents/skills` 迁移和 `tmp/` 不属于 014，也不纳入当前提交。

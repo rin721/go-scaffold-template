@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "Todo 首个真实业务垂直切片可行性"
+question: "当前 go-scaffold2 是否已经具备实现真实 Todo HTTP、SQLite、配置和 CLI 闭环的基础契约，仍需补齐哪些边界？"
+research_type: current-project
+topics: ["business-module", "HTTP", "SQLite", "configuration", "CLI", "lifecycle", "governance"]
+keywords: ["Todo", "http.NotFoundHandler", "database.Access", "BaseRepository", "CommandModeApplication", "RunOperation"]
+languages: ["Go"]
+frameworks: ["chi", "Cobra", "GORM"]
+technologies: ["net/http", "SQLite", "YAML", "JSON"]
+applicable_scenarios: ["014 实施计划", "首个真实业务模块", "HTTP 与 CLI 复用 Service"]
+non_applicable_scenarios: ["认证授权", "远程数据库部署", "缓存设计", "OpenAPI 生成"]
+status: active
+summary: "当前底座可承载 Todo；实施需新增模块内分层、配置/模型/HTTP/CLI binding、SQLite migration owner、路由聚合和 application one-shot 生命周期。"
+evidence:
+  types: ["source-code", "tests", "local-static-analysis", "user-decision"]
+  primary_sources:
+    - title: "当前进程入口、Bootstrap 与 Service composition"
+      locator: "cmd/app/main.go; internal/kernel/composition"
+      snapshot: "abca7f44cf9c35ec60796fec9680964e9cc4298e"
+    - title: "Database Access、Schema、Repository 与 migration 契约"
+      locator: "internal/kernel/app/database/database.go; pkg/database"
+      snapshot: "abca7f44cf9c35ec60796fec9680964e9cc4298e"
+    - title: "HTTP Router/Server、CLI mode 与 Supervisor 生命周期"
+      locator: "pkg/httpx; pkg/cli; pkg/supervisor"
+      snapshot: "abca7f44cf9c35ec60796fec9680964e9cc4298e"
+    - title: "当前全量与定向测试"
+      locator: "go test ./...; go test ./cmd/app ./internal/kernel/composition ./pkg/database ./pkg/httpx ./pkg/cli -count=1"
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["Kernel composition 或 Host API 变化", "Todo 公开 API 或配置项调整", "新增认证、缓存、OpenAPI 或破坏性迁移要求"]
+relations:
+  extends: []
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

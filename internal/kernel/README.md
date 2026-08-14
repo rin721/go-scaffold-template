@@ -92,7 +92,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 
 配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。Plan Freeze 后只把真实配置节注册安装到 Kernel；服务能力 composition 不再持有 CLI。
 
-当前 `cmd/app` 的有参数分支调用 `composition.ComposeBootstrap`，只构造默认配置管理器和 CLI，不创建 Kernel、稳定 facade、资源、listener 或 goroutine。`config init` 生成 Logger、Database、Cache、I18n、Storage、HTTP 六段：
+当前 `cmd/app` 的有参数分支调用 `composition.ComposeBootstrap`，只构造默认配置管理器和 CLI，不创建 Kernel、稳定 facade、资源、listener 或 goroutine。`config init` 聚合 Logger、Database、Cache、I18n、Storage、HTTP 与 application-owned Todo 七段：
 
 ```powershell
 go run ./cmd/app config init
@@ -129,54 +129,16 @@ Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`�
 
 ## 运行示例
 
-```go
-runtime, err := kernel.New(loader, kernel.Options{Logging: loggingManager})
-if err != nil {
-	return err
-}
-capabilities, err := composition.Compose(runtime, composition.Options{
-	Logger: composition.ConfiguredLoggerReplacement,
-})
-if err != nil {
-	return err
-}
-coordinator, err := kernel.NewCoordinator(runtime, composition.HTTPConfiguration())
-if err != nil {
-	return err
-}
-candidate, err := coordinator.Prepare(ctx)
-if err != nil {
-	return err
-}
-httpConfig, err := composition.HTTPServerConfig(candidate)
-if err != nil {
-	return err
-}
-httpServer, err := httpx.NewServer(&httpConfig, http.NotFoundHandler())
-if err != nil {
-	return err
-}
-// HTTP Server 同时是负责预绑定/停止的 Participant 和阻塞 Serve runner。
-host, err := kernel.NewHost(coordinator, kernel.HostOptions{
-	Watch: &kernel.WatchOptions{OnReloadError: reportReloadError},
-    Runners: []supervisor.Task{{
-        Name: "http-server.serve", Run: httpServer.Run, Ready: httpServer.Running(),
-    }},
-}, application, httpServer)
-if err != nil {
-	return err
-}
-return host.Run(ctx)
-```
+当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service，`prepareTodo` 从同一候选构造 Kernel capabilities 与 Todo 模块，`runService` 再显式创建 Router、HTTP Server 和 Host。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口，不重复装配业务对象。
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`Options{}` 保留内置 baseline；示例显式选择配置化 replacement。`Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP 配置与 Kernel 共用。HTTP runner 的完整注册见 `cmd/app/main.go`；创建 Host 不会新增或查找组件。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。业务模块的实际目录和运行命令见根 [README](../../README.md) 与 [Todo 模块说明](../business/todo/README.md)。
 
 ## 边界
 
-- 当前默认 Service 已接入 application-owned HTTP lifecycle；它只使用 `http.NotFoundHandler`，没有业务 middleware、handler、service、repository 或 model 装配。
+- 当前默认 Service 已接入 application-owned HTTP lifecycle 与 Todo 业务模块；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
 - Database 与 Storage App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 关闭 Redis，泛型 Cache Client 由其构造调用方关闭。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
-- 默认应用入口显式选择 Watch；启动前 CLI 不创建 Host、连接或 watcher。
-- HTTP 配置是 application-owned `RestartRequired` 节；同端口、文件锁、单消费者等排他资源不能套用双实例 Swap，在专用 Handoff 落地前均应选择 `RestartRequired`。
+- 默认应用入口显式选择 Watch；Todo Application CLI 解析成功后才创建 one-shot Kernel/数据库，并且不创建 Host、HTTP listener 或 watcher。
+- HTTP 与 Todo 配置都是 application-owned `RestartRequired` 节；同端口、业务策略变化、文件锁、单消费者等不能在当前进程中静默热切换。
