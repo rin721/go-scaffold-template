@@ -6,10 +6,13 @@ import (
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
+	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
+	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
+	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
 	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 	pkgvalidation "github.com/rin721/go-scaffold2/pkg/validation"
@@ -41,6 +44,9 @@ type Capabilities struct {
 	IDGenerator   pkgidgen.Generator
 	Validator     pkgvalidation.Validator
 	Database      databaseapp.Access
+	Cache         cacheapp.Access
+	I18n          pkgi18n.Translator
+	Storage       storageapp.Access
 	Configuration config.DefaultManager
 	CLI           pkgcli.App
 }
@@ -80,6 +86,18 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, err
 	}
+	cacheOutput, err := composeCache(plan)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	i18nOutput, err := composeI18n(plan)
+	if err != nil {
+		return Capabilities{}, err
+	}
+	storageOutput, err := composeStorage(plan)
+	if err != nil {
+		return Capabilities{}, err
+	}
 	frozen, err := plan.Freeze()
 	if err != nil {
 		return Capabilities{}, fmt.Errorf("freeze component plan: %w", err)
@@ -99,6 +117,8 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	return Capabilities{
 		Logger: loggerOutput.Output.Logger(), Clock: clockOutput.Output,
 		IDGenerator: idOutput.Output, Validator: validatorOutput.Output,
-		Database: databaseOutput.Output, Configuration: configurationOutput.manager, CLI: cliOutput,
+		Database: databaseOutput.Output, Cache: cacheOutput.Output,
+		I18n: i18nOutput.Output, Storage: storageOutput.Output,
+		Configuration: configurationOutput.manager, CLI: cliOutput,
 	}, nil
 }

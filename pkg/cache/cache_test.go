@@ -25,6 +25,25 @@ func TestNewRejectsInvalidInput(t *testing.T) {
 	}
 }
 
+func TestClientCloseIsIdempotentAndRejectsFurtherUse(t *testing.T) {
+	client, err := New[profile](newFakeRemoteStore(), &Config{
+		DefaultTTL:      time.Minute,
+		CleanupInterval: time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if err := client.Close(); err != nil {
+		t.Fatalf("second Close() error = %v", err)
+	}
+	if _, err := client.Get(context.Background(), "profile:1"); !errors.Is(err, ErrClientClosed) {
+		t.Fatalf("Get() after Close error = %v, want ErrClientClosed", err)
+	}
+}
+
 func TestSetRequiresExplicitTTL(t *testing.T) {
 	client := mustNewClient[profile](t, newFakeRemoteStore(), nil)
 
@@ -201,6 +220,11 @@ func mustNewClient[T any](t *testing.T, remote RemoteStore, cfg *Config) Client[
 	if err != nil {
 		t.Fatalf("New returned error: %v", err)
 	}
+	t.Cleanup(func() {
+		if err := client.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
 	return client
 }
 

@@ -125,5 +125,8 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/validation`：Default Validator，Fixed Direct。
 - `app/logger`：配置化 Logger Replacement，没有独立 Access；只通过 typed target 在提交/停止时切换或恢复 baseline Manager。
 - `app/database`：代码固定选择 GORM，配置化选择 SQLite/PostgreSQL/MySQL，Leased Swap，Ready 执行 Ping，Stop 关闭 Kernel 私有 Resource。
+- `app/cache`：配置化选择 disabled/Redis，Leased RestartRequired；Access 不暴露 RemoteStore，Redis 连接由 Kernel 关闭，泛型 Client 由调用方关闭。
+- `app/i18n`：配置化 Translator，Leased Swap；对消费者输出身份稳定的 `pkg/i18n.Translator` facade。
+- `app/storage`：配置化对象存储 Manager，Leased Swap；按 route 借用无 Close Client，文件工具不进入该组件。
 
 当前项目还没有 HTTP、middleware、handler、service、repository、model；本组件模型不替它们定义目录、构造器或容器职责。

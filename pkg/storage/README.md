@@ -10,6 +10,7 @@
 - 业务代码依赖 `Storage`、`StorageClient`、`Config`、`Workbook`、`ImageFormat` 等项目类型。
 - `afero`、`excelize`、`imaging`、AWS SDK 等第三方类型只留在实现层或适配子包内部。
 - 本包不定义业务文件目录、权限模型、上传 API、鉴权策略或全量清空对象存储入口。
+- Kernel Storage App 只治理对象存储 Manager；文件工具仍由调用方直接创建、使用和关闭。
 
 ## 文件工具示例
 
@@ -66,3 +67,17 @@ if err := client.Put(ctx, "setup/health.txt", []byte("ok"), storage.PutOptions{C
 ```
 
 `StorageManager.Close` 会同时尝试关闭 local 与 object client，并用 `errors.Join` 保留多个关闭错误。
+
+## Kernel 装配
+
+Kernel 组合返回稳定的 `capabilities.Storage`。调用方按 `primary`、`local` 或 `object` route 在回调内借用窄 Client；Client 不含 `Close`，回调结束后不能继续使用：
+
+```go
+err := capabilities.Storage.Use(ctx, storageapp.RoutePrimary, func(client storageapp.Client) error {
+    return client.Put(ctx, "documents/report.pdf", content, storage.PutOptions{
+        ContentType: "application/pdf",
+    })
+})
+```
+
+默认 Driver 为 local，路径是 `.data/storage`。Storage 配置使用 `KernelInstanceSwap`：候选 Manager 构造并通过就绪检查后才切换稳定 Access，失败保留旧实例。S3/MinIO 凭据应通过环境变量提供，不能写入仓库配置。

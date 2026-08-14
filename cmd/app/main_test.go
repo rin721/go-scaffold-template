@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	"github.com/rin721/go-scaffold2/pkg/cli"
@@ -38,7 +40,12 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read generated config: %v", err)
 	}
-	for _, expected := range []string{"logger:", "environment: development", "level: info", "database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s"} {
+	for _, expected := range []string{
+		"logger:", "environment: development", "level: info",
+		"database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s",
+		"cache:", "driver: disabled", "i18n:", "defaultLanguage: zh-CN",
+		"storage:", "basePath: .data/storage",
+	} {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)
 		}
@@ -62,6 +69,82 @@ func TestProcessServiceModePreservesMissingConfigError(t *testing.T) {
 	if !strings.Contains(err.Error(), "run application host") {
 		t.Fatalf("service mode error = %v, want host context", err)
 	}
+}
+
+func TestProcessServiceModeStartsDefaultCapabilitiesWithoutExternalServices(t *testing.T) {
+	directory := t.TempDir()
+	databasePath := filepath.Join(directory, "app.db")
+	storagePath := filepath.Join(directory, "storage")
+	configPath := filepath.Join(directory, "config.yaml")
+	payload := fmt.Sprintf(`logger:
+  environment: development
+  level: info
+database:
+  driver: sqlite
+  dsn: %q
+cache:
+  driver: disabled
+i18n:
+  defaultLanguage: zh-CN
+  messageFiles: []
+  missingBehavior: error
+storage:
+  driver: local
+  local:
+    basePath: %q
+`, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath))
+	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
+		t.Fatalf("write service config: %v", err)
+	}
+
+	process := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	process.configPath = configPath
+	process.environmentPrefix = "GO_SCAFFOLD2_TEST_011_"
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- process.run(ctx, nil) }()
+
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	timeout := time.NewTimer(5 * time.Second)
+	defer timeout.Stop()
+	for {
+		select {
+		case err := <-done:
+			t.Fatalf("service exited before readiness: %v", err)
+		case <-ticker.C:
+			if fileExists(databasePath) && directoryExists(storagePath) {
+				cancel()
+				select {
+				case err := <-done:
+					if err != nil {
+						t.Fatalf("service shutdown error = %v", err)
+					}
+				case <-time.After(5 * time.Second):
+					t.Fatal("service did not stop after cancellation")
+				}
+				return
+			}
+		case <-timeout.C:
+			cancel()
+			select {
+			case <-done:
+				t.Fatal("service did not create default SQLite and local Storage resources")
+			case <-time.After(5 * time.Second):
+				t.Fatal("service neither became ready nor stopped after cancellation")
+			}
+		}
+	}
+}
+
+func fileExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.Mode().IsRegular()
+}
+
+func directoryExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
 }
 
 func TestProcessRejectsNilContext(t *testing.T) {

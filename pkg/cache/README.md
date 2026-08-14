@@ -7,11 +7,11 @@
 - L1 使用 `github.com/patrickmn/go-cache`，提供进程内 TTL 缓存，适合降低热点 key 的 Redis 访问频率。
 - L2 通过 `github.com/redis/go-redis/v9` 接入 Redis，但 go-redis 类型只出现在 `pkg/cache/redisstore` 适配子包。
 - 缓存值使用 `github.com/vmihailenco/msgpack/v5` 序列化为字节后写入 Redis，业务代码不需要手写 JSON 或 msgpack 编解码。
-- 本包不使用 gocache chain。当前实现由项目层同步控制 L1/L2 写入、回填、删除和 tag 失效，确保错误能完整向上返回，并避免隐藏后台 goroutine。
+- 本包不使用 gocache chain。当前实现由项目层同步控制 L1/L2 写入、回填、删除和 tag 失效；L1 清理 goroutine 由 Client 创建并在 `Close` 时等待退出。
 
 ## 设计目标
 
-- 显式依赖：应用入口创建 Redis client 和 cache client，再通过构造函数注入业务组件。
+- 显式依赖：独立使用时由调用方创建 Redis client 和 cache client；Kernel 模式通过稳定 Cache Access 构造 typed Client，再通过构造函数注入业务组件。
 - 泛型契约：业务通过 `Client[T]` 读写具体类型，不接触 `[]byte` 或 Redis 命令。
 - TTL 必填：`Config.DefaultTTL` 或 `WithTTL` 必须提供大于 0 的有效期，避免隐式永不过期。
 - 可替换：根包只依赖 `RemoteStore` 字节级契约；未来替换 Redis 适配时不影响业务 API。
@@ -82,6 +82,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
+	defer profiles.Close()
 
 	err = profiles.Set(ctx, "profile:1", Profile{ID: 1, Name: "Rin"}, cache.WithTags("profile"))
 	if err != nil {
@@ -124,7 +125,7 @@ if err := profiles.InvalidateTags(ctx, "profile"); err != nil {
 
 ## Redis 连接所有权
 
-`redisstore.New` 接收应用层传入的 `redis.UniversalClient`。缓存包不会创建、关闭或重配 Redis 连接；连接池、认证、TLS、监控和关闭顺序由应用入口统一负责。
+`redisstore.New` 接收外部传入的 `redis.UniversalClient`。缓存包不会创建、关闭或重配 Redis 连接；独立使用时由应用入口拥有连接池，Kernel 组合模式则由 Cache App 创建并关闭连接池。
 
 这样做会让 `redisstore` 构造入口接触 go-redis 类型，但第三方类型不会进入业务常用的 `cache.Client[T]` 接口。
 
@@ -136,9 +137,13 @@ if err := profiles.InvalidateTags(ctx, "profile"); err != nil {
 - `ErrInvalidTTL`：写入时没有有效 TTL，或 TTL 为负。
 - `ErrNilRemoteStore`：构造 cache client 或 Redis store 时缺少远端存储。
 - `ErrInvalidCachedValue`：缓存值序列化或反序列化失败。
+- `ErrClientClosed`：typed Client 已关闭，不能继续使用。
+- `ErrDisabled`：Kernel 的共享 Cache 后端被明确禁用。
 
 调用方应使用 `errors.Is` 判断上述错误，不依赖错误字符串。
 
 ## 在业务代码中的推荐使用方式
 
-推荐在应用入口创建 `cache.Client[T]`，再通过构造函数注入业务组件。业务组件不要自行创建 Redis client，也不要绕过 `pkg/cache` 直接散写 Redis key、tag 索引或序列化格式。
+推荐在 composition 完成后通过 `cacheapp.NewClient[T](capabilities.Cache, cfg)` 创建 `cache.Client[T]`，再通过构造函数注入业务组件。typed Client 拥有自己的 L1 状态和清理 goroutine，创建方必须调用 `Close`；它不拥有 Kernel 的 Redis 连接。业务组件不要自行创建 Redis client，也不要绕过 `pkg/cache` 直接散写 Redis key、tag 索引或序列化格式。
+
+Cache App 默认 `disabled`，启用 Redis 后会在启动 Ready 阶段 Ping。Redis 配置变化采用 `RestartRequired`，不会在运行期替换后端；这避免已有 typed Client 的 L1 状态与远端命名空间在单个进程中跨代混用。

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	gocache "github.com/patrickmn/go-cache"
 	"github.com/vmihailenco/msgpack/v5"
@@ -17,6 +19,11 @@ type layeredClient[T any] struct {
 	cfg     resolvedConfig
 	mu      sync.RWMutex
 	tagKeys map[string]map[string]struct{}
+
+	closed        atomic.Bool
+	closeOnce     sync.Once
+	cleanupCancel context.CancelFunc
+	cleanupDone   chan struct{}
 }
 
 // New 创建 L1 内存缓存 + L2 远端缓存组成的泛型缓存客户端。
@@ -30,17 +37,22 @@ func New[T any](remote RemoteStore, cfg *Config) (Client[T], error) {
 		return nil, err
 	}
 
-	return &layeredClient[T]{
-		local:   gocache.New(gocache.NoExpiration, resolved.CleanupInterval),
+	client := &layeredClient[T]{
+		local:   gocache.New(gocache.NoExpiration, 0),
 		remote:  remote,
 		cfg:     resolved,
 		tagKeys: make(map[string]map[string]struct{}),
-	}, nil
+	}
+	client.startCleanup()
+	return client, nil
 }
 
 func (c *layeredClient[T]) Get(ctx context.Context, key string) (T, error) {
 	var zero T
 	if err := validateContext(ctx); err != nil {
+		return zero, err
+	}
+	if err := c.validateOpen(); err != nil {
 		return zero, err
 	}
 
@@ -76,6 +88,9 @@ func (c *layeredClient[T]) Set(ctx context.Context, key string, value T, options
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
+	if err := c.validateOpen(); err != nil {
+		return err
+	}
 
 	cacheKey, err := c.cacheKey(key)
 	if err != nil {
@@ -108,6 +123,9 @@ func (c *layeredClient[T]) Delete(ctx context.Context, key string) error {
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
+	if err := c.validateOpen(); err != nil {
+		return err
+	}
 
 	cacheKey, err := c.cacheKey(key)
 	if err != nil {
@@ -127,6 +145,9 @@ func (c *layeredClient[T]) InvalidateTags(ctx context.Context, tags ...string) e
 	if err := validateContext(ctx); err != nil {
 		return err
 	}
+	if err := c.validateOpen(); err != nil {
+		return err
+	}
 
 	normalizedTags := normalizeTags(c.cfg, tags)
 	if len(normalizedTags) == 0 {
@@ -141,6 +162,57 @@ func (c *layeredClient[T]) InvalidateTags(ctx context.Context, tags ...string) e
 
 	if err != nil {
 		return fmt.Errorf("invalidate remote cache tags: %w", err)
+	}
+	return nil
+}
+
+// Close 停止当前 typed Client 拥有的 L1 清理任务并释放本地状态。
+func (c *layeredClient[T]) Close() error {
+	if c == nil {
+		return nil
+	}
+	c.closeOnce.Do(func() {
+		c.closed.Store(true)
+		if c.cleanupCancel != nil {
+			c.cleanupCancel()
+		}
+		if c.cleanupDone != nil {
+			<-c.cleanupDone
+		}
+		c.local.Flush()
+		c.mu.Lock()
+		c.tagKeys = make(map[string]map[string]struct{})
+		c.mu.Unlock()
+	})
+	return nil
+}
+
+func (c *layeredClient[T]) startCleanup() {
+	c.cleanupDone = make(chan struct{})
+	if c.cfg.CleanupInterval <= 0 {
+		close(c.cleanupDone)
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	c.cleanupCancel = cancel
+	go func() {
+		defer close(c.cleanupDone)
+		ticker := time.NewTicker(c.cfg.CleanupInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				c.local.DeleteExpired()
+			}
+		}
+	}()
+}
+
+func (c *layeredClient[T]) validateOpen() error {
+	if c == nil || c.closed.Load() {
+		return ErrClientClosed
 	}
 	return nil
 }

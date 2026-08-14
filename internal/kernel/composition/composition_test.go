@@ -27,7 +27,7 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compose(disabled) error = %v", err)
 	}
-	if disabled.Logger == nil || disabled.Clock == nil || disabled.IDGenerator == nil || disabled.Validator == nil || disabled.Database == nil || disabled.Configuration == nil || disabled.CLI != nil {
+	if disabled.Logger == nil || disabled.Clock == nil || disabled.IDGenerator == nil || disabled.Validator == nil || disabled.Database == nil || disabled.Cache == nil || disabled.I18n == nil || disabled.Storage == nil || disabled.Configuration == nil || disabled.CLI != nil {
 		t.Fatalf("Compose(disabled) = %#v", disabled)
 	}
 	if disabled.Logger != disabledRuntime.Logger() {
@@ -87,8 +87,12 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	}
 	loggerIndex := bytes.Index(cliPayload, []byte("logger:"))
 	databaseIndex := bytes.Index(cliPayload, []byte("database:"))
-	if loggerIndex < 0 || databaseIndex < 0 || loggerIndex >= databaseIndex {
-		t.Fatalf("generated capability order is not Logger then Database:\n%s", cliPayload)
+	cacheIndex := bytes.Index(cliPayload, []byte("cache:"))
+	i18nIndex := bytes.Index(cliPayload, []byte("i18n:"))
+	storageIndex := bytes.Index(cliPayload, []byte("storage:"))
+	if loggerIndex < 0 || databaseIndex < 0 || cacheIndex < 0 || i18nIndex < 0 || storageIndex < 0 ||
+		loggerIndex >= databaseIndex || databaseIndex >= cacheIndex || cacheIndex >= i18nIndex || i18nIndex >= storageIndex {
+		t.Fatalf("generated capability order is not Logger, Database, Cache, I18n, Storage:\n%s", cliPayload)
 	}
 }
 
@@ -116,6 +120,11 @@ func TestComposeBuiltinLoggerOmitsConfiguredDefaults(t *testing.T) {
 	if !bytes.Contains(payload, []byte("database:")) {
 		t.Fatalf("builtin-only configuration misses database defaults:\n%s", payload)
 	}
+	for _, section := range [][]byte{[]byte("cache:"), []byte("i18n:"), []byte("storage:")} {
+		if !bytes.Contains(payload, section) {
+			t.Fatalf("builtin-only configuration misses %s defaults:\n%s", section, payload)
+		}
+	}
 	capabilities.Logger.Info("builtin logger active")
 }
 
@@ -139,7 +148,7 @@ func TestComposeCLIErrorReturnsZeroCapabilities(t *testing.T) {
 	if err == nil {
 		t.Fatal("Compose(invalid CLI) error = nil")
 	}
-	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
+	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Cache != nil || capabilities.I18n != nil || capabilities.Storage != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
 		t.Fatalf("Compose(invalid CLI) = %#v, want zero capabilities", capabilities)
 	}
 	if _, err := Compose(runtime, Options{}); err != nil {
@@ -156,7 +165,7 @@ func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
 	if err == nil {
 		t.Fatal("second Compose() error = nil")
 	}
-	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil {
+	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Cache != nil || capabilities.I18n != nil || capabilities.Storage != nil {
 		t.Fatal("second Compose() returned partial capabilities")
 	}
 	if capabilities.Configuration != nil || capabilities.CLI != nil {

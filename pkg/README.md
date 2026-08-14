@@ -17,11 +17,11 @@
 | --- | --- | --- |
 | `logger` | `go.uber.org/zap` | 业务依赖窄 Logger；构造方通过 Resource 独占 Sync/Close 和文件 sink；提供 noop/test logger 和审计字段。 |
 | `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。 |
-| `i18n` | `go-i18n/v2` + `x/text/language` + `yaml.v3` | 构造翻译器并加载本地化资源，资源格式细节留在包内。 |
+| `i18n` | `go-i18n/v2` + `x/text/language` + `yaml.v3` | 构造翻译器并加载本地化资源；Kernel 组合输出身份稳定、内部可换代的 Translator facade。 |
 | `database` | `gorm`、SQLite、PostgreSQL、MySQL | 提供项目自有 Schema、Repository、事务、迁移与资源契约，不暴露 GORM 类型。 |
-| `cache` | `go-cache`、`go-redis/v9`、`msgpack` | 构造泛型缓存客户端，提供 TTL、批量读取和 singleflight 防击穿。 |
+| `cache` | `go-cache`、`go-redis/v9`、`msgpack` | 构造调用方拥有的泛型缓存客户端；Kernel 可治理 disabled/Redis 后端与连接生命周期。 |
 | `cli` | `cobra`、`Bubble Tea`、`Lip Gloss` | 构造 CLI 应用、命令、flag 和交互式提示；TUI option 不进入业务契约。 |
-| `storage` | 本地文件系统、AWS SDK v2 S3 兼容对象存储、文件辅助库 | 构造对象存储和本地文件工具；公开接口不泄漏 `afero`、`excelize`、`imaging` 类型。 |
+| `storage` | 本地文件系统、AWS SDK v2 S3 兼容对象存储、文件辅助库 | 构造对象存储和本地文件工具；Kernel 只治理对象存储 Manager，公开接口不泄漏第三方类型或共享资源关闭权。 |
 | `validation` | `go-playground/validator/v10` | 构造结构体验证器，输出项目自有字段错误。 |
 | `fault` | 标准库 `errors` | 封装错误码、分类、可重试、取消/超时、关闭错误聚合和脱敏输出。 |
 | `supervisor` | `context`、`os/signal`、`errgroup` | 监督进程级 Participant 和长期 Task，统一处理信号、失败取消与优雅退出。 |

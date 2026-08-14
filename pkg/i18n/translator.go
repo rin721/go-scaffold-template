@@ -18,6 +18,14 @@ type bundleTranslator struct {
 	missingBehavior MissingBehavior
 }
 
+// ValidateConfig 校验 Translator 配置，但不读取消息文件。
+func ValidateConfig(cfg *Config) error {
+	if _, err := resolveConfig(cfg); err != nil {
+		return fmt.Errorf("resolve i18n config: %w", err)
+	}
+	return nil
+}
+
 // New 根据配置创建 Translator。
 func New(cfg *Config) (Translator, error) {
 	resolved, err := resolveConfig(cfg)

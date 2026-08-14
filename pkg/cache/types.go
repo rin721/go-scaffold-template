@@ -11,6 +11,7 @@ type Client[T any] interface {
 	Set(ctx context.Context, key string, value T, options ...SetOption) error
 	Delete(ctx context.Context, key string) error
 	InvalidateTags(ctx context.Context, tags ...string) error
+	Close() error
 }
 
 // RemoteStore 定义远端缓存存储必须满足的字节级能力。

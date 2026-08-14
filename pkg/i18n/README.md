@@ -25,7 +25,7 @@ pkg/i18n/
 ├── constants.go    # 默认语言、文件扩展名、策略字符串
 ├── defaults.go     # 默认配置和默认值
 ├── message.go      # Message 和 LocalizeOption
-├── translator.go   # Translator 接口和 New 构造函数
+├── translator.go   # Translator 接口、ValidateConfig 和 New 构造函数
 └── README.md       # 使用文档
 ```
 
@@ -150,7 +150,7 @@ func main() {
 
 ## 在业务代码中的推荐使用方式
 
-推荐在应用入口创建 `Translator`，再通过构造函数注入业务组件。业务组件只依赖 `i18n.Translator`，不要在业务函数内部重复加载翻译资源。
+独立使用时推荐在应用入口创建 `Translator`；Kernel 组合模式直接把 `capabilities.I18n` 这个稳定 facade 通过构造函数注入业务组件。业务组件只依赖 `i18n.Translator`，不要在业务函数内部重复加载翻译资源。
 
 ```go
 package user
@@ -173,4 +173,4 @@ func (s *Service) Welcome(language string, name string) (string, error) {
 }
 ```
 
-本包当前不提供全局 translator。全局实例会隐藏资源加载顺序和依赖关系，也会让测试隔离变复杂；脚手架项目默认采用显式创建和注入。
+本包当前不提供全局 translator。Kernel facade 也是 `Compose` 的显式输出，不是全局变量；配置成功重载时 facade 身份不变、内部 Translator 换代，资源加载失败时保留旧实例。Kernel 配置中的消息文件以进程工作目录为根，缺失策略字符串使用 `error` 或 `use-id`。

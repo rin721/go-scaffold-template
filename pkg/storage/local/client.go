@@ -2,6 +2,8 @@ package local
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -90,19 +92,29 @@ func (c *Client) Exists(_ context.Context, key string) (bool, error) {
 }
 
 func (c *Client) HealthCheck(ctx context.Context) error {
-	const key = ".setup-healthcheck"
+	var suffix [12]byte
+	if _, err := rand.Read(suffix[:]); err != nil {
+		return fmt.Errorf("create local storage healthcheck key: %w", err)
+	}
+	key := ".setup-healthcheck-" + hex.EncodeToString(suffix[:])
 	if err := c.Put(ctx, key, []byte("ok"), storageclient.PutOptions{ContentType: "text/plain"}); err != nil {
 		return err
 	}
-	defer c.Delete(context.Background(), key)
 	data, _, err := c.Get(ctx, key)
 	if err != nil {
-		return err
+		return errors.Join(err, c.Delete(context.Background(), key))
 	}
 	if string(data) != "ok" {
-		return fmt.Errorf("unexpected local storage healthcheck payload")
+		return errors.Join(fmt.Errorf("unexpected local storage healthcheck payload"), c.Delete(context.Background(), key))
 	}
-	return nil
+	exists, err := c.Exists(ctx, key)
+	if err != nil {
+		return errors.Join(err, c.Delete(context.Background(), key))
+	}
+	if !exists {
+		return errors.Join(fmt.Errorf("local storage healthcheck object is missing"), c.Delete(context.Background(), key))
+	}
+	return c.Delete(context.Background(), key)
 }
 
 func (c *Client) Close() error {

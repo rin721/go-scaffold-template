@@ -174,14 +174,23 @@ func writeReloadConfig(t *testing.T, path, level, logPath, driver, dsn string) {
   addCaller: false
   addStacktrace: false
 database:
-  engine: gorm
   driver: %s
   dsn: %s
   pool:
     maxOpenConns: 2
     maxIdleConns: 1
   pingTimeout: 1s
-`, level, yamlString(logPath), yamlString(logPath), driver, yamlString(dsn))
+cache:
+  driver: disabled
+i18n:
+  defaultLanguage: zh-CN
+  messageFiles: []
+  missingBehavior: error
+storage:
+  driver: local
+  local:
+    basePath: %s
+`, level, yamlString(logPath), yamlString(logPath), driver, yamlString(dsn), yamlString(filepath.Join(filepath.Dir(path), "storage")))
 	temporary := path + ".next"
 	if err := os.WriteFile(temporary, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write config candidate: %v", err)

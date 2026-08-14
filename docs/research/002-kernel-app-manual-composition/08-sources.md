@@ -13,8 +13,11 @@
 | 配置监听 | `internal/kernel/watch.go`、`internal/kernel/config/watch.go` | fsnotify、防抖、单次 Reload 错误回调 |
 | Host | `internal/kernel/host.go` | Kernel 与业务 Participant 的监督顺序 |
 | Supervisor | `pkg/supervisor/supervisor.go` | 顺序 Start、Task、失败取消和反向 Stop |
-| Logger 组件 | `internal/kernel/app/logger/logger.go` | 私有 Resource、typed Access 和 Activation |
+| Logger 组件 | `internal/kernel/app/logger/logger.go` | 私有 Resource、稳定 facade 和 typed target replacement |
 | Database 组件 | `internal/kernel/app/database/database.go` | typed Config、New、Ready/Ping、私有 Close 和 Access |
+| Cache 组件 | `internal/kernel/app/cache/cache.go` | disabled/Redis、稳定 Access、Ready/Ping、RestartRequired 和连接池所有权 |
+| I18n 组件 | `internal/kernel/app/i18n/i18n.go` | typed Config、稳定 Translator facade 和 KernelInstanceSwap |
+| Storage 组件 | `internal/kernel/app/storage/storage.go` | 对象存储 route、借用 Client、Ready、私有 Close 和 KernelInstanceSwap |
 | 显式组合 | `internal/kernel/composition/*.go` | 固定清单、每能力登记、Defaults/CLI 聚合 |
 | Clock | `pkg/clock/clock.go`、`internal/kernel/app/clock/clock.go` | 项目契约与 Fixed Direct Definition |
 | ID Generator | `pkg/idgen/idgen.go`、`internal/kernel/app/idgen/idgen.go` | 项目契约与 Fixed Direct Definition |

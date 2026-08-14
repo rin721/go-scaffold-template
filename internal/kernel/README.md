@@ -17,7 +17,7 @@ pkg/<name>
 - `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并用 typed `Replace` 指明替换目标；所有检查成功后才一次性安装。
 - Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
 
-当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database。修改清单只发生在 composition，不使用 `init` 自动注册。
+当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database、Cache、I18n、Storage。修改清单只发生在 composition，不使用 `init` 自动注册。
 
 ## 两类输出
 
@@ -45,6 +45,12 @@ err := capabilities.Database.Use(ctx, func(client databaseapp.Client) error {
 一次 `Use` 是一次实例使用租约。回调取得的 Database Client 不含 `Close`，动态对象也不是 Resource；回调结束后逃逸的 Client、Repository 和 Tx 返回 `ErrClientUnavailable`。这样 Kernel 才能等待旧代使用结束并安全关闭连接池。
 
 Database App 在 `build` 中明确调用 `pkg/database.NewGORM`，配置只选择 `sqlite/postgres/mysql` Driver 与连接参数，不包含可切换底层实现的 Engine。业务仓储通过项目 `Schema`、`BaseRepository` 和 `Tx` 使用数据库，不接触 GORM 类型；就绪检查通过 `Database Access.Ping` 在当前资源租约内执行，不暴露 Stats 或 Close。
+
+Cache 使用 `ManagedConfigured + Leased + RestartRequired`。稳定 Access 不公开 `RemoteStore`；调用方通过 `cacheapp.NewClient[T]` 构造自己拥有且必须关闭的泛型 Client。默认 `disabled` 不连接 Redis；启用 Redis 后 App 拥有并关闭连接池。Cache 配置变化会在整轮 Reload 产生任何副作用前返回 `RestartRequired`。
+
+I18n 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，但输出仍是普通 `pkg/i18n.Translator` 稳定 facade。消息文件相对进程工作目录读取；成功重载后 facade 身份不变、内部 Translator 换代，候选资源加载失败则旧翻译器继续服务。
+
+Storage 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，只治理对象存储 Manager。调用方通过 `Access.Use(ctx, Route, callback)` 借用不含 `Close` 的 Client；回调结束后逃逸 Client 会返回 `ErrClientUnavailable`。`pkg/storage.New` 提供的文件工具仍由直接调用方创建和关闭，不进入全局装配。
 
 Logger 不是第二个 Leased Access。Kernel 构造时强制接收 baseline Manager，并把同一 Manager 作为 typed target 加入 Plan：
 
@@ -86,7 +92,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 
 配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。composition 在本地 Plan Freeze 后聚合真实 Defaults 与 CLI Contract，全部构造成功后才 `Kernel.Install`。
 
-当前 `cmd/app` 显式选择配置化 Logger replacement，因此 `config init` 仍只生成 Logger、Database 两段：
+当前 `cmd/app` 显式选择配置化 Logger replacement，因此 `config init` 生成 Logger、Database、Cache、I18n、Storage 五段：
 
 ```powershell
 go run ./cmd/app config init
@@ -150,7 +156,7 @@ return host.Run(ctx)
 - 当前没有 HTTP Server、middleware、handler、service、repository、model 等业务层装配。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
-- Database App 私有实例持有 `Close`，Access 只暴露使用能力。
+- Database 与 Storage App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 关闭 Redis，泛型 Cache Client 由其构造调用方关闭。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
 - 默认应用入口显式选择 Watch；启动前 CLI 不创建 Host、连接或 watcher。
 - HTTP 同端口、文件锁、单消费者等排他资源不能套用双实例 Swap；在专用 Handoff 落地前应选择 `RestartRequired`。

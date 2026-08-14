@@ -69,3 +69,66 @@ database:
 
   # 构造和就绪检查的超时时间；0 使用 database 包默认值，负数非法。
   pingTimeout: 5s
+
+cache:
+  # 默认显式禁用，因此本地启动不依赖 Redis。启用后只允许 redis。
+  # Cache 后端配置变化需要重启，避免既有 typed Client 的 L1 状态跨后端迁移。
+  driver: disabled
+  # driver: redis
+
+  redis:
+    address: 127.0.0.1:6379
+    username: ""
+    # 密码不要写入配置文件，使用 APP_CACHE__REDIS__PASSWORD。
+    password: ""
+    database: 0
+    dialTimeout: 5s
+    readTimeout: 3s
+    writeTimeout: 3s
+    # 0 使用 go-redis 默认连接池计算；负数非法。
+    poolSize: 0
+    minIdleConns: 0
+    tagPrefix: "cache:tag:"
+    pingTimeout: 5s
+
+i18n:
+  defaultLanguage: zh-CN
+  # 资源路径相对进程工作目录，支持 JSON、YAML 和 YML。
+  messageFiles: []
+  # messageFiles:
+  #   - locales/messages.zh-CN.yaml
+  #   - locales/messages.en.json
+  # 缺失翻译策略：error 或 use-id。
+  missingBehavior: error
+  # missingBehavior: use-id
+
+storage:
+  # 默认使用受控本地目录；也可选择 disabled、s3、minio、local+s3 或 local+minio。
+  driver: local
+  local:
+    basePath: .data/storage
+    publicUrl: ""
+
+  s3:
+    # provider 可选 s3 或 r2。
+    provider: s3
+    endpoint: ""
+    region: us-east-1
+    bucket: ""
+    # 凭据不要写入配置文件，使用 APP_STORAGE__S3__ACCESSKEYID 和
+    # APP_STORAGE__S3__SECRETACCESSKEY。
+    accessKeyId: ""
+    secretAccessKey: ""
+    usePathStyle: false
+    publicBaseUrl: ""
+
+  minio:
+    provider: minio
+    endpoint: ""
+    region: us-east-1
+    bucket: ""
+    # 使用 APP_STORAGE__MINIO__ACCESSKEYID 和 APP_STORAGE__MINIO__SECRETACCESSKEY。
+    accessKeyId: ""
+    secretAccessKey: ""
+    usePathStyle: true
+    publicBaseUrl: ""

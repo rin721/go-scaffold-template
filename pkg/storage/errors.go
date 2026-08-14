@@ -25,4 +25,19 @@ var (
 
 	// ErrWatcherAlreadyExists 监听器已存在错误
 	ErrWatcherAlreadyExists = errors.New("Storage: watcher already exists for this path")
+
+	// ErrDisabled 表示对象存储能力被明确禁用。
+	ErrDisabled = errors.New("storage backend is disabled")
+
+	// ErrClientUnavailable 表示借用的对象存储 Client 已失效或当前路由没有实例。
+	ErrClientUnavailable = errors.New("storage client is unavailable")
+
+	// ErrNilContext 表示对象存储操作缺少 context。
+	ErrNilContext = errors.New("storage context is nil")
+
+	// ErrNilClientFunc 表示对象存储租约回调为空。
+	ErrNilClientFunc = errors.New("storage client callback is nil")
+
+	// ErrInvalidRoute 表示对象存储访问路由非法。
+	ErrInvalidRoute = errors.New("storage route is invalid")
 )
