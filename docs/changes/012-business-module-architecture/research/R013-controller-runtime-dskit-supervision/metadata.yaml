@@ -1,0 +1,35 @@
+schema_version: 1
+id: R013
+title: "controller-runtime 与 dskit 运行监督研究"
+question: "成熟 Go 项目如何表达长期运行单元、运行期失败、停止等待、服务状态和 readiness？"
+research_type: framework
+topics: ["supervision", "runnable", "state machine", "readiness", "graceful shutdown"]
+keywords: ["Runnable", "errChan", "StopAndWait", "AwaitRunning", "FailureWatcher"]
+languages: ["Go"]
+frameworks: ["controller-runtime", "Grafana dskit"]
+technologies: ["context", "health probes"]
+applicable_scenarios: ["Supervisor 语义优化", "生命周期诊断", "HTTP/Watcher 运行单元"]
+non_applicable_scenarios: ["引入 Kubernetes controller manager", "复制通用服务框架"]
+status: active
+summary: "成熟方案把阻塞 Run、错误回传、StopAndWait 与可观察状态作为同一监督闭环；本项目应吸收语义而非引入其运行时。"
+evidence:
+  types: ["source-code", "official-docs", "tests"]
+  primary_sources:
+    - title: "controller-runtime Manager and runnable groups"
+      locator: "https://github.com/kubernetes-sigs/controller-runtime/tree/v0.24.1/pkg/manager"
+      snapshot: "v0.24.1"
+    - title: "Grafana dskit services documentation"
+      locator: "https://pkg.go.dev/github.com/grafana/dskit/services"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Supervisor 目标接口确定", "上游主要版本变化"]
+relations:
+  extends: []
+  related: ["R004", "R011", "R012", "R016"]
+  supersedes: []
+  superseded_by: []
+report: report.md

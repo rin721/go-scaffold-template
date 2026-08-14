@@ -1,0 +1,35 @@
+schema_version: 1
+id: R012
+title: "Go net/http 与 errgroup 生命周期语义"
+question: "标准 HTTP Server 和当前 errgroup 等待模型对监听、运行期错误、取消与优雅停止提出什么约束？"
+research_type: standard-library
+topics: ["http", "listener", "shutdown", "errgroup", "cancellation"]
+keywords: ["Serve", "ListenAndServe", "Shutdown", "Wait", "WithContext"]
+languages: ["Go"]
+frameworks: []
+technologies: ["net/http", "golang.org/x/sync/errgroup"]
+applicable_scenarios: ["HTTP lifecycle adapter", "Supervisor 运行单元", "停止互锁分析"]
+non_applicable_scenarios: ["完整业务 HTTP 框架选型", "自动证明应用无 goroutine 泄漏"]
+status: active
+summary: "监听应预绑定，Serve 是阻塞运行单元；errgroup 不会因 nil 提前返回取消兄弟，且 Wait 无法约束不退出的任务。"
+evidence:
+  types: ["source-code", "official-docs"]
+  primary_sources:
+    - title: "Go net/http Server source"
+      locator: "https://github.com/golang/go/blob/go1.25.7/src/net/http/server.go"
+      snapshot: "go1.25.7"
+    - title: "golang.org/x/sync errgroup source"
+      locator: "https://github.com/golang/sync/blob/v0.21.0/errgroup/errgroup.go"
+      snapshot: "v0.21.0"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["项目 Go 或 x/sync 版本变化", "httpx Server 生命周期 API 变化"]
+relations:
+  extends: []
+  related: ["R005", "R011", "R013", "R016"]
+  supersedes: []
+  superseded_by: []
+report: report.md

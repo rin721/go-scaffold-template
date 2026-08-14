@@ -1,100 +1,93 @@
-# 产品需求：业务模块架构
+# 产品需求：业务模块架构前置闭环
 
-## 1. 背景
+## 1. 背景与问题
 
-仓库已经具备底层能力契约、Kernel App 组件、显式有序 Plan、配置候选事务、稳定 Capability facade、Host 生命周期和可选 CLI，但还没有业务 Model、Service、Repository、Handler、HTTP 监听器或业务命令。继续增加业务能力前，需要先定义一条能被新开发者复用、又不破坏当前 Kernel 边界的唯一开发路径。
+仓库已经实现显式 Kernel Plan、配置候选事务、stable Capability facade、Lease、Host 和可选 CLI，但还没有完整 application composition、HTTP listener、生产 readiness/diagnostics 或真实业务模块。首轮 012 在此基础上直接细化了模块分层；本轮复核证明 Kernel 内部资源事务与全进程生命周期不是同一层面的“闭环”。
 
-本任务不是把主流框架拼接进仓库，而是回答三个问题：
+因此 012 当前先回答：从配置输入到验证的底层责任、契约、状态和失败语义是否完整，是否已有足够证据允许继续业务设计。事实详见 [current-facts-and-gaps.md](requirements/current-facts-and-gaps.md)，外部比较与推荐见 [R016](research/R016-foundation-gate-synthesis/report.md)。
 
-1. 当前代码真实提供了什么，哪些能力仍然缺失？
-2. 代表性 Go 项目怎样组织业务模块、装配依赖和管理生命周期，各自成本是什么？
-3. 哪个目标模型最适合本仓库，并且怎样分阶段落地、验证和迁移？
+## 2. 当前结论
 
-详细事实见 [current-facts-and-gaps.md](requirements/current-facts-and-gaps.md)，逐项验收见 [acceptance-matrix.md](requirements/acceptance-matrix.md)。
+- **局部闭环**：Kernel 管理的既有资源在构造、启动、发布、重载、排空、回滚和清理方面有较完整代码与测试。
+- **全进程未闭环**：application 配置、长期 runner、HTTP、service readiness、终止排空、degraded 诊断和架构治理仍缺少统一 owner 与可执行证据。
+- **演进策略**：保持 Kernel 核心，局部补齐其上层控制面；不整体重写，不扩大 Kernel 为业务容器。
+- **业务门禁**：底层闭环验收全部满足前，Handler/Service/Repository/Model 只保留方向性约束，不继续确定 API、目录或实现。
 
-## 2. 目标
+## 3. 本轮目标
 
-- 建立按业务能力纵向组织的模块边界，明确 Model、Service、Repository port、数据库 Adapter、HTTP Handler、CLI Command 和模块装配各自职责。
-- 保持依赖显式、方向稳定：业务规则不依赖 Kernel、HTTP、CLI、GORM、Redis、Cobra 或其他第三方具体类型。
-- 定义唯一 composition root，将 Kernel Capabilities、业务模块、HTTP 路由、CLI 命令和 Host Participant 显式连接。
-- 定义配置加载、构造、启动、就绪、运行、重载、停止和失败回滚的完整顺序与资源所有权。
-- 明确跨模块调用、事务、缓存、日志、I18n、错误分类与边界映射规则。
-- 建立可检索、可复核、可判断新旧关系的研究档案规范，并按该规范归档本次研究。
-- 给出新模块黄金路径、实施任务、依赖、工作量、验证门禁、迁移风险与未决项。
+### 3.1 基础闭环目标
 
-## 3. 范围
+- 让同一不可变配置候选覆盖 Kernel 与 application-owned 配置，唯一 Loader 调用者和各节 owner 可定位。
+- 让启动、阻塞运行、运行期异常、取消、排空、反序停止、等待和超时形成单一 Supervisor 闭环。
+- 让 HTTP listener 的绑定失败、Serve 退出、Shutdown/Close/Wait 和活跃请求排空由唯一 owner 管理。
+- 区分 Kernel candidate `Ready`、进程 readiness、liveness 和 degraded，形成可查询的状态与安全诊断。
+- 区分 reload 可回滚排空和进程终止排空；明确 committed cleanup failure 的持久状态与后续动作。
+- 用 package graph、唯一注册校验、事件序列测试和运行证据约束架构，而不只依赖文档。
 
-### 3.1 包含
+### 3.2 业务延伸目标
 
-- 进程内模块化单体的业务模块组织与显式装配。
-- HTTP 和 CLI 两类入站 Adapter。
-- Database、Cache、I18n、Logger、Clock、ID、Validator、Storage 等当前 Capability 的使用边界。
-- 启动配置的一致快照、HTTP Server Participant、业务命令运行模式等必要的目标改造。
-- 模块内同步调用与显式跨模块 port。
-- 架构测试、契约测试、生命周期测试、文档门禁和首个真实垂直切片验收。
+本轮不设计具体业务 API。基础门禁通过后，012 才恢复以下方向的详细化：按业务能力纵向组织、普通 Go 构造函数、使用方定义窄 port、项目 Adapter、HTTP/CLI 复用 Service。真实需求不支持的层、接口和机制不创建。
 
-### 3.2 不包含
+## 4. 范围
 
-- 当前轮的任何非文档实现、代码生成器、服务启动、数据库迁移或外部系统写入。
-- 未经真实需求证明的消息总线、Saga、CQRS、Event Sourcing、服务发现、远程模块或动态插件。
-- 用假业务、空 Handler、内存假 Repository 或 TODO 冒充首个业务模块。
-- 将所有模块改造成微服务，或承诺未来可无成本拆分。
-- 业务对象热重建、动态增删路由或运行时依赖查找。
-- 允许业务代码绕过项目契约直接创建数据库、缓存、日志或第三方客户端。
+### 4.1 包含
 
-## 4. 核心需求
+- 配置输入、Plan、Kernel、Host、Supervisor、Watcher、Lease、httpx、health 和相关测试的静态审计。
+- 单一候选协调、运行监督、状态/诊断、HTTP lifecycle、重载/终止语义和治理门禁的目标设计。
+- 保留/补齐/局部优化/整体替换候选的比较、迁移成本、风险、验证和未决项。
+- 对原 012 业务设计的状态校正及后续解锁条件。
 
-### 4.1 模块结构
+### 4.2 不包含
 
-- 顶层按业务能力命名，不建立全局 `handlers`、`services`、`models`、`repositories` 横向杂物目录。
-- 领域模型不携带 HTTP、CLI、配置或 ORM 序列化标签；协议 DTO、持久化 Record 与领域模型显式转换。
-- Service 负责用例编排和业务不变量；Repository 接口由使用它的业务模块定义；具体实现依赖并满足该接口。
-- 模块不得导入 composition、Kernel Runtime 或其他模块的内部 Adapter。
+- 本轮任何源码、配置、依赖、脚本、测试或生成物修改，以及启动、生成、stage、commit、push 或外部写入。
+- 无真实需求的业务实体、Handler、Service、Repository、Model、路由、命令或缓存策略。
+- runtime DI、自动扫描、全局 Registry、Service Locator、动态插件、消息总线、Saga/CQRS/Event Sourcing。
+- 未经证据需要的通用热重建、动态路由、listener handoff、自动观测回滚或完整服务框架。
 
-### 4.2 装配与注册
+## 5. 核心需求
 
-- 只有进程 composition root 能选择模块、实现和启动 Profile。
-- 构造函数只声明最小依赖；禁止 `map[string]any`、万能依赖对象、Service Locator、全局 Registry、反射扫描和 `init` 自注册。
-- 路由、命令和 Participant 作为已经绑定依赖的 typed contribution 被集中验证；它们不承载依赖解析功能。
-- Kernel Plan 保持底层 App 组件平面，不接纳普通业务 Service、Handler 或 Repository。
+### 5.1 配置与装配
 
-### 4.3 入站边界
+- Loader 只有一个进程级调用者；Kernel 与 application owner 必须从同一候选解码和校验。
+- 所有 RestartRequired 判定在 Kernel/外部资源副作用之前完成；候选只能整体接受或拒绝。
+- Kernel Plan 继续只治理当前底层资源；普通业务对象和协议入口不进入 Plan。
+- dependency、config source、constructor、runner 和 resource owner 都可从唯一 composition root/显式契约追溯。
 
-- HTTP Handler 只做协议解析、校验、认证上下文提取、Service 调用、错误/响应映射和本地化，不直接访问 Repository。
-- 全局技术 Middleware、模块策略 Middleware 和业务不变量必须分层；事务不能由通用 HTTP Middleware 隐式包裹。
-- CLI Command 是与 HTTP 并列的入站 Adapter，调用同一 Service，不调用 HTTP Handler。
-- Bootstrap 命令与依赖业务资源的 Application 命令必须有不同运行语义，不能让当前 `config init` 因业务装配而打开资源。
+### 5.2 监督与生命周期
 
-### 4.4 基础设施与跨模块
+- 区分启动项、长期阻塞 runner 和 one-shot operation，不用“返回 nil”表达多种隐式语义。
+- 非空唯一 ID、固定启动顺序和严格反向停止在构造/启动前校验。
+- 关键 runner 任何非预期完成都上报 process owner；错误触发取消，但取消不代替 owner Stop/Wait。
+- startup 与 shutdown 有明确总期限；超时指出未退出 owner，不宣称已经安全清理。
+- reload 排空失败可回滚；终止排空进入 terminal 路径，不恢复 ready/serving。
 
-- Repository Adapter 只能在 Lease/回调边界内使用当前 Database Capability，不缓存或泄漏共享 Client/Tx。
-- Cache 是显式 Decorator 或模块协作者，命中、未命中、失效和后端不可用语义可测试；禁止静默改变业务成功语义。
-- I18n 只在 HTTP/CLI 等呈现边界把稳定错误码映射为消息；领域层不返回本地化文本。
-- 跨模块依赖由调用方定义窄 port，通过构造注入；禁止共享对方 Repository、穿透内部包或用无业务语义事件绕过依赖。
+### 5.3 HTTP 与就绪
 
-### 4.5 生命周期与配置
+- listener 在启动阶段预绑定，端口/地址失败同步返回；Serve 是受监督的阻塞运行单元。
+- Shutdown/Close/Wait、活跃请求和未来 hijacked connection 的责任明确；没有需求时不承诺 WebSocket 管理。
+- readiness 只有在必需资源、runner 和 listener 都运行后才为 true；drain、关键 runner 失败或不可接受 degraded 时先变 false。
+- liveness 只回答进程监督循环是否仍能工作，不把外部依赖失败一律变成重启风暴。
 
-- 初始启动的 Kernel 与业务/HTTP 配置必须来自同一不可变快照，避免同一进程两次读取产生撕裂视图。
-- 所有构造和贡献冲突尽量在监听端口前失败；网络监听失败必须能在 Host Start 阶段同步报告。
-- 启动顺序为 Kernel 资源先、模块 Participant 后、HTTP 最后；停止严格反向。
-- 初版业务对象图、路由表和命令表在进程内不可变；影响它们的配置变更明确返回 `RestartRequired`。
-- 每个 goroutine、Client、缓存清理器、Listener 和 Server 都有唯一 owner、取消、等待与关闭错误语义。
+### 5.4 重载、异常与诊断
 
-## 5. 质量要求
+- 诊断至少可关联 lifecycle state、generation、snapshot digest、last reload 和 committed cleanup 状态，且不泄露敏感配置。
+- 候选失败保持旧代；提交后清理失败不得伪装回滚，必须标记 degraded/restart-required 并阻断不安全的后续 reload。
+- 主错误、运行错误、取消、超时、Stop/Close/Wait 错误均保留原因链和阶段/owner 上下文。
+- Logger 只在真正决定策略的边界记录一次；baseline Logger 始终覆盖早期失败和最终停止诊断。
 
-- 失败保留错误链，取消、超时、业务错误和资源清理错误可区分；日志不泄漏 Secret、Token、完整 DSN 或私有数据。
-- 公共接口使用项目自有类型；第三方类型只留在 Adapter 内。
-- 新模块可独立进行 Service 单元测试、Adapter 合约测试和入站边界测试，不要求启动全进程。
-- 架构门禁能检查禁用 import、重复路由/命令、未关闭资源、文档链接和实现/设计状态混淆。
-- 不新增依赖，除非实施前按维护度、许可证、安全、兼容、稳定性、测试性和替换成本重新评估并获得确认。
+### 5.5 治理
 
-## 6. 成功判定
+- 基于解析后的 Go package graph 验证禁止依赖方向；`internal` 和 grep 不能作为唯一证据。
+- contribution/Participant/Task/runner 的 ID、重复、顺序和规范化使用生产同源规则验证。
+- 每条架构规则有违规样例和合法样例；生命周期测试使用 channel/event，不用 sleep 碰运气。
+- 当前文档只描述真实实现；012 作为待确认变更记录，不成为第二套现行规范。
 
-本方案只有在后续实施满足下列条件时才能转为已完成：
+## 6. 十一项通用门禁
 
-- 一个来自真实需求的业务模块按目标路径端到端通过 HTTP 或 Application CLI 验收；
-- Kernel 与业务对象图边界、配置快照、启动/停止顺序和资源所有权有可执行证据；
-- Service 与领域模型不依赖 HTTP/CLI/Kernel/第三方基础设施；
-- 业务 Repository port、数据库 Adapter、事务和缓存语义经成功/失败/取消测试；
-- 当前权威文档同步为真实行为，旧入口与冲突规范被迁移或删除；
-- 所有确认范围内任务完成并形成单一任务提交，未夹带预存 `tmp/`。
+所有候选必须同时通过事实、目标、边界、装配、生命周期、一致性、错误、治理、演进、复杂度和业务延伸门禁。逐项当前状态及证据见 [acceptance-matrix.md](requirements/acceptance-matrix.md)。任何关键项未满足时，不得用“目录设计完成”替代底层闭环。
+
+## 7. 成功判定
+
+基础批次只有在以下事实全部可执行验证后才完成：单一候选、全进程 Supervisor、HTTP 预绑定与排空、readiness/degraded 状态、reload/终止差异、错误合并和自动治理均有成功/失败/超时证据；权威文档同步，旧入口/双轨删除，未执行项明确。
+
+满足这些条件只解除业务设计阻塞。首个真实垂直切片仍需单独确认业务 actor、用例、不变量、数据/事务、入口和验收数据。

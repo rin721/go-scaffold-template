@@ -1,0 +1,35 @@
+schema_version: 1
+id: R014
+title: "Caddy 候选配置与资源换代研究"
+question: "持续维护的 Go Server 如何验证候选配置、重叠新旧实例并在失败时保留旧配置？"
+research_type: reference-architecture
+topics: ["configuration", "provision", "validation", "reload", "cleanup"]
+keywords: ["load", "provision", "validate", "zero downtime", "cleanup"]
+languages: ["Go"]
+frameworks: ["Caddy"]
+technologies: ["HTTP", "configuration API"]
+applicable_scenarios: ["Kernel reload 对照", "候选资源换代", "清理失败边界"]
+non_applicable_scenarios: ["采用 Caddy module registry", "业务对象动态发现"]
+status: active
+summary: "Caddy 验证了先准备新配置、成功后切换并清理旧代的方向；其全局模块注册和广义动态配置不适合本项目。"
+evidence:
+  types: ["source-code", "official-docs"]
+  primary_sources:
+    - title: "Caddy architecture and configuration API"
+      locator: "https://caddyserver.com/docs/architecture; https://caddyserver.com/docs/api"
+      snapshot: "verified with v2.11.2, 2026-08-14"
+    - title: "Caddy v2.11.2 source"
+      locator: "https://github.com/caddyserver/caddy/tree/v2.11.2"
+      snapshot: "v2.11.2"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Kernel reload 策略变化", "出现动态 listener/route 真实需求"]
+relations:
+  extends: []
+  related: ["R011", "R016"]
+  supersedes: []
+  superseded_by: []
+report: report.md

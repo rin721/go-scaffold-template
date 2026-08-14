@@ -1,95 +1,102 @@
 # 迁移、风险、决策与未决项
 
-## 1. 决策记录
+## 1. 当前待确认决策
 
-下列决策均为 **012 待确认方案**，尚未成为当前实现：
-
-| ID | 决策 | 理由 | 被拒绝的当前替代 |
+| ID | 决策 | 本地问题/证据 | 被拒绝方案 |
 |---|---|---|---|
-| D-012-01 | Kernel 资源平面与业务对象图平面分离 | 保留现有配置/生命周期价值，避免普通对象进入运行时容器 | 所有业务对象塞入 Kernel Plan |
-| D-012-02 | 唯一 composition root 手工装配 | 依赖、顺序和 owner 可直接从代码审查 | runtime DI、扫描、`init` Registry、Service Locator |
-| D-012-03 | 按业务能力纵向组织 | 业务所有权和变更局部性清晰 | 全局 handlers/services/models/repositories |
-| D-012-04 | 使用方定义 port，Adapter 向内 | 稳定业务规则不依赖易变技术 | 业务直接依赖 GORM/Redis/HTTP 类型 |
-| D-012-05 | typed contribution 只包含完成品 | 支持集中验证但不演变为 DI 语言 | Provider 列表、`map[string]any`、字符串查找 |
-| D-012-06 | 启动共享单一不可变配置快照 | 防止 Kernel 与业务图撕裂读取 | 两边各自调用 Loader |
-| D-012-07 | 首版业务图/路由/命令配置变化需重启 | 保持重载事务边界可证明 | 业务对象热重建和动态路由 |
-| D-012-08 | HTTP/CLI 复用 Service | 协议与业务规则分离 | CLI 调 Handler 或 HTTP 回环 |
-| D-012-09 | 事务由用例显式定义 | 保持入口无关和错误语义 | HTTP Middleware/context 隐式事务 |
-| D-012-10 | 当前不建设动态插件/分布式运行时 | 没有真实隔离、第三方扩展或远程需求 | Encore/Dapr/go-plugin 式运行模型 |
+| `D-012-01` | 保留 Kernel Plan、stable facade、Lease 与候选事务 | 当前组件顺序/回滚/换代测试充分 | 整体重写或全部关闭 reload |
+| `D-012-02` | application coordinator 是唯一 Loader/进程协调边界 | Kernel 自行 Load 无法覆盖未来 application owner | 两边各读配置；让 Kernel 接管所有应用对象 |
+| `D-012-03` | Kernel 只治理底层资源，普通对象继续普通 Go 构造 | Plan 的价值来自资源生命周期，不是通用 DI | 业务对象进入 Plan；Fx/Resolver 第二容器 |
+| `D-012-04` | Supervisor 区分 startup、runner 与 one-shot | Task nil 完成、Participant runtime error 和 HTTP 互锁均未闭合 | 继续复用模糊 Task/Participant 语义 |
+| `D-012-05` | HTTP 预绑定 + blocking Serve + StopAndWait | net/http 语义和当前 Wait-before-Stop 冲突 | goroutine 吞 bind/serve error；每模块自启 Server |
+| `D-012-06` | process readiness 与 Kernel candidate Ready 分离 | 当前 Ready 不代表 listener/runner/drain | 直接把 Kernel Ready 暴露为服务 ready |
+| `D-012-07` | reload 排空可回滚，process termination 排空不可 Resume | 当前 Kernel.Stop 超时恢复 serving 与 Host 退出冲突 | 两种场景共用相同失败策略 |
+| `D-012-08` | committed cleanup failure 持久 degraded/restart-required 并阻断 reload | 当前新代已服务、旧 handle 清除且无后续策略 | 伪装回滚或只打印日志继续换代 |
+| `D-012-09` | 只保留当前三种换代策略 | 当前组件无 NativeAtomic/Handoff/自动回滚需求 | 为未来组件预建通用热换代 |
+| `D-012-10` | package graph + 注册/生命周期测试形成治理闭环 | `internal`/文档不能表达同 module 方向 | 只靠 review；立即引入大型治理工具 |
+| `D-012-11` | 业务模块细节冻结到基础门禁通过 | 十一项门禁中 lifecycle/governance/business 未满足 | 先建 Handler/Service/Repository/Model 再补底层 |
 
-如后续改变公共接口、依赖、模块边界、配置迁移或运行副作用，应新增/更新任务方案；难以逆转的长期选择需进入 ADR，而不是静默改写本表。
+这些决策仍是 012 目标，不是现行 API。若公共接口、依赖、模块边界、配置迁移、数据或外部副作用发生实质变化，必须更新方案并重新确认；难以逆转的长期选择再进入 ADR。
 
-## 2. 分阶段迁移
+## 2. 推荐实施顺序
 
-### Phase A：基础装配能力
+### Phase A：先固化状态和 Supervisor 契约
 
-- 把 Loader 所有权上移为单一 config coordinator，并让 Kernel 接受外部候选快照。
-- 定义最小 typed contribution 与冲突 validator。
-- 建立 application composition 和显式运行模式。
-- 改造/封装 HTTP Server 为可同步报告监听失败的 Participant。
-- 保持现有 Bootstrap `config init` 不打开资源。
+1. 明确进程状态、termination cause、ready/degraded、owner ID 和 diagnostics snapshot 的内部契约。
+2. 局部修订 Supervisor 的注册校验、runner completion、runtime failure、cancel、reverse StopAndWait 与 shutdown deadline。
+3. 用 fake owner/runner 完成失败、nil 提前返回、不合作 runner 和多 cleanup error 的确定性测试。
 
-此阶段只建立真实垂直切片必需的薄能力，不能预先引入 Module SDK、代码生成器或插件系统。
+原因：HTTP 和配置协调都会依赖这些语义；先接 HTTP 再改 Supervisor 会产生第二轮生命周期迁移。
 
-### Phase B：首个真实垂直切片
+### Phase B：HTTP 与健康诊断
 
-- 根据确认的业务需求建立第一个纵向模块。
-- 实现 Domain/Application、Repository Adapter 和一个必要入站入口。
-- 只在验收确有需要时加入 Cache、CLI 或跨模块协作。
-- 用真实 Database/HTTP 或明确可接受的外部消费者完成端到端证据。
+1. 单轨调整/封装 `pkg/httpx.Server`，支持预绑定 listener 与阻塞 Serve。
+2. 接入唯一 HTTP owner，验证端口失败、runtime error、活跃请求 drain、Stop/Wait timeout。
+3. 将 lifecycle state 与必要 `pkg/health` checker 组合为 readiness/liveness/diagnostics；不提前加入业务路由。
 
-### Phase C：治理与推广
+### Phase C：单候选和 reload/termination 协调
 
-- 把首个切片中经验证的规则固化为 import、冲突和生命周期测试。
-- 同步根运行说明、架构与模块开发主题文档。
-- 第二个真实模块证明路径可复用后，再评估生成工具；不得由第一份设计直接推导生成器需求。
+1. 上移 Loader 调用权，同一 immutable candidate 提供给 Kernel 与 application owners。
+2. 在 Kernel 副作用前完成所有 decode/validate/RestartRequired preflight。
+3. 分离 reload drain 与 terminal drain；持久化 committed cleanup degraded 并阻断不安全 reload。
+4. 单轨迁移入口并删除旧 Load/Start 路径。
+
+Phase A/B/C 的具体先后若实施设计发现 API 依赖相反，可调整，但必须证明每个中间状态可测试、无新旧双轨。
+
+### Phase D：可执行治理与基础关闭
+
+1. 对真实 package graph、唯一 composition、注册冲突和隐藏 fallback 建门禁。
+2. 执行 race/lifecycle/loopback 集成、静态检查和文档同步。
+3. 逐项关闭 acceptance matrix；形成可复核运行证据。
+
+### Phase E：业务设计（当前阻塞）
+
+只有 Phase A-D 全部通过，才收集首个真实业务用例并继续 012 的模块边界、Handler/Service/Repository/Model 设计。没有用例不创建骨架。
 
 ## 3. 主要风险与缓解
 
-| 风险 | 影响 | 缓解与证据 |
+| 风险 | 影响 | 缓解/停止条件 |
 |---|---|---|
-| config coordinator 改变 Kernel API | 触及启动与 reload 核心语义 | 小步设计、候选事务测试、旧 Generation 保留测试 |
-| contribution 演变为隐藏 DI | 依赖和 owner 重新隐式化 | 只允许完成品、禁止 Provider/反射/`any`、API review |
-| composition root 过大 | 连接逻辑难维护 | 模块局部纯装配、root 只选实现/合并/验证 |
-| HTTP listener 改造引入竞态 | Start 假成功或 Stop 泄漏 | 预绑定、done channel、异常退出和 race/lifecycle 测试 |
-| Module Service 形成巨型接口 | 跨模块耦合与测试成本上升 | 调用方定义窄 port，按用例拆分方法 |
-| Domain/DTO/Record 转换样板增加 | 开发者绕过边界 | 提供明确示例与合约测试；第二模块后再评估生成 |
-| Cache 降级掩盖错误 | 返回陈旧/错误业务结果 | 每个用例明确语义、可观测降级、故障测试 |
-| I18n 资源聚合方式未定 | 模块消息无法可靠加载/reload | 首模块前确认显式文件或 embed 方案 |
-| 设计覆盖过多未来场景 | 过度工程化 | 只实施已确认任务和真实入口，非目标保持删除态 |
-| 文档领先实现 | 使用者误判现状 | 所有目标文件标待确认，实施后同步权威文档 |
+| Loader 所有权和 Kernel API 变化 | 触及启动/reload 核心 | candidate identity、旧代保留和单次 Load 测试；公共 API 实质变化重新确认 |
+| Supervisor 修改形成竞态或泄漏 | 进程假 ready、无法退出 | channel/event 测试、race、owner/runner 计数；不用 sleep |
+| HTTP 外部消费者依赖旧阻塞 Start | 破坏兼容 | 实施前搜索真实调用方；无消费者单轨替换，有消费者先补迁移范围 |
+| ShutdownTimeout 仍不能终止不合作 goroutine | Host 永久阻塞 | deadline 覆盖 Stop+Wait；定位 owner并失败退出，不宣称强杀成功 |
+| terminal drain 强关活跃资源 | use-after-close/数据损坏 | 先阻止新借用，超时失败退出；不在活跃 Lease 下强制 Close |
+| cleanup degraded 处理过度泛化 | 重试 Close 可能不安全 | 默认阻断 reload并要求 restart；按资源证明可重试后再扩展 |
+| diagnostics 泄露配置/错误细节 | 安全和运维风险 | 只输出安全 ID/digest/classification，redaction 测试 |
+| coordinator 演变为巨型容器 | 依赖/配置重新隐藏 | schema 和 resource 仍由 owner 定义；禁止 Resolver/`any`/全量 Capabilities 注入 |
+| 治理规则绑定虚构业务路径 | 误报和维护成本 | 先覆盖现有 Kernel/composition；真实模块出现后扩展 |
+| 文档领先实现 | 使用者误判 | 012 始终标待确认，实施后同步权威主题文档 |
 
-## 4. 当前未决项
+## 4. 兼容、删除与回滚边界
 
-以下问题会实质改变实施，不得由 Agent 自行假设：
+- 当前架构是兼容基线；优先保持 Capabilities/Lease/配置语义，局部调整 owner 与入口。
+- 尚无真实外部消费者时直接单轨替换 Loader/Host/httpx 旧路径，不保留 `legacy`、feature flag 或静默 fallback。
+- 若搜索发现外部 consumer，先记录兼容范围、截止、观测和删除计划并重新确认，不能默认双轨。
+- 实施失败可以回到上一个完整 commit；不得在一个进程中永久保留两套 Supervisor 或两次 Load 路径作为“回滚”。
+- 数据库数据、迁移、部署和外部协议不在本任务授权范围。
 
-1. 首个真实业务能力、用例、actor 与验收数据是什么？
-2. 首个切片需要 HTTP、Application CLI，还是二者？
-3. 首个用例的数据所有权、表/外部服务和事务边界是什么？
-4. 是否有量化证据需要 Cache；不可用时允许怎样的业务行为？
-5. application/module 配置节和 schema 由谁拥有，哪些字段影响对象图？
-6. I18n 消息资源继续使用显式文件路径，还是引入可审计 embed 聚合？
-7. HTTP 公共错误 schema、状态码和版本策略是什么？
-8. 首个切片是否需要 trace/metrics；对应 SLO 和 exporter 生命周期是什么？
-9. 当前 RequestID fallback、DefaultErrorHandler 和阻塞 Server API 是直接替换还是存在外部消费者迁移需求？
+## 5. 当前未决项
 
-## 5. 明确拒绝项
+### 基础闭环必须在实施前/实施中回答
 
-当前方案不保留以下“以后也许有用”的兼容层：
+1. 现有 Supervisor 接口是直接单轨修改还是由内部受管单元替代；真实调用方有哪些？
+2. process state/diagnostics 放置在哪个现有边界，如何避免 health 反向拥有 lifecycle？
+3. startup/shutdown 总期限沿用何处配置，是否需要阶段预算而不预设每 owner 配置？
+4. HTTP 管理端点与业务端点是否共 listener；当前没有需求时是否只提供内部 probe/test seam？
+5. 是否有 hijacked connection 的真实协议需求；没有则明确不支持/不保证排空。
+6. committed cleanup failure 的资源是否有可重试 Close 证明；默认重启策略是否满足运维要求？
+7. `pkg/httpx`、`pkg/health` 和 Kernel APIs 是否存在仓库外 consumer/兼容承诺？
 
-- 业务运行时 Container/Resolver；
-- 自动扫描模块、路由、命令或 I18n 文件；
-- 全局 `ServiceContext`/Capabilities 注入到每个 Handler；
-- 模块共享数据库 Record/Repository；
-- 通用事件转发绕过同步依赖；
-- 进程外插件协议或 sidecar；
-- 新旧启动路径长期双轨；
-- 空业务模块、占位 Handler、TODO Repository。
+### 业务门禁后再回答
 
-真实需求若出现，必须带证据重新进入方案/ADR，而不是预埋关闭的 Feature Flag。
+首个真实业务能力、actor、数据/事务 owner、HTTP/CLI 入口、缓存、I18n 和公共错误协议。它们不应反向改变底层 owner；若确实需要公共 API/依赖/边界变化，重新确认。
 
-## 6. 回滚与兼容原则
+## 6. 明确拒绝项
 
-实施应在一个确认任务内完成调用方迁移并删除失效入口，不留下 `legacy`、`old` 或静默 fallback。若尚无外部消费者，优先直接单轨替换。若发现真实外部兼容要求，应暂停并补充兼容范围、责任人、截止条件、观测指标和删除计划，再重新确认。
-
-数据库数据迁移、外部协议兼容和用户数据不因本架构任务自动获得修改授权；它们必须由首个真实业务任务单独设计。
+- Fx/Kratos/controller-runtime/dskit/Caddy 作为第二套进程 runtime；
+- Kernel 业务对象容器、运行时 Resolver、扫描、`init` Registry；
+- 通用动态对象图、路由/listener 热重建、自动观测回滚；
+- 只靠 health check 掩盖 lifecycle state；
+- 只写日志后吞掉 runner/cleanup/stop error；
+- 为业务门禁创建空模块、占位 Handler/Repository 或假数据。

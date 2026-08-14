@@ -10,8 +10,8 @@ frameworks: []
 technologies: ["Chi", "Cobra", "GORM", "Redis", "go-i18n", "Zap"]
 applicable_scenarios: ["012 方案基线", "后续实现漂移复核", "新模块接入前置检查"]
 non_applicable_scenarios: ["证明目标架构已实现", "替代运行时验收"]
-status: active
-summary: "仓库已具备 Kernel 资源平面和基础 Adapter，但没有业务对象图、HTTP listener 或真实业务模块。"
+status: superseded
+summary: "历史初查确认 Kernel 资源平面和业务缺口；更完整的进程监督与一致性审计见 R011。"
 evidence:
   types: ["source-code", "local-static-analysis", "tests"]
   primary_sources:
@@ -37,5 +37,5 @@ relations:
   extends: []
   related: ["R010"]
   supersedes: []
-  superseded_by: []
+  superseded_by: ["R011"]
 report: report.md

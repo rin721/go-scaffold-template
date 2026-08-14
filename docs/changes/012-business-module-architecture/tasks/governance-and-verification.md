@@ -1,57 +1,60 @@
 # GOV：治理、文档与验证任务
 
-## GOV-001：Import 与边界门禁
+## GOV-F-001：当前边界与唯一装配门禁
 
 - 工作量：M。
-- 依赖：VSL-002/003 确定真实包路径。
+- 依赖：FND-004、FND-006 确定真实路径。
 - 状态：待确认。
-- 完成条件：自动检查拒绝 domain/application 导入 Kernel、HTTP/CLI、ORM/Cache 第三方包；拒绝模块导入其他模块 Adapter/composition；允许列表有语义所有者且不使用宽泛正则掩盖违规。
+- 完成条件：基于解析后的 package graph 检查 Kernel/composition/application/http owner 的允许/禁止方向；唯一资源构造位置可验证；每条规则有违规和合法 fixture，不靠 grep/宽泛正则。
 
-## GOV-002：Contribution 与生命周期门禁
+## GOV-F-002：注册与生命周期门禁
 
 - 工作量：M。
-- 依赖：FND-002/003/004。
+- 依赖：FND-002、FND-003、FND-005。
 - 状态：待确认。
-- 完成条件：重复 Module/Route/Command/Participant、端口占用、部分启动、serve 异常、取消、超时、反向停止和错误合并均有确定测试；goroutine/resource leak 检查适用时执行。
+- 完成条件：空/重复 owner/runner、端口占用、startup failure、runner error/nil、signal、不合作 runner、terminal drain、committed cleanup degraded 和多错误合并均有确定性测试；生产与测试共用规范化规则。
 
-## GOV-003：当前权威文档同步
+## GOV-F-003：基础闭环运行与权威文档
 
-- 工作量：M。
-- 依赖：FND 与 VSL 行为已经实现并验证。
-- 状态：待确认。
-- 完成条件：
-  - 根入口到架构、运行、配置和模块开发文档可达；
-  - 当前文档只描述真实行为，目标/缺口清楚；
-  - 012 保留为历史证据，不成为第二套现行规范；
-  - 旧路径、旧配置和过期示例完成更新或删除；
-  - 新开发者可按真实模块指南完成运行、注册、实现、集成与验证。
-
-## GOV-004：完整验证与任务关闭
-
-- 工作量：M。
-- 依赖：全部确认范围任务完成。
+- 工作量：M-L。
+- 依赖：FND 全部完成。
 - 状态：待确认。
 - 完成条件：
-  - requirements acceptance matrix 每项有可追溯证据或明确不适用理由；
-  - Go 测试、静态检查、race/集成/产品验收按实际风险完成；
-  - `git diff --check`、完整 Diff、旧符号与依赖搜索通过；
-  - 只暂存本任务文件，预存 `tmp/` 或其他用户改动不进入提交；
-  - `tasks.md` 记录每轮验证、Commit 和剩余风险；
-  - 若 fetch/远端核对是发布要求且失败，在编辑/提交/push 边界按当前规则停止，不伪造远端状态。
+  - 默认 Service mode 的 listener、ready、reload、drain、stop 有可复核运行证据；
+  - 根入口到配置、运行、生命周期、诊断和验证文档可达；
+  - 权威文档只描述真实行为，012 保留历史证据且明确已实施/未实施；
+  - 旧入口、旧配置、旧测试和冲突说明删除；
+  - 未运行的远程/Docker/产品门禁明确标注。
 
-## 架构检查设计原则
+## GOV-F-004：基础业务延伸门禁审计
 
-- 检查真实禁止方向，不把目录命名当全部架构证明。
-- 对 Go import 使用解析后的 package 信息或可靠工具，不依赖易误报的纯文本搜索。
-- 对 route/command 冲突使用与生产相同的规范化函数。
-- 测试不得用环境变量 bypass、sleep 碰运气或隐藏 fallback。
-- 规则新增后必须有一个失败 fixture/测试证明能拦截违规，也有合法例子防止过度限制。
+- 工作量：M。
+- 依赖：GOV-F-001..003。
+- 状态：待确认。
+- 完成条件：
+  - acceptance matrix 的基础 AC 每项有证据或经确认的不适用理由；
+  - 十一门禁重新评估，事实/目标/边界/装配/生命周期/一致性/错误/治理/演进/复杂度均通过；
+  - `AC-BIZ-GATE-001` 明确解锁或继续阻塞，不模糊处理；
+  - 完整测试、静态检查、race/集成、Diff、旧符号和 Git 范围审阅完成。
+
+## GOV-B：业务门禁（当前阻塞）
+
+基础闭环和真实用例确认后，再细化：
+
+- 业务 domain/application 不导入 Kernel、HTTP/CLI、ORM/Cache 第三方包；
+- 模块不穿透其他模块 Adapter/Record/Repository；
+- route/command/业务 contribution 冲突；
+- Service/Adapter/入站边界契约与真实垂直切片验收。
+
+禁止在业务包尚不存在时为假想目录写永久正则或生成器。
+
+## 检查设计原则
+
+- 检查真实 import graph 和生产规范化函数，不把目录名或文本搜索当全部证明。
+- 失败测试必须能证明规则实际拦截，合法样例防止过度限制。
+- lifecycle 测试用 channel/barrier/受控 fake，不用 sleep、环境变量 bypass 或隐藏 fallback。
+- Health 通过不替代 lifecycle/ownership 证据，build 通过不替代运行/产品验收。
 
 ## 研究刷新
 
-首个垂直切片完成时：
-
-1. 更新或替代 R001，记录新的当前实现快照。
-2. 更新 R010，对照目标与实际，标出被验证、调整和拒绝的决策。
-3. 若外部框架版本或项目需求触发 refresh condition，将对应 metadata 标为 `needs-refresh`，复核后再转回 `active/partial`。
-4. 研究报告保留历史，不以修改研究替代当前架构文档同步。
+FND/GOV-F 完成时创建后续研究 ID 替代 R011/R016，记录实现快照和门禁证据；不要直接改写历史结论。业务首个切片完成后再复核 R002-R009 的业务适用性。研究更新必须同步当前主题文档，不能让 012 成为第二套现行规范。

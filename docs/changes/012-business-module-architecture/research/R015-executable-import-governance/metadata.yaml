@@ -1,0 +1,35 @@
+schema_version: 1
+id: R015
+title: "Go 模块边界的可执行治理"
+question: "internal 可见性之外，如何持续验证包依赖方向、禁止跨边界穿透和传递导入？"
+research_type: governance
+topics: ["imports", "architecture tests", "dependency direction", "static analysis"]
+keywords: ["internal", "import-boss", "forbidden imports", "transitive restrictions"]
+languages: ["Go"]
+frameworks: ["Kubernetes"]
+technologies: ["go/packages", "go list"]
+applicable_scenarios: ["架构门禁", "模块依赖规则", "CI 静态检查"]
+non_applicable_scenarios: ["自动证明业务语义正确", "以目录名代替代码审查"]
+status: active
+summary: "Go internal 只限制模块外访问，方向规则仍需基于真实 package graph 的允许/禁止测试。"
+evidence:
+  types: ["official-docs", "source-code", "tests"]
+  primary_sources:
+    - title: "Go module layout"
+      locator: "https://go.dev/doc/modules/layout"
+      snapshot: "verified 2026-08-14"
+    - title: "Kubernetes import-boss"
+      locator: "https://github.com/kubernetes/kubernetes/blob/v1.34.0/cmd/import-boss/README.md"
+      snapshot: "v1.34.0"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: durable-principle
+  review_after: "2027-08-14"
+  refresh_triggers: ["目标包布局变化", "Go 工具链或治理实现选择变化"]
+relations:
+  extends: []
+  related: ["R011", "R016"]
+  supersedes: []
+  superseded_by: []
+report: report.md

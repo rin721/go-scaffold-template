@@ -1,5 +1,7 @@
 # 数据库、事务、缓存与跨模块协作
 
+> 当前状态：**业务门禁后的候选约束**。现有 Database/Cache/Storage 的 Kernel owner 与 Lease 事实可作为兼容基线，但 Repository、UnitOfWork、Cache Decorator 和跨模块 port 均须由真实用例重新确认；本轮不冻结接口。
+
 ## 1. Database Capability 使用边界
 
 当前 Kernel Database `Access` 通过 `Use`/`WithinTx` 回调限制 Lease 生命周期，`pkg/database.Borrow` 保证借用 Client 不能在回调后继续使用。目标 Repository Adapter 必须保持这一不变量：

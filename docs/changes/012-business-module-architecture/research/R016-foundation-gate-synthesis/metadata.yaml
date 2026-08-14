@@ -1,0 +1,35 @@
+schema_version: 1
+id: R016
+title: "底层闭环门禁综合判定"
+question: "综合当前实现与外部证据，架构应保持、补齐还是替换，何时允许进入业务模块详细设计？"
+research_type: comparative
+topics: ["foundation gate", "composition", "supervision", "reload", "governance", "business readiness"]
+keywords: ["thin coordinator", "Kernel resource plane", "Supervisor", "readiness", "single snapshot"]
+languages: ["Go"]
+frameworks: ["controller-runtime", "Grafana dskit", "Caddy", "Kratos", "Uber Fx", "Hertz"]
+technologies: ["net/http", "errgroup", "health checks", "architecture tests"]
+applicable_scenarios: ["012 当前推荐方案", "实施排序", "业务延伸门禁"]
+non_applicable_scenarios: ["通用 Go 框架排名", "未经实现验证的完成声明"]
+status: active
+summary: "保留 Kernel 核心并局部补齐应用配置协调、进程监督、HTTP/诊断与治理；门禁通过前暂停业务细节设计。"
+evidence:
+  types: ["source-code", "tests", "official-docs", "local-static-analysis"]
+  primary_sources:
+    - title: "本轮当前实现与专题研究"
+      locator: "R011-R015"
+      snapshot: "verified 2026-08-14"
+    - title: "仍有效的既有框架研究"
+      locator: "R002; R004; R005"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["FND 实施完成", "首个真实业务用例明确", "生命周期公共接口实质变化"]
+relations:
+  extends: ["R011", "R012", "R013", "R014", "R015", "R002", "R004", "R005"]
+  related: []
+  supersedes: ["R010"]
+  superseded_by: []
+report: report.md

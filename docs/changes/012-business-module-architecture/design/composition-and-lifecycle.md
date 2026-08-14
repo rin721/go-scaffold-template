@@ -1,101 +1,105 @@
 # 装配、配置与生命周期
 
-## 1. 当前约束
+## 1. 当前问题
 
-当前 `Kernel.Start` 与 `Kernel.Reload` 内部调用配置 Loader，而业务对象图和 HTTP 监听器尚不存在。如果 composition root 为业务配置再次调用 Loader，同一次启动就可能读到两份不同快照；如果先构造业务 Adapter 再启动 Kernel，又可能在资源就绪前执行 I/O。这两点必须在接入首个业务模块前解决。
+现有 Kernel 内部读取配置并管理底层资源，当前 Supervisor 又把 Participant.Start/Stop 与 Task.Run 分成两个无法闭合的集合。未来直接加入 HTTP 或业务 composition 会产生三类确定性问题：同一次启动读取两份 snapshot、Serve 运行错误没有 owner，以及 Task Wait 必须等 Participant.Stop 才能结束的停止互锁。
 
-另外，当前 `pkg/httpx.Server.Start` 在内部调用阻塞式 `ListenAndServe`。监听地址占用等错误无法按目标 Host 语义在 `Start` 阶段同步完成确认，因此不能直接把它作为普通 Participant 使用。
+本设计保留 Kernel 资源平面，通过薄 application coordinator 和局部 Supervisor/httpx 调整解决这些问题；不建立第二个容器或通用 DAG。
 
-## 2. 唯一配置协调者
+## 2. 单一配置候选
 
-目标由 application config coordinator 成为唯一 Loader 调用者：
+目标流程：
 
-1. 启动时加载一份不可变候选快照。
-2. Kernel 使用“外部提供的快照”完成 stage/build/start，而不是再次读取。
-3. application composition 从同一快照解码进程模式、HTTP 与各模块的不可变配置。
-4. 解码和校验全部成功后才构造业务对象图和 contribution。
+1. baseline Logger 先建立。
+2. coordinator 调用 Loader 一次，取得 immutable candidate、digest 和来源诊断。
+3. 每个已注册 config owner 独立 decode/default/validate，并返回 change classification；不把 Secret 回显给 coordinator。
+4. 所有 RestartRequired 预检成功后，Kernel 从同一 candidate view 执行 Plan 的 Stage/Build/Start/Ready/Publish 或 Reload。
+5. coordinator 只在全局决策成功后更新 committed candidate/state。
 
-配置解码仍应由各语义所有者定义 schema 和默认值，coordinator 只编排，不变成包含所有配置细节的巨型结构。错误信息指出配置节与字段，但不得回显 Secret、完整 DSN 或 Token。
+Kernel 仍拥有 component generation；application owner 只拥有自己的不可变配置和运行单元。具体 API 可以是显式 snapshot 参数或受控 candidate interface，但必须证明没有第二次 Load 和可变共享对象。
 
-## 3. 初始启动事务
+## 3. 初始启动
 
-目标顺序如下：
-
-1. 创建必需的 baseline Logger；即使配置尚未加载也能记录启动失败。
-2. Loader 读取一次候选快照；失败则退出。
-3. 解码并校验 Kernel 与 application/module 配置。
-4. 构建并冻结 Kernel Plan；安装稳定 Capability facade。
-5. 以纯构造方式建立模块 Service、Adapter 与 contribution；不得在此时 I/O。
-6. 集中验证 Module、Route、Command、Participant 冲突与运行模式约束。
-7. 创建 Host，固定 Participant 顺序。
-8. Host 启动 Kernel；Kernel 完成资源 start/ready/publish。
-9. 启动确需资源探测或后台任务的 Module Participant。
-10. HTTP Participant 预绑定 listener，确认监听成功后启动 serve goroutine。
-11. 所有 Participant 成功后进程进入运行态。
-
-任一步失败都按已启动项的严格反序停止，并使用 `errors.Join` 或等价项目能力保留主要错误与清理错误。只有新 Logger 已成功构造并接管后，才能替换 baseline Logger；关闭顺序保证 baseline 最后可用。
-
-## 4. Participant 与资源所有权
-
-每个 Participant 必须明确：
-
-- `Start(ctx)` 何时可认为成功；
-- 自己创建哪些 goroutine、listener、client 或 timer；
-- 取消信号与等待退出方式；
-- `Stop(ctx)` 是否幂等；
-- 运行期意外退出如何通知 Supervisor；
-- 主错误与停止错误如何合并。
-
-构造函数不承担资源探测。普通无后台资源的 Service 不需要被包装成 Participant；不要为了统一形式扩大生命周期表面。
-
-目标启动与停止顺序：
+Service mode 的目标事件序列：
 
 ```text
-Start: Kernel -> module participants -> HTTP / application command
-Stop:  HTTP / application command -> module participants -> Kernel -> baseline logger
+baseline logger
+  -> load/decode/validate/preflight one candidate
+  -> build/freeze/install Kernel Plan
+  -> build application owners and validate unique registrations
+  -> Kernel Start/Ready/Publish
+  -> other startup owners
+  -> HTTP listener bind
+  -> start supervised runners
+  -> publish process ready
 ```
 
-模块拥有的 typed cache client 或清理器必须在 Kernel Cache facade 失效前关闭，因此由模块 Participant/Cleanup 或 composition owner 管理，不归 Handler 临时释放。
+构造阶段纯内存，不执行依赖尚未启动的 I/O。网络 bind 属于 startup owner，因为其失败必须阻止 ready。任一步失败都撤销 ready、取消已启动 runner、按依赖反序 StopAndWait，并合并 primary 与 cleanup error。baseline Logger 最后停止。
 
-## 5. HTTP Participant 的失败语义
+## 4. Supervisor 目标语义
 
-目标 HTTP Participant 不能直接复用当前阻塞式 `Server.Start` 语义。它应：
+### 4.1 概念
 
-1. 在 `Start` 中同步创建并绑定 listener；地址非法或端口冲突立即返回。
-2. 绑定成功后启动受 owner 管理的 serve goroutine，并记录 done channel。
-3. 将非正常 serve 退出报告给 Supervisor，而不是只写日志。
-4. `Stop` 调用带超时的 graceful shutdown，然后等待 goroutine 退出。
-5. graceful shutdown 与强制关闭都失败时保留全部错误。
+- Startup owner 同步确认资源已获得；没有长期工作者的普通对象不需要包装。
+- Runner 阻塞到 context 取消或运行失败；运行期结果返回统一 owner。
+- One-shot operation 显式属于 CLI 模式，完成 nil 是成功；Service runner 的非预期 nil 完成是终止事件。
 
-这要求实施阶段调整 `pkg/httpx` 或增加项目自有生命周期 Adapter；不得在业务模块中各自复制 Server 管理逻辑。
+所有名称非空唯一且顺序固定。Supervisor 不默默跳过 nil 注册，不依赖 map 顺序。
 
-## 6. 重载边界
+### 4.2 运行失败与终止
 
-首版业务对象图、路由表、命令表和监听器在进程内不可变。重载流程使用同一候选快照：
+收到 signal、runner error 或关键 runner 非预期完成时：
 
-1. coordinator 加载一个候选快照。
-2. 先计算 application-owned 配置节的稳定摘要并比较。
-3. 若任何影响业务对象图、路由、命令、HTTP listener 或模块不可变配置的字段变化，整个候选返回 `RestartRequired`，Kernel 不得提前应用候选。
-4. 若 application-owned 配置未变化，把同一候选交给 Kernel 的 prepare/drain/commit/resume 事务。
-5. Kernel 失败时保留旧 Generation；application 对外仍保持旧对象图。
+1. 原子记录 primary termination cause，状态变 draining/failed 并先撤销 readiness。
+2. cancel 所有 runner context，阻止新工作。
+3. 在统一 shutdown deadline 内按依赖反序调用 owner StopAndWait；HTTP 必须先完成请求排空，再停止依赖它的模块/Kernel。
+4. 等待所有受管 goroutine；超时标明未退出 owner并继续尝试可安全执行的后续清理。
+5. 合并 Stop/Wait/Close 错误，形成退出结果；不得在日志后返回成功。
 
-初版不做业务对象热重建、动态路由替换或部分应用配置。这一保守边界避免“Kernel 已提交而业务配置仍旧”或相反的撕裂状态。
+具体实现可以是扩展接口、runner group 或内部 adapter，但不能维持“无限 Wait 全部 Task 后才开始 Stop”的旧顺序。
 
-## 7. 运行模式
+## 5. HTTP 受管单元
 
-运行模式使用明确枚举而不是布尔参数：
+目标 HTTP owner 在 Start 中预绑定 listener；随后 `Serve(listener)` 作为受监督 runner。非 `http.ErrServerClosed` 错误触发 process failure。Stop 先撤销 ready/停止接受新连接，调用带 context 的 Shutdown，并等待 Serve 返回；必要的 Close 必须有明确触发条件，所有错误合并。
 
-- **Service mode**：启动 Kernel、模块 Participant 与 HTTP，等待信号。
-- **Bootstrap CLI mode**：例如当前 `config init`，在 Kernel 前执行，不打开数据库或缓存。
-- **Application CLI mode**：需要业务 Capability，启动 Kernel 和必要模块后执行一次命令，再按反序停止。
+这要求单轨调整 `pkg/httpx.Server` 或增加项目自有 lifecycle adapter。业务模块不能各自创建 Server、listener 或 fire-and-forget goroutine。当前没有 hijacked connection 需求，不预建相关管理器。
 
-命令分类由静态命令元数据或显式入口决定，不能先构造整张业务图再猜测命令类型。未知命令、帮助和参数错误也不得无必要地打开资源。
+## 6. Readiness 与状态
 
-## 8. 验证要求
+候选组件 `Ready` 保持原义。进程 readiness 由 coordinator 汇总：Kernel generation 已发布、所有必需 startup owners 成功、关键 runner 仍运行、HTTP 已绑定且未 drain、没有阻断型 degraded。状态至少包含 starting、ready/running、draining、stopped、failed/degraded。
 
-- Loader spy 证明一次启动只读取一次快照。
-- 故意改变 application-owned 配置，证明在 Kernel 事务前返回 `RestartRequired`。
-- 端口占用测试证明 Host `Start` 同步失败且已启动资源反向关闭。
-- 注入 Module Participant 启动失败、serve 异常退出和 shutdown 失败，验证顺序与错误合并。
-- Bootstrap CLI 测试证明不创建/启动数据库、缓存和 HTTP。
-- Application CLI 测试证明使用同一 Service，并在命令结束后无 goroutine 或资源泄漏。
+`pkg/health` 可以承载有界 checker 和 snapshot，但不能成为 lifecycle owner。诊断暴露 state/reason、generation、candidate digest、last reload/cleanup 和未退出 owner；输出必须确定、并发安全且脱敏。
+
+## 7. Reload 事务
+
+1. coordinator Load 一次 candidate。
+2. 所有 owner decode/validate/change classify。
+3. 任一 application immutable 变化返回 RestartRequired，Kernel 未产生副作用。
+4. Kernel 从同一 candidate prepare；失败保持旧 generation/candidate。
+5. reload drain 失败可 Resume；commit 后更新全局 candidate/state。
+6. cleanup old generation；失败不回滚新代，标记 degraded/restart-required 并拒绝后续 reload。
+
+初版不重建业务对象图、路由、命令或 listener，不实现 NativeAtomicReload/ComponentHandoff/自动观测回滚。若真实资源需要，需提供额外证据和重新确认。
+
+## 8. 终止排空
+
+进程终止与 reload 不同：ready 一经撤销就不恢复，新 work 被拒绝。drain timeout 不能调用 Resume 把 resource 重新变 serving；Supervisor 报告不完整排空并失败退出。对仍有活跃 Lease 的共享资源不强制 Close 造成 use-after-close，OS 是最终边界，但这种退出不得描述为优雅停止成功。
+
+当前 `Kernel.Stop` 的可回滚行为需与 process termination path 分离，具体公开契约在实施前复核外部消费者后确定。
+
+## 9. 运行模式
+
+- **Service**：Kernel + startup owners + supervised runners；任何关键 runner 非预期完成终止进程。
+- **Bootstrap CLI**：当前 `config init` 等，无需 Kernel 业务资源，完成 nil 是成功。
+- **Application CLI**：只有真实业务命令需要时才启用；启动明确资源、执行 one-shot、反序停止。
+
+帮助、参数错误和未知命令不应为了分类而先启动全部资源。没有真实 Application CLI 需求时只保留语义，不创建占位入口。
+
+## 10. 验证
+
+- Loader spy、candidate identity 与应用节变更测试。
+- 端口占用、Serve error、阻塞请求 Shutdown、Stop/Wait timeout。
+- startup failure、runner error、runner nil 提前完成、signal 和不合作 runner 的确定性事件序列。
+- reload drain 回滚与 termination drain 不 Resume 对照。
+- committed cleanup degraded、二次 reload 拒绝和 diagnostics/redaction。
+- 非空/重复 ID、固定顺序与所有错误原因链。

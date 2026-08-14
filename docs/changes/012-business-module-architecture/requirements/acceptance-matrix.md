@@ -1,59 +1,85 @@
 # 需求与验收矩阵
 
-## 1. 场景
+## 1. 十一项门禁矩阵
 
-| 场景 | 预期结果 | 禁止结果 |
-| --- | --- | --- |
-| 新增业务模块 | 领域、Service、port、Adapter、HTTP/CLI 边界和 composition 位置明确 | 复制另一模块、全局 Registry、万能 Context |
-| HTTP 请求 | Middleware 分层后进入 Handler，再调用 Service 和 Repository port | Handler 直接查库、领域返回 HTTP 状态码 |
-| CLI 业务命令 | 启动明确需要的 Kernel/模块资源，调用同一 Service，完成后反向关闭 | 调用 HTTP Handler，或让 `config init` 打开数据库 |
-| 数据库事务 | 用例层通过模块自有 UnitOfWork port 明确事务范围 | 通用 HTTP Middleware 隐式事务、Tx 逃逸 Lease |
-| 缓存 | 显式 Decorator/协作者，有降级、失效和 owner 测试 | 远端失败静默返回伪造成功或旧数据 |
-| 跨模块调用 | 调用方定义窄 port，composition 显式绑定 provider | 导入对方 Adapter/Repository，或绕过依赖方向 |
-| 启动失败 | 监听前暴露构造/配置/冲突错误，已启动资源反向清理 | goroutine 吞掉 bind error、返回成功后立即退出 |
-| 配置变化 | 受支持 Capability 原子换代；业务图/路由变化明确要求重启 | 局部热更新导致新旧业务对象混用 |
+| 门禁 | 当前 | 进入业务设计前的通过条件 |
+|---|---|---|
+| 事实 | 部分满足 | 每项结论可回到代码/测试/文档或版本化外部主源；目标不冒充实现 |
+| 目标 | 部分满足 | 每个新增机制关联已复现问题和明确非目标，不为假想模块预埋 |
+| 边界 | 部分满足 | Kernel、coordinator、Supervisor、HTTP、health owner 和依赖方向明确且无穿透 |
+| 装配 | 部分满足 | Loader、candidate、constructor、runner、listener 和 cleanup 均从唯一 root 可追溯 |
+| 生命周期 | 不满足 | start/ready/run/fail/drain/stop/wait/timeout 全部有事件序列证据 |
+| 一致性 | 部分满足 | 全 owner 同一 candidate；无部分 commit、silent fallback 或无记录 degraded |
+| 错误 | 部分满足 | primary/runtime/cancel/timeout/cleanup 全链保留，阶段和 owner 可识别 |
+| 治理 | 不满足 | package graph、注册校验、生命周期/状态测试进入持续检查 |
+| 演进 | 方向满足 | 单轨迁移、兼容影响、删除内容和失败回滚边界已验证 |
+| 复杂度 | 推荐路线满足 | 不引入第二容器或无需求动态机制；每个抽象有删除/简化评估 |
+| 业务延伸 | 不满足 | 以下全部基础 AC 通过且真实用例已确认 |
 
-## 2. 架构验收
+## 2. 配置与装配验收
 
-| ID | 验收项 | 必需证据 |
-| --- | --- | --- |
-| `AC-ARCH-001` | 业务包不导入 Kernel、composition、HTTP/CLI 或第三方基础设施 | import 边界测试与源码搜索 |
-| `AC-ARCH-002` | Repository port 由业务使用方定义，Adapter 单向依赖该 port | 编译期接口断言、包依赖图、单元测试 |
-| `AC-ARCH-003` | 唯一 composition root 显式选择全部模块和实现 | 组合测试、无 init/扫描/Resolve 搜索 |
-| `AC-ARCH-004` | Kernel Plan 只含底层 App 组件 | FrozenPlan 快照与文档检查 |
-| `AC-ARCH-005` | 路由、命令和 Participant contribution 可在运行前校验冲突 | 重复 ID/path/verb/command 失败测试 |
+| ID | 验收项 | 必需证据 | 当前 |
+|---|---|---|---|
+| `AC-CFG-001` | Start/Reload 每个候选只调用 Loader 一次，具有稳定 identity/digest | Loader spy、并发变更测试 | 未实现 |
+| `AC-CFG-002` | Kernel 与 application owners 解码同一不可变 candidate | 组合测试、对象 identity/digest 断言 | 未实现 |
+| `AC-CFG-003` | 所有 immutable/RestartRequired 预检先于 Kernel 和外部副作用 | 失败注入与事件序列测试 | 未实现 |
+| `AC-CFG-004` | 未知/application section 变化不会被 Kernel 单独提交 digest | snapshot/reload 回归测试 | 未实现 |
+| `AC-CMP-001` | 依赖、配置、constructor、runner、resource owner 可从唯一 root 定位 | 组合快照与代码审阅 | 部分实现 |
+| `AC-CMP-002` | Kernel Plan 只含底层资源，无业务对象/运行时 Resolver/扫描 | Plan 测试、符号与 import 门禁 | 当前 Kernel 满足 |
 
-## 3. 生命周期验收
+## 3. 监督与生命周期验收
 
-| ID | 验收项 | 必需证据 |
-| --- | --- | --- |
-| `AC-LIFE-001` | Kernel 与应用配置来自同一初始 Snapshot | 配置源变动并发测试或不可变 token 测试 |
-| `AC-LIFE-002` | Kernel -> 模块 Participant -> HTTP 顺序启动，严格反向停止 | 事件序列测试 |
-| `AC-LIFE-003` | 监听失败在 Start 返回；正常 Shutdown 等待请求与 goroutine | 端口占用、取消、超时测试 |
-| `AC-LIFE-004` | Cache Client、Listener、Server 等 owner 唯一且 Close 幂等 | owner 表、泄漏/重复关闭测试 |
-| `AC-LIFE-005` | 业务图相关配置变更返回 RestartRequired，不部分提交 | reload 事务测试 |
+| ID | 验收项 | 必需证据 | 当前 |
+|---|---|---|---|
+| `AC-SUP-001` | owner/runner ID 非空唯一、顺序确定，nil 注册失败 | 构造失败测试 | 未实现 |
+| `AC-SUP-002` | 启动失败反序清理并保留主错误和全部 cleanup error | 事件序列与 errors.Is/As | 局部满足 |
+| `AC-SUP-003` | Service runner error 或 nil 非预期完成均触发取消和失败退出 | 两类 runner 测试 | 未实现 |
+| `AC-SUP-004` | signal/runtime failure 后先撤销 ready，再 cancel、反序 StopAndWait | 无 sleep 的确定性序列测试 | 未实现 |
+| `AC-SUP-005` | shutdown deadline 覆盖 Stop 与 Wait；不合作 runner 可定位且不会造成无限等待 | fake runner 超时测试 | 未实现 |
+| `AC-SUP-006` | one-shot CLI 的 nil 完成与 Service runner 的 nil 完成语义明确分离 | 模式表驱动测试 | 未实现 |
+| `AC-SUP-007` | Kernel/owner 停止错误不会阻止后续 owner 尝试清理，全部错误可识别 | 多错误注入测试 | 部分满足 |
 
-## 4. 业务边界验收
+## 4. HTTP 与状态验收
 
-| ID | 验收项 | 必需证据 |
-| --- | --- | --- |
-| `AC-BIZ-001` | 领域模型与 HTTP DTO、CLI 输入、持久化 Record 分离 | 类型与转换测试 |
-| `AC-BIZ-002` | Service 在纯单元测试中只依赖窄 fake/stub | 不启动 Kernel/HTTP/DB 的测试 |
-| `AC-BIZ-003` | Adapter 保留错误链并映射基础设施错误 | errors.Is/As、取消、超时测试 |
-| `AC-BIZ-004` | 跨模块只走显式业务 port | import 与 composition 绑定测试 |
-| `AC-BIZ-005` | 首个垂直切片源于真实业务，不使用占位实体 | 已确认需求、端到端验收记录 |
+| ID | 验收项 | 必需证据 | 当前 |
+|---|---|---|---|
+| `AC-HTTP-001` | listener 预绑定；端口占用/非法地址在 Start 同步失败 | 真实 loopback 端口测试 | 未实现 |
+| `AC-HTTP-002` | Serve 是受监督 runner，异常退出触发 process failure | listener/Serve 失败注入 | 未实现 |
+| `AC-HTTP-003` | Shutdown/Close/Wait 在期限内完成并等待活跃请求 | 阻塞请求、取消、超时测试 | 未实现 |
+| `AC-HTTP-004` | 不存在“先 Wait Serve、后调用 Shutdown”的生命周期互锁 | 事件序列/超时回归测试 | 未实现 |
+| `AC-STATE-001` | state 至少区分 starting、ready/running、draining、stopped、failed/degraded | 并发安全状态转换测试 | 未实现 |
+| `AC-STATE-002` | ready 在全部必需单元运行后才 true，drain/failure 时先 false | probe 与事件序列测试 | 未实现 |
+| `AC-STATE-003` | diagnostics 暴露 generation/digest/last reload-cleanup/owner，且脱敏 | 快照、并发与敏感信息测试 | 未实现 |
+| `AC-STATE-004` | Kernel candidate Ready 与 process readiness 在接口/文档中不混淆 | API/文档/测试审阅 | 未实现 |
 
-## 5. 入站与质量验收
+## 5. Reload、终止与错误验收
 
-| ID | 验收项 | 必需证据 |
-| --- | --- | --- |
-| `AC-IN-001` | HTTP 技术/策略 Middleware 顺序固定且可测试 | Router/Handler 测试 |
-| `AC-IN-002` | Handler/Command 共享 Service，但 DTO 与呈现逻辑独立 | 双入口用例测试 |
-| `AC-IN-003` | 错误只在决定策略的边界记录一次，I18n 只在呈现边界 | 日志捕获与语言测试 |
-| `AC-IN-004` | RequestID、Logger、Validator、I18n 均显式注入 | nil/fallback 禁止测试 |
-| `AC-QUAL-001` | race、vet、build/test、no-CGO、文档链接、diff-check 全部通过 | 命令输出与任务账本证据 |
-| `AC-QUAL-002` | 当前权威文档只描述已实现行为 | 文档状态审阅与旧符号搜索 |
+| ID | 验收项 | 必需证据 | 当前 |
+|---|---|---|---|
+| `AC-REL-001` | candidate/prepare/drain 失败保持旧 generation 和旧 snapshot | Kernel 现有测试 + coordinator 组合测试 | Kernel 内满足 |
+| `AC-REL-002` | reload drain 超时可 Resume；process termination drain 超时不恢复 serving/ready | 两种路径对照测试 | 未实现 |
+| `AC-REL-003` | committed cleanup failure 保持新代、进入 degraded/restart-required 并阻断后续 reload | 状态与二次 reload 测试 | 未实现 |
+| `AC-REL-004` | 每代资源只有唯一 owner，成功/失败路径不重复 Close 或丢失责任 | owner 表、计数与 race 测试 | Kernel 内部分满足 |
+| `AC-ERR-001` | primary/runtime/cancel/timeout/drain/stop/cleanup error 保留 cause、phase、owner | errors.Is/As 与 join 测试 | 部分满足 |
+| `AC-ERR-002` | 只有 process/presentation 策略边界记录一次，错误/诊断不泄密 | 日志 capture 与 redaction 测试 | 未实现 |
 
-## 6. 当前轮判定
+## 6. 治理与演进验收
 
-本轮只验收文档：结构化研究档案存在、需求/设计/任务互相可追踪、相对链接有效、Markdown 无空白错误、改动范围只含 012 与必要导航。上述实现验收项全部保持“待确认/未执行”，不得描述为已通过。
+| ID | 验收项 | 必需证据 | 当前 |
+|---|---|---|---|
+| `AC-GOV-001` | 基于解析 package graph 验证禁止依赖和唯一 composition 边界 | 违规/合法 fixtures | 未实现 |
+| `AC-GOV-002` | 生产与测试共用 ID/path/command 规范化和冲突规则 | 表驱动测试 | 未实现 |
+| `AC-GOV-003` | 无全局 Registry、隐藏 fallback、fire-and-forget goroutine 或第二资源客户端 | 静态门禁与调用方搜索 | 部分满足 |
+| `AC-GOV-004` | 生命周期测试不使用 sleep/环境 bypass，race 与泄漏检查按风险执行 | 测试审阅与命令证据 | 未实现 |
+| `AC-EVO-001` | 新入口单轨替换旧入口，兼容影响和删除搜索完成 | 完整 Diff、旧符号搜索 | 待实施 |
+| `AC-EVO-002` | 当前主题文档只描述实现，012 保留历史证据且不成为第二规范 | 链接/状态/术语检查 | 待实施 |
+
+## 7. 业务延伸门禁
+
+`AC-BIZ-GATE-001`：上述 `AC-CFG-*`、`AC-SUP-*`、`AC-HTTP-*`、`AC-STATE-*`、`AC-REL-*`、`AC-ERR-*`、`AC-GOV-*` 和 `AC-EVO-*` 全部通过或有经确认的不适用理由，且有真实 Service mode 运行证据后，才允许恢复业务模块详细设计。
+
+之后仍需 `AC-BIZ-GATE-002`：首个真实用例的 actor、业务不变量、数据/事务 owner、必要入站边界和验收数据得到独立确认。不得用假业务、空 CRUD、内存 Repository 或 TODO 解锁。
+
+## 8. 本轮文档验收
+
+本轮只允许确认：R001-R016 关系与 metadata 可解析，需求/设计/任务可追踪，本地链接存在，Diff 无空白错误，改动仅在 012 和必要导航。所有实现 AC 仍为未执行或局部事实，不得宣称通过。

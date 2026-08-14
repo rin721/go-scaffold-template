@@ -6,7 +6,7 @@
 
 仓库已有 [Go 能力装配研究](../../../research/001-go-capability-composition/README.md) 和 [Kernel App 手工装配研究](../../../research/002-kernel-app-manual-composition/README.md)。本次不复制其全文，而是把相关结论纳入带 metadata 的任务级索引；后续可另行治理旧研究目录，但不在 012 范围内迁移历史文件。
 
-开始本次研究前已使用 `rg --files docs -g metadata.yaml` 搜索仓库，未发现既有结构化 metadata；因此引用上述两份可复用的非结构化研究，同时为本次独立问题建立 R001-R010，不伪造对旧文件的替代关系。
+开始本轮研究前先检索了 `012/research/**/metadata.yaml`。R002、R004、R005 及其余代表项目的版本化事实仍可复用；R001 对当前仓库的审计深度不足，R010 又在底层闭环尚未证明时过早形成业务设计结论，因此分别由 R011 和 R016 单轨替代。被替代记录保留为历史证据，但不再代表 012 当前结论。
 
 ## 2. 记录格式
 
@@ -54,7 +54,7 @@ report: report.md
 
 ## 3. 枚举与状态演进
 
-- `research_type`：`current-project`、`framework`、`reference-architecture`、`runtime-platform`、`plugin-system`、`comparative`。
+- `research_type`：`current-project`、`standard-library`、`framework`、`reference-architecture`、`runtime-platform`、`plugin-system`、`governance`、`comparative`。
 - `evidence.types`：`source-code`、`official-docs`、`examples`、`tests`、`local-static-analysis`。
 - `validity.mode`：`snapshot` 表示结论绑定版本；`durable-principle` 表示原理较稳定，但仍需按触发器复核。
 - `status`：`draft`、`active`、`partial`、`needs-refresh`、`superseded`、`rejected`。
@@ -82,7 +82,7 @@ any -> superseded | rejected
 
 | ID | 主题 | 类型 | 结论用途 |
 |---|---|---|---|
-| [R001](R001-current-project-facts/report.md) | 当前仓库事实 | current-project | 决定能复用什么、必须先补什么 |
+| [R001](R001-current-project-facts/report.md) | 当前仓库业务能力初查 | current-project | 历史记录；由 R011 替代 |
 | [R002](R002-kratos-wire/report.md) | Kratos + Wire | framework | 静态装配、分层和 server lifecycle 参照 |
 | [R003](R003-go-zero/report.md) | go-zero | framework | 生成式 Handler/Logic/ServiceContext 取舍 |
 | [R004](R004-uber-fx/report.md) | Uber Fx | framework | runtime DI、Module 与 lifecycle 对照 |
@@ -91,7 +91,13 @@ any -> superseded | rejected
 | [R007](R007-encore/report.md) | Encore | runtime-platform | 编译器发现资源与服务图的成本 |
 | [R008](R008-dapr/report.md) | Dapr | runtime-platform | 进程外 building blocks 的适用边界 |
 | [R009](R009-hashicorp-go-plugin/report.md) | go-plugin / Mattermost | plugin-system | 真实插件协议与 host 成本 |
-| [R010](R010-comparative-synthesis/report.md) | 综合比较 | comparative | 形成 012 推荐方案与拒绝项 |
+| [R010](R010-comparative-synthesis/report.md) | 业务模块综合比较 | comparative | 历史记录；由 R016 替代 |
+| [R011](R011-current-foundation-closure-audit/report.md) | 当前底层闭环审计 | current-project | 从配置到验证逐段确认实现与缺口 |
+| [R012](R012-go-http-errgroup-lifecycle/report.md) | Go HTTP 与并发等待语义 | standard-library | 证明当前 Supervisor/HTTP 组合的阻塞风险 |
+| [R013](R013-controller-runtime-dskit-supervision/report.md) | 运行监督与状态模型 | framework | 参照运行期错误回传、停止等待和状态诊断 |
+| [R014](R014-caddy-config-lifecycle/report.md) | 候选配置与资源换代 | reference-architecture | 验证当前 Kernel 先新后旧方向及适用边界 |
+| [R015](R015-executable-import-governance/report.md) | 可执行依赖治理 | governance | 证明边界规则需由测试/静态检查持续约束 |
+| [R016](R016-foundation-gate-synthesis/report.md) | 底层闭环综合判定 | comparative | 012 当前唯一推荐结论和业务延伸门禁 |
 
 ## 6. 复用规则
 

@@ -1,0 +1,38 @@
+schema_version: 1
+id: R011
+title: "go-scaffold2 底层能力闭环审计"
+question: "当前配置、装配、资源、运行、重载、排空、停止、诊断和治理是否形成可验证闭环？"
+research_type: current-project
+topics: ["configuration", "composition", "lifecycle", "reload", "supervision", "health", "governance"]
+keywords: ["Kernel", "Plan", "Supervisor", "Lease", "CommittedCleanupError", "health Registry"]
+languages: ["Go"]
+frameworks: []
+technologies: ["net/http", "errgroup", "fsnotify"]
+applicable_scenarios: ["012 底层门禁", "业务模块设计前置判定", "生命周期修复规划"]
+non_applicable_scenarios: ["证明运行验收已完成", "替代后续实现测试"]
+status: active
+summary: "Kernel 资源事务局部闭环，但进程监督、整份配置一致性、服务就绪、终止排空和可执行治理尚未闭环。"
+evidence:
+  types: ["source-code", "tests", "local-static-analysis"]
+  primary_sources:
+    - title: "入口、Kernel 与 composition"
+      locator: "cmd/app/main.go; internal/kernel/kernel.go; internal/kernel/composition"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "Host、Supervisor、Watcher 与 HTTP"
+      locator: "internal/kernel/host.go; internal/kernel/watch.go; pkg/supervisor; pkg/httpx"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "资源换代、Lease、Health 与测试"
+      locator: "internal/kernel/app; pkg/health; internal/kernel/*_test.go; pkg/supervisor/*_test.go"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["Kernel 或 Supervisor 行为变化", "HTTP listener 接入", "应用配置协调者实现"]
+relations:
+  extends: []
+  related: ["R012", "R013", "R014", "R015", "R016"]
+  supersedes: ["R001"]
+  superseded_by: []
+report: report.md

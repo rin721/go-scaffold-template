@@ -10,8 +10,8 @@ frameworks: ["Kratos", "go-zero", "Uber Fx", "Hertz", "Encore", "Dapr", "go-plug
 technologies: ["HTTP", "CLI", "database", "cache", "i18n"]
 applicable_scenarios: ["go-scaffold2 012 决策", "首个业务模块方案", "后续架构复核"]
 non_applicable_scenarios: ["通用框架排名", "所有 Go 项目的统一答案"]
-status: active
-summary: "推荐 Kernel 资源平面加手工静态业务图的模块化单体，拒绝当前 runtime DI、平台 runtime 和动态插件。"
+status: superseded
+summary: "历史比较支持双平面方向，但未先证明底层闭环；当前综合结论由 R016 单轨替代。"
 evidence:
   types: ["source-code", "official-docs", "examples", "tests", "local-static-analysis"]
   primary_sources:
@@ -28,5 +28,5 @@ relations:
   extends: ["R001", "R002", "R003", "R004", "R005", "R006", "R007", "R008", "R009"]
   related: []
   supersedes: []
-  superseded_by: []
+  superseded_by: ["R016"]
 report: report.md

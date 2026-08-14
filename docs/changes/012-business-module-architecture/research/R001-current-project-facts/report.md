@@ -1,5 +1,7 @@
 # R001：当前仓库事实
 
+> 状态：已由 [R011](../R011-current-foundation-closure-audit/report.md) 替代。本文保留首轮业务能力初查，012 当前底层闭环判定以 R011/R016 为准。
+
 ## 研究问题
 
 在不把蓝图当实现的前提下，确认 `2daf47a` 当前装配链、生命周期、Capability、HTTP/CLI/Database/Cache 边界和业务能力缺口。

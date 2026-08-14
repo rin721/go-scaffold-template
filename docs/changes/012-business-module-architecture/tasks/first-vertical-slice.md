@@ -2,14 +2,14 @@
 
 ## 当前阻塞
 
-本批次处于 **阻塞且待确认**：用户尚未提供首个真实业务能力、actor、用例、数据边界和入站验收。禁止用示例 `User`、`Order`、空 CRUD、内存假 Repository 或 TODO 代替。
+本批次处于 **双重阻塞且待确认**：首先，FND/GOV-F 尚未实施，`AC-BIZ-GATE-001` 未解除；其次，用户尚未提供首个真实业务能力、actor、用例、数据边界和入站验收。禁止用示例 `User`、`Order`、空 CRUD、内存假 Repository 或 TODO 代替。
 
 真实需求形成后，如果目标、公共接口、依赖、模块边界、数据迁移或外部副作用改变 012 设计，必须先更新文档并重新确认。
 
 ## VSL-001：确认业务用例与验收
 
 - 工作量：M。
-- 依赖：用户提供真实需求；FND 设计已确认。
+- 依赖：FND/GOV-F 已实现并通过 `AC-BIZ-GATE-001`；用户提供真实需求；业务详细设计重新确认。
 - 完成条件：模块所有者、actor、输入/结果、不变量、错误、数据/事务、入口、I18n、缓存必要性和验收数据明确；非目标清晰。
 - 当前状态：阻塞。
 
@@ -43,7 +43,7 @@
 ## VSL-005：HTTP Adapter 与 I18n
 
 - 工作量：L。
-- 依赖：FND-002/003、VSL-002，且 VSL-001 需要 HTTP。
+- 依赖：FND/GOV-F 已通过、业务 HTTP 详细设计已重新确认、VSL-002，且 VSL-001 需要 HTTP。
 - 完成条件：
   - DTO/Handler/Route/Presenter 边界明确；Handler 不直接访问 Repository；
   - 全局技术 Middleware 与 route policy 顺序测试通过；
@@ -54,7 +54,7 @@
 ## VSL-006：Application CLI Adapter（条件任务）
 
 - 工作量：M。
-- 依赖：FND-005、VSL-002，且 VSL-001 需要 CLI。
+- 依赖：FND-006 已验证、业务 CLI 详细设计已重新确认、VSL-002，且 VSL-001 需要 CLI。
 - 完成条件：CLI 调用同一 Service，不调用 Handler；参数、输出、错误/exit/I18n、取消和资源停止通过验收。
 - 跳过条件：首个用例不需要 CLI 时不创建占位命令。
 
