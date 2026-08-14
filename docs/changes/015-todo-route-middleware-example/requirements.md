@@ -23,7 +23,7 @@
 新增实际有代码的模块目录：
 
 ```text
-internal/business/todo/
+internal/module/todo/
 └── middleware/
     ├── json.go
     └── json_test.go

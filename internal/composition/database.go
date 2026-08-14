@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/business/todo/repo"
 	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
+	"github.com/rin721/go-scaffold2/internal/module/todo/repo"
 	"github.com/rin721/go-scaffold2/pkg/database"
 )
 

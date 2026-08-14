@@ -14,8 +14,8 @@
 
 ```text
 internal/
-├── business/
-│   ├── contracts.go              # ModuleID、Route、Contribution 与集中校验
+├── module/
+│   ├── contracts.go              # ID、Route、Contribution 与集中校验
 │   ├── README.md                 # 新业务模块学习入口
 │   └── todo/
 │       ├── model/                # Todo、Status、纯业务转换与不变量
@@ -86,7 +86,7 @@ Service 构造函数显式接收 Repository、Clock、ID Generator 和已校验 
 
 `binding/config` 拥有：
 
-- `CapabilityID = "business.todo"`、`ConfigPath = "todo"`。
+- `CapabilityID = "module.todo"`、`ConfigPath = "todo"`。
 - `Config{TitleMaxRunes, DefaultListLimit, MaxListLimit}` 及 mapstructure tag。
 - ordered defaults `120/20/100`。
 - `Decode(snapshot)`：strict decode 后验证正数、title 上限 200 和 default ≤ max。
@@ -120,7 +120,7 @@ Service 与 Application CLI 都把 HTTP/Todo application bindings 交给同一�
 - `VersionField = "Version"`。
 - 索引 `idx_todos_status_created_at(Status, CreatedAt)`。
 
-`binding/model.Migrator` 实现 `supervisor.Participant`，名称 `business.todo.schema`。Start 在 `Database.Access.Use` 内调用 `client.Migrate(ctx, Schema())`；Stop 不拥有长期资源，固定返回 nil。Schema participant 位于 Coordinator 之后、HTTP/operation 之前。
+`binding/model.Migrator` 实现 `supervisor.Participant`，名称 `module.todo.schema`。Start 在 `Database.Access.Use` 内调用 `client.Migrate(ctx, Schema())`；Stop 不拥有长期资源，固定返回 nil。Schema participant 位于 Coordinator 之后、HTTP/operation 之前。
 
 ### 5.3 Repository 实现
 
@@ -135,9 +135,9 @@ CLI/HTTP 不直接接触 Access、Schema 或 Record。
 
 ## 6. HTTP binding 与路由
 
-`internal/business.Route` 包含 Method、Path、已绑定 Handler 和 route middlewares；`Contribution` 包含非空唯一 ModuleID、Routes 和 Participants。集中 validator 在 listener Start 前：
+`internal/module.Route` 包含 Method、Path、已绑定 Handler 和 route middlewares；`Contribution` 包含非空唯一 ID、Routes 和 Participants。集中 validator 在 listener Start 前：
 
-- 拒绝空/重复 ModuleID。
+- 拒绝空/重复 ID。
 - 要求 Method 为项目支持的非空 HTTP method。
 - 要求 Path 以 `/` 开头、没有 query/fragment，且与规范化结果一致。
 - 以大写 Method + canonical Path 拒绝重复 route。

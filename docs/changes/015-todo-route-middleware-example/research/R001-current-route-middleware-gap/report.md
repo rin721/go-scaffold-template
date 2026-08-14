@@ -12,13 +12,13 @@
 
 ### 2. Route contract 已预留且真实安装
 
-`internal/business.Route` 包含 `Middlewares []httpx.Middleware`。`ValidateContributions` 在启动前拒绝 nil middleware；`applicationRouter` 把每条 route 的 middlewares 传给 `Router.Handle`；`pkg/httpx.chain` 按声明顺序包装 Handler。
+`internal/module.Route` 包含 `Middlewares []httpx.Middleware`。`ValidateContributions` 在启动前拒绝 nil middleware；`applicationRouter` 把每条 route 的 middlewares 传给 `Router.Handle`；`pkg/httpx.chain` 按声明顺序包装 Handler。
 
 `pkg/httpx/router_test.go` 已证明实际顺序为全局 middleware 外层、route middleware 内层、最后 Handler，并在返回时反向展开。
 
 ### 3. Todo 没有模块级 middleware 示例
 
-`internal/business/todo/binding/http/routes.go` 定义四条 route，但每条都只设置 Method、Path 和 Handler，`Middlewares` 全部为 nil。014 文档也把 CORS、认证和限流列为非目标。因此用户看到的目录和代码确实缺少“业务模块如何实现并绑定 middleware”的样例。
+`internal/module/todo/binding/http/routes.go` 定义四条 route，但每条都只设置 Method、Path 和 Handler，`Middlewares` 全部为 nil。014 文档也把 CORS、认证和限流列为非目标。因此用户看到的目录和代码确实缺少“业务模块如何实现并绑定 middleware”的样例。
 
 ### 4. 既有研究可以复用
 

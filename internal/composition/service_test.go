@@ -93,7 +93,7 @@ http:
 	}
 	result, err := prepared.coordinator.Reload(t.Context())
 	if !errors.Is(err, app.ErrRestartRequired) || result.Applied ||
-		len(result.RestartRequired) != 1 || result.RestartRequired[0] != "business.todo" {
+		len(result.RestartRequired) != 1 || result.RestartRequired[0] != "module.todo" {
 		t.Fatalf("Reload() = %#v, %v; want Todo restart requirement", result, err)
 	}
 }

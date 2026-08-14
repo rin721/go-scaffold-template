@@ -9,7 +9,7 @@
 - `app.Plan` 只支持显式有序 `Add`、typed `Binding/Input` 和针对既有 typed target 的 `Replace`；不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
 - 配置变化时先准备全部候选，再反向排空旧租约；失败恢复旧入口，`RestartRequired` 在任何副作用前阻止整轮应用。
 - 配置节的默认值与严格绑定由同一个 owner 契约提供；服务入口由唯一 Coordinator 加载同一不可变候选，Bootstrap CLI 则只构造默认配置所需契约，不创建 Kernel、资源或监听器。
-- 首个 Todo 业务模块以显式 `model/service/repo/handler/binding` 结构提供 HTTP 与 CLI；业务对象由 `internal/composition` 手工装配，不进入 Kernel Plan。
+- 首个 Todo 应用模块位于 `internal/module/todo`，以显式 `model/service/repo/handler/binding` 结构提供 HTTP 与 CLI；模块对象由 `internal/composition` 手工装配，不进入 Kernel Plan。
 
 ## 已实现底层库
 
@@ -98,11 +98,11 @@ go run ./cmd/app todo get --id <todo-id>
 go run ./cmd/app todo complete --id <todo-id>
 ```
 
-目录职责、依赖方向和扩展方式见 [Todo 模块说明](internal/business/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
+目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
 
 无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，要求重启恢复。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，三项能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，Bootstrap/Config/监督/HTTP/诊断闭环见 [012 业务模块架构](docs/changes/012-business-module-architecture/README.md)，首个业务模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，三项能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，Bootstrap/Config/监督/HTTP/诊断闭环见 [012 业务模块架构](docs/changes/012-business-module-architecture/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。
 
 ## 本地验证
 
@@ -115,4 +115,4 @@ go vet ./...
 git diff --check
 ```
 
-消息、任务调度、分布式锁、认证、邮件、搜索、特性开关和观测采集适配仍需等待真实场景确认。Kernel 当前只提供严格前向的底层组件有序计划，不是通用依赖 DAG 容器；Todo 业务对象由 application composition root 显式构造。
+消息、任务调度、分布式锁、认证、邮件、搜索、特性开关和观测采集适配仍需等待真实场景确认。Kernel 当前只提供严格前向的底层 Component 有序计划，不是通用依赖 DAG 容器；Todo 模块对象由 application composition root 显式构造。

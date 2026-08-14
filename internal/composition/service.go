@@ -5,10 +5,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/business"
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
+	"github.com/rin721/go-scaffold2/internal/module"
 	"github.com/rin721/go-scaffold2/pkg/httpx"
 	"github.com/rin721/go-scaffold2/pkg/logger"
 	"github.com/rin721/go-scaffold2/pkg/supervisor"
@@ -51,9 +51,9 @@ func (a *Application) runService(ctx context.Context) error {
 	return nil
 }
 
-func applicationRouter(capabilities kernelcomposition.Capabilities, contributions ...business.Contribution) (httpx.Router, error) {
-	if err := business.ValidateContributions(contributions...); err != nil {
-		return nil, fmt.Errorf("validate business contributions: %w", err)
+func applicationRouter(capabilities kernelcomposition.Capabilities, contributions ...module.Contribution) (httpx.Router, error) {
+	if err := module.ValidateContributions(contributions...); err != nil {
+		return nil, fmt.Errorf("validate module contributions: %w", err)
 	}
 	router := httpx.NewRouter(nil)
 	router.Use(

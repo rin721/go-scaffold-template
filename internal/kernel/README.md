@@ -131,11 +131,11 @@ Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`�
 
 当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service，`prepareTodo` 从同一候选构造 Kernel capabilities 与 Todo 模块，`runService` 再显式创建 Router、HTTP Server 和 Host。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口，不重复装配业务对象。
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。业务模块的实际目录和运行命令见根 [README](../../README.md) 与 [Todo 模块说明](../business/todo/README.md)。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md) 与 [Todo 模块说明](../module/todo/README.md)。
 
 ## 边界
 
-- 当前默认 Service 已接入 application-owned HTTP lifecycle 与 Todo 业务模块；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
+- 当前默认 Service 已接入 application-owned HTTP lifecycle 与 Todo 应用模块；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
 - Database 与 Storage App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 关闭 Redis，泛型 Cache Client 由其构造调用方关闭。

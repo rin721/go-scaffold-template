@@ -128,7 +128,7 @@ todo:
 目标目录：
 
 ```text
-internal/business/
+internal/module/
 ├── contracts.go
 ├── README.md
 └── todo/

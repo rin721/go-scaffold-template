@@ -34,7 +34,7 @@
 ### 3.2 当前缺口
 
 - Service 仍把 `http.NotFoundHandler()` 交给 HTTP Server，没有 Router、业务 Handler 或路由贡献。
-- 仓库没有 `internal/business`、业务 Model、Service、Repository port、数据库 Adapter 或模块局部装配。
+- 仓库没有 `internal/module`、业务 Model、Service、Repository port、数据库 Adapter 或模块局部装配。
 - `ComposeBootstrap` 只聚合底层配置和 `config init`；业务 config/command 还没有可由应用 composition 显式加入的参数。
 - `CommandModeApplication` 只有声明和校验，当前 `len(args) > 0` 一律进入无 Kernel 的 Bootstrap；没有“解析命令后启动资源、执行一次用例、反序停止”的运行路径。
 - `Supervisor.Run` 只适合长期任务，零 runner 会等待 context；不能用 runner 的正常返回冒充 one-shot，因为正常提前返回会被判为 `UnexpectedCompletionError`。
@@ -55,7 +55,7 @@ Todo 可以在不新增第三方依赖、不改变 Kernel 资源平面、不暴�
 
 ### 5.2 必须新增的最小机制
 
-- 建立 `internal/business/todo` 模块内分层和 `internal/business` 的最小 typed route/module contribution；不建立扫描、Registry 或通用 DI。
+- 建立 `internal/module/todo` 模块内分层和 `internal/module` 的最小 typed route/module contribution；不建立扫描、Registry 或通用 DI。
 - 用 `binding/model` 提供 Todo Schema 和 migration participant，用 `binding/config` 提供 strict section，用 `binding/http` 和 `binding/cli` 提供已绑定入口。
 - 建立 `internal/composition` 作为业务/进程唯一 composition root，让 `cmd/app` 不再直接拼装 Todo 细节。
 - 让 Kernel Bootstrap 接受 application config/command contract，但仍保持构造期无资源副作用。

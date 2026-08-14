@@ -23,7 +23,7 @@
 
 ## 3. 第二步：确定边界与模型
 
-1. 以业务能力命名 `internal/business/<capability>`。
+1. 以业务能力命名 `internal/module/<capability>`；这里的 Module 是应用组合根选择的纵向模块，不是 Go module 或 Kernel Component。
 2. 只有存在独立不变量时建立 `domain`；定义实体/值对象及其构造规则。
 3. 在 `application` 定义用例 Command/Query/Result 和最小 Repository/跨模块 port。
 4. 为输入、缺失、冲突和依赖错误定义稳定分类；不写本地化文本。
@@ -95,7 +95,7 @@
 5. 把模块 Participant 放在 Kernel 后、HTTP 前。
 6. 将 HTTP route 安装到唯一 Router；Application CLI 作为 one-shot 受管运行。
 
-业务模块不得自行修改 `cmd/app`、创建 Server 或追加全局 Registry。
+应用模块不得自行修改 `cmd/app`、创建 Server 或追加全局 Registry。
 
 ## 9. 第八步：验证与文档同步
 

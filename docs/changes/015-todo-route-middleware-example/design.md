@@ -2,7 +2,7 @@
 
 ## 1. 设计结论
 
-新增模块级 HTTP Adapter `internal/business/todo/middleware`，只实现 `RequireJSONContentType`。`binding/http.Routes` 在创建路由的 `Middlewares` 中显式绑定它；全局 middleware 和 Router 安装机制不变。
+新增模块级 HTTP Adapter `internal/module/todo/middleware`，只实现 `RequireJSONContentType`。`binding/http.Routes` 在创建路由的 `Middlewares` 中显式绑定它；全局 middleware 和 Router 安装机制不变。
 
 选择 Content-Type 校验，是因为它有真实协议语义、可以安全展示 middleware 的“放行与短路”两条路径，并且不需要认证主体、限流状态、配置或外部依赖。`NoStore` 响应头虽然更简单，但不能展示拒绝路径；认证、限流和 CORS 会引入尚未确认的安全或配置决策。
 
@@ -49,7 +49,7 @@ func RequireJSONContentType() httpx.Middleware
 }
 ```
 
-其他三条 route 保持空 middleware。`business.ValidateContributions` 继续在 listener 启动前拒绝 nil middleware；`applicationRouter` 已把 route middlewares 传给 `Router.Handle`，不新增注册路径。
+其他三条 route 保持空 middleware。`module.ValidateContributions` 继续在 listener 启动前拒绝 nil middleware；`applicationRouter` 已把 route middlewares 传给 `Router.Handle`，不新增注册路径。
 
 ## 4. 数据流与失败语义
 
@@ -65,10 +65,10 @@ middleware 不读取 body，合法请求仍由 Handler 的 `BindJSON` 负责 JSO
 
 ## 5. 文件影响
 
-- 新增 `internal/business/todo/middleware/json.go` 与单元测试。
-- 修改 `internal/business/todo/binding/http/routes.go` 与测试。
+- 新增 `internal/module/todo/middleware/json.go` 与单元测试。
+- 修改 `internal/module/todo/binding/http/routes.go` 与测试。
 - 扩展 `cmd/app/main_test.go` 的进程 HTTP 验收。
-- 更新根 README、`internal/business/todo/README.md`、变更索引和 015 状态/证据。
+- 更新根 README、`internal/module/todo/README.md`、变更索引和 015 状态/证据。
 - 不修改 `go.mod/go.sum`、Service/Repository/Schema/Config/CLI、Kernel 或 `pkg/httpx` 公共 API。
 
 ## 6. 验证设计

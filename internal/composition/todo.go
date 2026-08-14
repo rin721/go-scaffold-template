@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/rin721/go-scaffold2/internal/business/todo"
-	configbinding "github.com/rin721/go-scaffold2/internal/business/todo/binding/config"
-	"github.com/rin721/go-scaffold2/internal/business/todo/model"
-	"github.com/rin721/go-scaffold2/internal/business/todo/service"
 	"github.com/rin721/go-scaffold2/internal/kernel"
 	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
+	"github.com/rin721/go-scaffold2/internal/module/todo"
+	configbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/config"
+	"github.com/rin721/go-scaffold2/internal/module/todo/model"
+	"github.com/rin721/go-scaffold2/internal/module/todo/service"
 	"github.com/rin721/go-scaffold2/pkg/supervisor"
 )
 

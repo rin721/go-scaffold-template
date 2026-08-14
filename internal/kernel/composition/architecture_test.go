@@ -49,12 +49,12 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 	legal := []packageNode{
 		{ImportPath: modulePath + "/cmd/app", Imports: []string{modulePath + "/internal/composition"}},
 		{ImportPath: modulePath + "/internal/composition", Imports: []string{
-			modulePath + "/internal/kernel/composition", modulePath + "/internal/business/todo",
+			modulePath + "/internal/kernel/composition", modulePath + "/internal/module/todo",
 		}},
 		{ImportPath: modulePath + "/internal/kernel/composition", Imports: []string{modulePath + "/internal/kernel/app/database"}},
 		{ImportPath: modulePath + "/internal/kernel/app/database", Imports: []string{modulePath + "/pkg/database"}},
-		{ImportPath: modulePath + "/internal/business/todo/service", Imports: []string{modulePath + "/internal/business/todo/model"}},
-		{ImportPath: modulePath + "/internal/business/todo/repo", Imports: []string{modulePath + "/pkg/database"}},
+		{ImportPath: modulePath + "/internal/module/todo/service", Imports: []string{modulePath + "/internal/module/todo/model"}},
+		{ImportPath: modulePath + "/internal/module/todo/repo", Imports: []string{modulePath + "/pkg/database"}},
 	}
 	if err := validatePackageGraph(legal); err != nil {
 		t.Fatalf("legal fixture error = %v", err)
@@ -62,11 +62,11 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 	for _, fixture := range [][]packageNode{
 		{{ImportPath: modulePath + "/pkg/database", Imports: []string{modulePath + "/internal/kernel"}}},
 		{{ImportPath: modulePath + "/internal/kernel/app/database", Imports: []string{modulePath + "/internal/kernel/composition"}}},
-		{{ImportPath: modulePath + "/internal/feature", Imports: []string{modulePath + "/internal/kernel/composition"}}},
-		{{ImportPath: modulePath + "/internal/feature", Imports: []string{modulePath + "/internal/composition"}}},
-		{{ImportPath: modulePath + "/internal/business/todo/service", Imports: []string{modulePath + "/internal/kernel"}}},
-		{{ImportPath: modulePath + "/internal/business/todo/model", Imports: []string{modulePath + "/pkg/httpx"}}},
-		{{ImportPath: modulePath + "/internal/business/todo/service", Imports: []string{modulePath + "/pkg/database"}}},
+		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{modulePath + "/internal/kernel/composition"}}},
+		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{modulePath + "/internal/composition"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/service", Imports: []string{modulePath + "/internal/kernel"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/model", Imports: []string{modulePath + "/pkg/httpx"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/service", Imports: []string{modulePath + "/pkg/database"}}},
 	} {
 		if err := validatePackageGraph(fixture); err == nil {
 			t.Fatalf("invalid fixture %#v passed", fixture)
@@ -90,16 +90,16 @@ func validatePackageGraph(graph []packageNode) error {
 			if imported == modulePath+"/internal/composition" && node.ImportPath != modulePath+"/cmd/app" {
 				return fmt.Errorf("package %s bypasses the application composition root", node.ImportPath)
 			}
-			if businessCorePackage(node.ImportPath) && forbiddenBusinessCoreImport(imported) {
-				return fmt.Errorf("business core package %s imports forbidden boundary %s", node.ImportPath, imported)
+			if moduleCorePackage(node.ImportPath) && forbiddenModuleCoreImport(imported) {
+				return fmt.Errorf("module core package %s imports forbidden boundary %s", node.ImportPath, imported)
 			}
 		}
 	}
 	return nil
 }
 
-func businessCorePackage(importPath string) bool {
-	prefix := modulePath + "/internal/business/"
+func moduleCorePackage(importPath string) bool {
+	prefix := modulePath + "/internal/module/"
 	if !strings.HasPrefix(importPath, prefix) {
 		return false
 	}
@@ -107,7 +107,7 @@ func businessCorePackage(importPath string) bool {
 	return len(parts) >= 2 && (parts[1] == "model" || parts[1] == "service")
 }
 
-func forbiddenBusinessCoreImport(importPath string) bool {
+func forbiddenModuleCoreImport(importPath string) bool {
 	return strings.HasPrefix(importPath, modulePath+"/internal/kernel") ||
 		importPath == modulePath+"/pkg/httpx" ||
 		importPath == modulePath+"/pkg/cli" ||

@@ -1,5 +1,7 @@
 # 014 Todo 业务垂直切片
 
+> 命名更新：016 已把 Todo 的现行路径迁移为 `internal/module/todo`，根契约包改为 `module`，owner ID 改为 `module.todo`。014 的目录名和标题作为稳定历史记录保留，正文中的代码路径使用当前名称。
+
 ## 状态
 
 - 任务性质：非纯文档业务实现。
@@ -18,7 +20,7 @@ Todo 将作为仓库首个真实业务垂直切片，采用模块内 `model/serv
 - `todo create/get/list/complete` 命令执行同一批用例，并在 one-shot 生命周期内启动、迁移和停止所需资源。
 - `todo` 配置节进入 strict binding、默认配置生成和 reload restart preflight。
 - Todo Schema 通过项目 `pkg/database` additive migration 创建，默认 SQLite 数据可跨 CLI 与 HTTP 进程保留。
-- 新模块目录、route contribution、错误映射和架构测试可作为后续业务模块的真实学习样板。
+- 新模块目录、route contribution、错误映射和架构测试可作为后续应用模块的真实学习样板。
 
 ## 阅读顺序
 

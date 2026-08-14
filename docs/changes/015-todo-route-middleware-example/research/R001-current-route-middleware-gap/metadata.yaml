@@ -19,7 +19,7 @@ evidence:
       locator: "internal/composition/service.go"
       snapshot: "2239f4c"
     - title: "Route contribution 与 Todo HTTP binding"
-      locator: "internal/business/contracts.go; internal/business/todo/binding/http/routes.go"
+      locator: "internal/module/contracts.go; internal/module/todo/binding/http/routes.go"
       snapshot: "2239f4c"
     - title: "httpx middleware 链与顺序测试"
       locator: "pkg/httpx/middleware.go; pkg/httpx/router.go; pkg/httpx/router_test.go"

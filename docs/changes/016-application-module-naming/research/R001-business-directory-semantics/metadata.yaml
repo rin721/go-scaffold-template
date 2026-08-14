@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "Business 目录与应用模块命名语义复核"
+question: "internal/business 是否准确表达当前纵向模块职责，internal/module 如何与 Kernel Component 和底层 Capability 保持清晰边界？"
+research_type: current-project
+topics: ["package naming", "vertical slice", "module boundary", "composition", "governance"]
+keywords: ["internal/business", "internal/module", "ModuleID", "Contribution", "business.todo", "module.todo"]
+languages: ["Go"]
+frameworks: []
+technologies: ["Go internal packages", "manual composition"]
+applicable_scenarios: ["016 实施计划", "应用模块根目录命名", "Todo 模块迁移"]
+non_applicable_scenarios: ["业务模块内部分层重构", "Kernel Capability 重命名", "HTTP 或 CLI 行为调整"]
+status: active
+summary: "business 过于宽泛；按用户选择改用 module，直接表达应用组合根选择的纵向装配单元，并与 Kernel Component、底层 Capability 保持术语边界。"
+evidence:
+  types: ["source-code", "tests", "existing-research", "local-static-analysis", "user-decision"]
+  primary_sources:
+    - title: "当前 Business contribution 与 Todo 纵向切片"
+      locator: "internal/business; internal/business/todo"
+      snapshot: "7bbe4bc7c6979324844cc1f7c43384d69738936b"
+    - title: "应用组合根与 package graph 门禁"
+      locator: "internal/composition; internal/kernel/composition/architecture_test.go"
+      snapshot: "7bbe4bc7c6979324844cc1f7c43384d69738936b"
+    - title: "012 模块边界与 014 Todo 实施研究"
+      locator: "docs/changes/012-business-module-architecture/design/module-boundaries.md; docs/changes/014-todo-business-vertical-slice/research/R001-current-todo-vertical-slice-feasibility"
+      snapshot: "verified 2026-08-15"
+    - title: "当前全量 Go 测试"
+      locator: "go test ./..."
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["应用模块不再纵向组织", "module、Component 或 Capability 术语所有权改变", "新增第二个应用模块根目录"]
+relations:
+  extends: []
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

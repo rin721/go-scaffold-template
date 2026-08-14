@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 
-	clibinding "github.com/rin721/go-scaffold2/internal/business/todo/binding/cli"
-	configbinding "github.com/rin721/go-scaffold2/internal/business/todo/binding/config"
 	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
 	kernelcomposition "github.com/rin721/go-scaffold2/internal/kernel/composition"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	"github.com/rin721/go-scaffold2/internal/kernel/logging"
+	clibinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/cli"
+	configbinding "github.com/rin721/go-scaffold2/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold2/pkg/cli"
 )
 

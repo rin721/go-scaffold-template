@@ -35,7 +35,7 @@ CMP-001 -> GOV-001 -> VER-001
 
 - 状态：已完成（实现）。
 - 工作量：L。
-- 修改：建立 `internal/business/todo/model`、`service` 和模块 README。
+- 修改：建立 `internal/module/todo/model`、`service` 和模块 README。
 - 完成条件：
   - Todo/Status/title/complete 不变量与 UTC 时间语义落实；
   - UseCases、Command/Query/Result 和 caller-owned Repository port 无基础设施类型；
@@ -76,7 +76,7 @@ CMP-001 -> GOV-001 -> VER-001
   - 四条 API 与 JSON schema 完全符合 requirements；
   - Handler 只依赖 UseCases/I18n，不访问 Repository/Database；
   - fault 到 HTTP/reason/I18n 安全映射完整；
-  - ModuleID、route canonicalization、重复项和 middleware 顺序测试通过。
+  - ID、route canonicalization、重复项和 middleware 顺序测试通过。
 
 ### CLI-001：CLI command binding 与 one-shot Supervisor
 

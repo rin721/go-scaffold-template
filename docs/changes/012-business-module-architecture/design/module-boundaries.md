@@ -59,7 +59,7 @@ internal/
 
 ### 2.5 Composition root
 
-composition root 是唯一可以同时知道 Kernel Capability、各业务模块和进程运行模式的位置。它选择实现、传递显式依赖、合并 contribution、执行冲突校验并建立 Host。它不能演变成业务逻辑中心或万能依赖对象。
+composition root 是唯一可以同时知道 Kernel Capability、各应用模块和进程运行模式的位置。它选择实现、传递显式依赖、合并 contribution、执行冲突校验并建立 Host。它不能演变成业务逻辑中心或万能依赖对象。
 
 ## 3. 模型分离
 
@@ -127,7 +127,7 @@ application -> caller-owned narrow ports
 后续实施至少需要以下自动检查：
 
 - 禁用 import 检查覆盖 domain/application 到 Kernel、协议和第三方基础设施的依赖；
-- composition 之外禁止业务模块互相导入内部 Adapter；
+- composition 之外禁止应用模块互相导入内部 Adapter；
 - contribution 重复项在构造验证阶段失败；
 - Service 单元测试不启动 Kernel 或外部资源；
 - Adapter 合约测试覆盖转换、错误链、取消和资源边界。

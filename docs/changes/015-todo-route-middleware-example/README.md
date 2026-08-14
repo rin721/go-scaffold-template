@@ -1,5 +1,7 @@
 # 015 Todo 路由中间件示例
 
+> 命名更新：016 已把 Todo 的现行路径迁移为 `internal/module/todo`。015 的目录名保持稳定，正文中的代码路径使用当前名称。
+
 ## 状态
 
 - 任务性质：非纯文档 HTTP 行为变更。
@@ -10,7 +12,7 @@
 
 ## 一句话结论
 
-014 已安装进程级 `Recovery -> RequestID -> AccessLog -> SecureHeaders`，也支持 `Route.Middlewares`，但 Todo route contribution 没有真实模块级示例。015 拟新增 `internal/business/todo/middleware`，实现并仅在创建路由绑定 `RequireJSONContentType`，以真实的 `415 todo_unsupported_media_type` 展示 middleware 的构造、短路、错误传播、路由绑定和顺序测试。
+014 已安装进程级 `Recovery -> RequestID -> AccessLog -> SecureHeaders`，也支持 `Route.Middlewares`，但 Todo route contribution 没有真实模块级示例。015 拟新增 `internal/module/todo/middleware`，实现并仅在创建路由绑定 `RequireJSONContentType`，以真实的 `415 todo_unsupported_media_type` 展示 middleware 的构造、短路、错误传播、路由绑定和顺序测试。
 
 ## 阅读顺序
 
