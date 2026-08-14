@@ -1,5 +1,7 @@
 # R001：当前脚手架分发与消费边界
 
+> 后续决策：用户于 2026-08-15 选择完整源码复制模型。本文的候选比较保留为研究证据；“组合模式值得优先验证”不再是当前计划。
+
 ## 1. 研究问题
 
 当前仓库是否已经具备作为外部 Go library、可复制 template 或 generator 产品被创建、定制和升级的真实路径？
@@ -22,12 +24,12 @@
 - Go tool 明确规定：`internal` 目录及其子目录只能被其父目录树内的代码导入。因此另一个 module 不能直接复用这条完整运行链。
 - `pkg/boundary_test.go` 反向保证 `pkg/**` 不导入 `internal/**`。这使 `pkg` 具备独立能力库边界，但不等于公开了应用 Runtime 与 Composition。
 
-### 3.2 当前仓库也不是可参数化模板
+### 3.2 当前仓库尚不是受验证的复制基线
 
 - 仓库跟踪文件中有 132 个文件包含固定 module path、`go-scaffold2` 或 `APP_` 身份；88 个 Go 文件包含当前 module import。
 - `cmd/app` 固定声明应用名 `go-scaffold2`、配置路径 `config.yaml` 和环境变量前缀 `APP_`。
 - Todo 业务模块、配置、migration、HTTP/CLI binding 与文档处于默认运行链，不存在“包含 Todo”与“空白服务”的生成选项。
-- 跟踪文件中没有 generator、template manifest、变量 schema、golden output、生成文件标记或升级迁移工具。
+- 跟踪文件中没有经过验证的复制包含/排除清单、一次性身份迁移清单、baseline 来源记录或升级迁移政策。
 
 ### 3.3 当前没有可验证的版本与升级产品
 
@@ -37,22 +39,20 @@
 
 ## 4. 推断
 
-1. **library-only 不能沿用当前目录直接发布。** 要成为 framework library，必须把最小 Runtime 契约设计成公共包；机械搬出整个 `internal/kernel` 会一次性制造过大的稳定 API 面。
-2. **template-only 能最快创建副本，但不能自然升级。** 复制后代码由新项目拥有；若继续用上游 Git merge，会把脚手架历史和业务历史耦合，并且 GitHub template 创建的仓库与模板历史无关。
-3. **generator-only 能解决身份参数化，不自动解决演进。** 生成后 Runtime 仍是复制代码；除非定义 schema migration 和所有权，否则重新生成会覆盖用户修改。
-4. **组合模式值得优先验证但尚未成立。** 窄 Runtime 依赖可由 Go module 升级，应用装配和业务文件由消费者拥有；代价是必须严控公共 API，并分别治理 Runtime 版本和 template schema 版本。
+1. **完整复制与当前 `internal` 边界相容。** `pkg`、Kernel App 和 composition 一起进入目标 module 后，不需要暴露公共 Runtime API。
+2. **复制后全部代码必须归新项目。** 不存在 generator-owned 文件，也不能把上游 merge 描述成可靠升级通道。
+3. **身份迁移仍需严格验证。** 当前固定 module、应用名、`APP_` 前缀和 Todo 资产不能靠无边界全局替换处理。
+4. **上游改进只能人工传播。** baseline tag、来源记录、release note、安全公告和逐版本迁移指南是该模型需要补齐的治理能力。
 
 ## 5. 适用与不适用
 
-适用于 020 的方案比较、隔离消费者验证和 ADR。它不证明任何候选已经可用，不授权移动 `internal`，也不代表当前 `pkg/**` 已经承诺 v1 兼容。
+适用于 020 的产品边界依据、隔离复制验证和 ADR。它不证明复制流程已经可用，不授权移动 `internal`，也不代表复制后的项目与源仓库存在升级关系。
 
 ## 6. 局限与剩余未知
 
-- 尚未在另一个 module 中执行创建、编译、定制和升级实验。
-- 尚未量出实现最小公共 Runtime 所需的具体符号和迁移成本。
-- 尚未决定是否使用自研 generator；Go 官方 `gonew` 仍明确是实验性工具。
-- 真实 CI、release tag、Windows/Linux 生成一致性和离线行为均未验证。
+- 尚未在隔离目录的独立 module 中执行完整复制、身份迁移、编译测试和 Todo 移除。
+- 真实 baseline tag、Windows/Linux 复制一致性和人工升级资料均未验证。
 
 ## 7. 对 020 的影响
 
-研究门禁足以进入“隔离验证后决策”的计划，但不足以直接采用组合模式。验证必须在 `_tmp`/`tmp` 消费者中完成，不允许为了试验先污染生产源码。
+研究事实足以支持用户选择的 copy-owned 方向，但复制基线是否可用仍需隔离验证。验证必须在 `tmp/` 副本中完成，不允许为了试验先修改生产源码。

@@ -1,93 +1,147 @@
-# 设计：用外部消费者证据选择脚手架产品形态
+# 设计：版本化源码复制与独立所有权
 
-## 1. 设计原则
+## 1. 决策
 
-- **先证明消费链，再改变生产边界。** 当前 `internal` 和固定身份事实见 [R001](research/R001-current-distribution-boundary/report.md)。
-- **创建与升级是两个协议。** 模板复制解决首次创建；Go module 才天然表达依赖版本，见 [R002](research/R002-go-distribution-versioning/report.md)。
-- **应用拥有业务与组合。** 脚手架不能在升级时重写业务模块、路由选择或资源组合。
-- **公共 API 面积是成本。** 只有跨服务稳定且值得兼容承诺的 Runtime 契约才可从 `internal` 演进为公共包。
+用户已选择 **copy-owned source scaffold**：`go-scaffold2` 发布完整源码基线，开发者复制源码后一次性迁移身份，所有代码从此归新项目。
 
-## 2. 候选及当前假设
+此前研究比较过 template、generator、library 和组合模式。比较结论仍作为历史依据，但 generator/library/组合模式已被用户决策排除，不再进入验证或后续实现。
 
-| 候选 | 决策前提 | 当前判断 |
-| --- | --- | --- |
-| template repository | 接受复制后不自动升级，只保证首次创建 | 可作为最低成本 v0 退路，但当前固定身份仍需解决 |
-| generator-only | 需要身份 schema、原子输出、所有权和模板迁移 | 能解决创建一致性，Runtime 修复传播弱 |
-| library-only | Runtime API 足够完整且应用胶水简单 | 当前不可行；完整 Runtime 在 `internal`，且会丢失脚手架基线 |
-| Runtime + generator | Runtime 能保持窄，应用组合可由模板拥有 | 优先验证假设；升级语义最好，但治理成本最高 |
+## 2. 为什么适合当前代码
 
-不采用加权打分制造伪精度。以下硬门禁任一失败，组合模式即失败：
-
-1. 外部消费者必须导入大量具体 Adapter 或源仓库 `internal`；
-2. 应用无法在自己仓库拥有 Composition/Module；
-3. Runtime 升级必须重写用户代码；
-4. generator 无法在冲突时安全停止；
-5. 三种版本无法独立表达和追溯。
-
-## 3. 隔离验证拓扑
-
-验证获确认后只在 Git 忽略的 `tmp/scaffold-product-form/` 中工作，不修改当前生产 Go 源码：
+当前底层装配是：
 
 ```text
-tmp/scaffold-product-form/
-├── source-snapshot/       # 当前仓库的可丢弃快照，允许原型性边界调整
-├── generated-service/     # 独立 module，模拟首次生成和业务定制
-├── upgrade-vnext/         # Runtime/template 下一版本输入
-└── evidence/              # 命令、清单、diff 摘要，不包含凭据和机器私有信息
+pkg/<capability>
+  -> internal/kernel/app/<capability>
+  -> internal/kernel/composition
+  -> internal/composition
+  -> cmd/app
 ```
 
-`generated-service` 必须是独立 `go.mod`。未发布 Runtime 可使用 Go 官方建议的本地 `replace` 指向 `source-snapshot`，而不能指向当前工作树中未经验证的公共实现。
+如果另一个 module 只依赖源仓库，Go 的 `internal` 规则会阻止导入完整 Runtime；复制源码后，`internal/**` 位于目标 module 自己的目录树内，这个问题自然消失。`pkg` 与 Kernel App 会一起复制，不需要发明公共 Runtime API，也不改变当前显式 Plan 装配、租约、Reload 和反向停止语义。
 
-## 4. 三组验证
+代价同样明确：复制后的服务不会自动获得上游改进。这个代价属于已选产品模型，不能再用隐藏 framework dependency 或自动覆盖用户文件规避。
 
-### 4.1 `PROBE-001`：template/generator 创建
+## 3. 产品边界
 
-输入一个非默认 module、应用名、可执行名、配置名、环境前缀和 `example=todo|none`，验证：
+### 3.1 脚手架仓库负责
 
-- 输出目录原子创建，非法输入不留半成品；
-- Go imports、文档、配置和进程帮助中的身份一致；
-- 产物不残留不应出现的 `go-scaffold2`/`APP_`；
-- 相同输入重复生成的 tracked 内容一致；
-- manifest 列出每个文件的 owner 和 template schema version。
+- 发布经过验证的完整源码 baseline；
+- 说明复制范围和排除范围；
+- 提供一次性身份迁移清单和验证清单；
+- 将 Todo 标为可保留/可移除示例；
+- 为重要修复提供版本化 release notes 和人工迁移说明。
 
-这里允许一次性验证脚本或最小原型，但不得放入正式源码目录。
+### 3.2 新项目负责
 
-### 4.2 `PROBE-002`：library 边界
+- 选择 baseline；
+- 执行复制和身份迁移；
+- 拥有并修改全部 `cmd`、`internal`、`pkg`、配置、文档和 CI；
+- 自行决定是否采纳后续上游变化；
+- 建立独立 Git 历史和发布节奏。
 
-先用负向编译证明外部 module 不能导入当前 `internal/kernel`，再在 `source-snapshot` 中探索最小公共 Runtime seam。记录外部消费者真正需要的符号、第三方类型泄漏、配置/生命周期 owner 和 API 数量；不以“能编译”替代边界质量。
+### 3.3 明确不存在
 
-### 4.3 `PROBE-003`：组合模式升级
+- generator-owned 文件；
+- 运行期 scaffold dependency；
+- 公共 Kernel Runtime module；
+- 自动模板 schema migration；
+- 上游仓库对副本的文件控制权。
 
-在消费者中加入 application-owned sentinel 和一个最小业务改动，然后模拟：
+## 4. 标准复制流程
 
-1. Runtime `vA -> vB`：只改变 module 依赖，消费者代码保持兼容；
-2. template schema `sA -> sB`：只修改 generator-owned 文件或生成迁移建议；
-3. 同一路径冲突：停止、报告，sentinel 内容不变；
-4. Todo -> none 或新项目 none：验证示例与核心的边界，阻塞点如实进入 ADR。
+020 的隔离验证使用以下目标流程，但不在未确认前实际执行：
 
-## 5. 所有权模型
+```text
+1. 固定 source commit
+2. 复制 tracked baseline 到 tmp/scaffold-copy-validation/service
+3. 排除 .git、tmp、.data、config.yaml 和其他本机/运行态文件
+4. 迁移目标 identity
+5. 保留 Todo 验证完整基线
+6. 在另一副本验证 Todo 完整移除
+7. 执行 build/test/vet/config init 与残留扫描
+8. 记录 baseline provenance 和验证结果
+```
 
-| Owner | 示例 | 演进方式 |
+复制的是已跟踪、被发布策略允许的内容，而不是当前工作目录的所有文件。这样不会把用户本地配置、SQLite 文件、缓存或本任务验证目录带入新项目。
+
+## 5. 身份迁移模型
+
+身份迁移不是任意文本全局替换。需要建立有所有者的迁移表：
+
+| 身份 | 当前来源 | 目标行为 |
 | --- | --- | --- |
-| Runtime module | 稳定 Host/lifecycle 契约 | Go module 版本升级；消费者不复制源码 |
-| Generator | 可完全再生且无用户编辑的薄入口/元数据 | schema migration；校验 hash 后替换 |
-| Application | Composition、Module、业务、配置值和部署定制 | 永不静默覆盖；只给迁移建议或显式 patch |
+| Go module path | `go.mod` 与 Go imports | 改成目标 module，随后 `go mod tidy` |
+| 应用名/描述 | `cmd/app` 固定进程输入 | 改成目标服务身份 |
+| 二进制/命令示例 | README、CI、运行命令 | 同步目标可执行名 |
+| 配置文件名 | 入口默认值与文档 | 显式保留或改名，并同步引用 |
+| 环境变量前缀 | 入口、测试、示例配置、文档 | 改成目标专用前缀并验证嵌套规则 |
+| 架构测试身份 | boundary/architecture tests | 迁移为目标 module path，保持门禁语义 |
+| 来源记录 | 新项目文档 | 记录 source commit/tag，不形成依赖 |
 
-具体文件归类只有实验后才能写入 ADR；上表是验证模型，不是已确认目录变更。
+验证可以使用只读扫描命令；正式方案不需要 project generator，也不需要把身份改名做成长期运行工具。
 
-## 6. 决策输出
+## 6. Todo 示例策略
 
-`ADR-001` 必须记录：
+默认完整复制保留 Todo，因为它是当前唯一证明 HTTP、CLI、Database、Config、migration、module contribution 和 Host 能闭环工作的垂直切片。
 
-- 选择的唯一产品形态和被拒绝候选；
-- Runtime、generator 和 application 三个边界；
-- Runtime/generator/template schema 的版本和兼容语义；
-- 创建、升级、冲突、回滚和停止策略；
-- v0 限制、进入 v1 的证据门禁；
-- 触发重新评估的条件。
+同时必须验证“移除 Todo”所需的完整集合：
 
-若组合模式未通过硬门禁，ADR 应选择 generator/template-only，并直说“创建后由应用完全拥有，框架修复不会自动传播”。不得同时保留两个权威创建入口。
+```text
+internal/module/todo
+internal/composition 中 Todo 构造与 Adapter
+Todo 配置 binding/default/example
+Todo routes、CLI commands、migration 与测试
+README/架构文档引用
+```
 
-## 7. 后续影响
+如果当前应用 composition 与 Todo 耦合导致移除后无法形成最小服务，020 只记录真实缺口并建立后续任务；不得在隔离验证中把占位业务模块写回生产源码。
 
-020 决策后，至少拆分独立实施变更：公共 Runtime（如被选择）、正式 generator/template、release/version、外部 consumer CI 和开发者文档。019 的 `API-AUTHORITY-001` 只有在产品边界确定后才能准确决定 API contract 位于 Runtime 还是应用模板。
+## 7. 版本与升级语义
+
+### Baseline 版本
+
+- 脚手架以 Git tag/release 标识可复制 baseline；当前仓库没有 tag，因此发布能力仍是缺口。
+- 新项目记录所用 tag/commit 和复制日期，便于判断安全公告是否适用。
+- source commit 只表示来源，不建立父子仓库自动同步关系。
+
+### 后续改进
+
+按性质传播：
+
+| 变化 | 脚手架发布内容 | 新项目动作 |
+| --- | --- | --- |
+| 安全修复 | 受影响 baseline、修复 diff、验证命令 | 人工审阅并迁移 |
+| 缺陷修复 | release note、涉及文件和行为变化 | 按需迁移 |
+| 新能力 | 当前架构文档与独立变更说明 | 自主选择，不自动加入 |
+| 破坏性架构变化 | 新 baseline 与迁移指南 | 评估后人工改造或不升级 |
+
+不使用版本号暗示已复制项目可以执行 `go get` 升级整个脚手架。
+
+## 8. 隔离验证设计
+
+确认后仅在 Git 忽略的 `tmp/scaffold-copy-validation/` 建立：
+
+```text
+tmp/scaffold-copy-validation/
+├── source-manifest/       # source commit 与包含/排除清单
+├── todo-service/          # 新 identity，保留 Todo
+├── minimal-service/       # 新 identity，尝试完整移除 Todo
+└── evidence/              # 命令与结果摘要，不保存凭据
+```
+
+验证副本不得通过 `replace`、Go workspace 或相对链接返回源工作区。验证结束后临时目录保持忽略，不提交。
+
+## 9. 决策记录输出
+
+验证完成后在 020 内形成 `ADR-001` 结果，记录：
+
+- copy-owned 是唯一产品形态；
+- 全部源码归新项目；
+- `internal` 与 `pkg` 整体复制；
+- baseline/provenance 语义；
+- 无 generator、公共 Runtime 和自动升级承诺；
+- Todo 默认保留与移除边界；
+- 正式复制指南、release 和迁移公告需要哪些后续变更。
+
+019 的 `API-AUTHORITY-001` 随后直接设计在复制后的完整应用源码中，不需要再判断 contract 属于外部 Runtime 还是 generator 模板。

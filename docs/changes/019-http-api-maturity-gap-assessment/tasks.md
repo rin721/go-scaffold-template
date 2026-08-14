@@ -22,7 +22,7 @@
 
 | 候选 ID | 优先级 | 前置 | 目标 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `FORM-001` | P0 | 无 | ADR 决定 template/library/generator/组合产品形态与升级模型 | [020 已形成计划，待确认](../020-scaffold-product-form/README.md) |
+| `FORM-001` | P0 | 无 | 决定脚手架产品形态与升级模型 | [020 已选择完整源码复制，调整后验证计划待确认](../020-scaffold-product-form/README.md) |
 | `API-AUTHORITY-001` | P0 | `FORM-001` | 原型比较 spec-first 与 typed code-first，冻结单一 API authority | 未纳入实施 |
 | `API-CONTRACT-001` | P0 | `API-AUTHORITY-001` | Operation、schema、route、OpenAPI、compatibility diff 单轨闭环 | 未纳入实施 |
 | `PROBLEM-001` | P0 | `API-CONTRACT-001` | 统一 problem/validation/404/405/panic 协议并迁移 Todo | 未纳入实施 |
@@ -42,10 +42,10 @@
 
 第一批只启动两个研究型变更，不改生产运行链：
 
-1. `FORM-001`：已进入 [020](../020-scaffold-product-form/README.md)，等待确认后用隔离外部消费者验证脚手架应如何被创建和升级；
-2. `API-AUTHORITY-001`：在 020 决定产品边界后，再用 Todo 四个 operation 做 spec-first 与 typed code-first 最小原型比较。
+1. `FORM-001`：已进入 [020](../020-scaffold-product-form/README.md)，用户已选择完整源码复制；等待确认后验证复制范围、身份迁移、Todo 保留/移除和人工升级政策；
+2. `API-AUTHORITY-001`：在 020 完成复制基线验证后，再用 Todo 四个 operation 做 spec-first 与 typed code-first 最小原型比较。
 
-两个决定会影响后续错误、认证、OpenAPI、观测、生成器和兼容测试。它们完成前不应先新增 Swagger 注解、JWT middleware 或另一套路由 Registry。
+两个决定会影响后续错误、认证、OpenAPI、观测、复制基线和兼容测试。它们完成前不应先新增 Swagger 注解、JWT middleware 或另一套路由 Registry。
 
 ## 5. 逐轮证据
 

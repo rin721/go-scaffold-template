@@ -1,42 +1,51 @@
-# 020：脚手架产品形态与升级模型
+# 020：复制型脚手架产品形态
 
 ## 当前状态
 
-- 任务类型：研究、计划与待确认的隔离验证。
+- 任务类型：用户决策后的方案调整与待确认隔离验证。
 - 研究门禁：已通过，证据为 [R001 当前分发边界](research/R001-current-distribution-boundary/report.md) 与 [R002 Go 分发和版本语义](research/R002-go-distribution-versioning/report.md)。
-- 计划状态：待确认；本轮只完成文档，没有源码、配置、依赖、生成器或临时消费者变更。
-- 代码快照：`main@af7fdadc3ebe9f6c6895a60a9ee0794494c7037e`。
+- 产品形态决策：用户于 2026-08-15 明确选择“复制脚手架源码”，不由脚手架创建项目，不采用 generator、library-only 或 Runtime + generator 形态。
+- 计划状态：已按该决策重写，等待后续明确确认；本轮只修改文档。
+- 代码快照：`main@1b60d16b6807313ee33d60b9a3d1659bf16abac1`。
 - 来源：[019 的 `FORM-001`](../019-http-api-maturity-gap-assessment/tasks.md)。
 
 ## 一句话结论
 
-当前仓库不能继续把“可运行源码仓库”默认等同于“成熟脚手架产品”。完整运行时和装配位于 `internal/**`，外部 Go module 无法复用；直接复制又缺少确定的身份替换、生成文件所有权、版本发布和升级协议。
-
-020 将“版本化的窄公共 Runtime + 生成后由应用拥有的 Composition/Module”作为优先验证假设，但不预先确认它。只有隔离消费者同时证明创建、定制、Runtime 升级和模板演进可控，才通过 ADR 采用组合模式；否则 v0 应单轨退回 generator/template-only，并明确不承诺自动上游合并。
+`go-scaffold2` 本身就是一份版本化、可运行、可复制的完整服务源码基线。使用者复制某个发布快照后，一次性替换项目身份并建立自己的 Git 历史；`pkg`、`internal/kernel/app`、底层 composition、业务模块和交付文件全部归新项目所有，不再依赖源脚手架，也不接受后续 generator 覆盖。
 
 ```text
-版本化输入                         新服务仓库
-Runtime module ────────────────>  go.mod 中可升级的窄依赖
-Template schema + generator ───>  应用拥有的 cmd/internal/config/docs
-                                      │
-                                      └─ 不反向导入源仓库 internal/**
+go-scaffold2 release/tag
+          │ 复制源码快照，不运行 scaffold create
+          ▼
+新项目工作区
+  ├─ 一次性迁移 module / app / env prefix 等身份
+  ├─ 保留或删除 Todo 示例
+  ├─ 完整验证
+  └─ 建立独立 Git 历史，之后自行演进
 ```
 
-## 本变更回答的问题
+## 明确排除
 
-1. 谁是脚手架消费者，消费者实际获得和拥有哪些文件？
-2. Runtime、模板、生成器和示例分别如何版本化？
-3. 哪些契约值得成为公共 Go API，哪些必须留在生成后的应用内部？
-4. 首次创建、业务定制、Runtime 升级和模板演进如何验证且不覆盖用户代码？
-5. 当前仓库应选择 template、generator、library 还是组合形态？
+- 不开发 `scaffold new`、`init`、模板渲染器或项目生成 DSL。
+- 不把 Kernel/Plan/Host 搬成供外部项目依赖的公共 Runtime module。
+- 不把上游 Git merge、自动重生成或文件覆盖作为升级机制。
+- 不维护“复制模式”和“generator 模式”两套当前入口。
+
+## 仍需验证的问题
+
+1. 一个干净源码快照能否排除 `.git`、运行数据和本机状态后完整复制？
+2. module path、应用名、可执行名、环境变量前缀和文档身份是否能一次性迁移且无残留？
+3. `pkg -> internal/kernel/app -> internal/kernel/composition -> internal/composition` 是否能在新 module 中原样编译和运行？
+4. Todo 示例能否被明确保留，或按清单完整移除而不破坏底座？
+5. 如何记录复制来源，并诚实发布后续安全修复和人工迁移说明？
 
 ## 阅读顺序
 
 1. [需求与验收标准](requirements.md)
-2. [比较、验证设计与决策规则](design.md)
-3. [任务、确认范围与证据](tasks.md)
+2. [复制、身份迁移与版本设计](design.md)
+3. [待确认验证任务](tasks.md)
 4. [研究档案](research/README.md)
 
 ## 当前行为边界
 
-020 尚未改变项目的安装、启动、导入或升级方式。当前行为仍以根 [README](../../../README.md) 为准；任何 `tmp/` 消费者实验、生成命令、源码移动、公共 API、依赖或 ADR 写入，都必须在本计划报告之后获得用户明确确认。
+020 尚未改变项目的复制、重命名或发布方式。任何临时副本、身份替换、Todo 移除、构建、测试或 ADR 结果更新，都必须在本计划报告之后获得用户明确确认。

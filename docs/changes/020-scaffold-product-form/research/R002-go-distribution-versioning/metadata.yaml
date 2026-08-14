@@ -10,7 +10,7 @@ technologies: ["Go modules", "Git", "GitHub templates"]
 applicable_scenarios: ["020 产品形态比较", "公共 Runtime 版本策略", "模板实例化与升级设计"]
 non_applicable_scenarios: ["把 gonew 视为稳定依赖", "证明 GitHub template 支持上游升级", "替代项目级兼容政策"]
 status: active
-summary: "Go module 适合版本化公共依赖，internal 明确限制外部导入；模板负责首次复制而非升级，gonew 仍是实验性工具，因此产品必须显式分离依赖升级和生成资产演进。"
+summary: "完整源码复制后 internal 位于目标 module 内；复制基线可用 tag 标识，但复制不产生自动升级关系，后续修复必须依靠来源记录和人工迁移说明。"
 evidence:
   types: ["official-documentation", "official-blog", "local-tool-documentation"]
   primary_sources:
@@ -34,7 +34,7 @@ verified_at: "2026-08-15"
 validity:
   mode: reviewed-primary-sources
   review_after: "2026-11-15"
-  refresh_triggers: ["Go 发布稳定模板工具", "Go module 版本规则变化", "选择具体 generator 技术", "GitHub template 行为变化"]
+  refresh_triggers: ["Go module 或 internal 规则变化", "GitHub template 行为变化", "baseline 发布方式落地", "用户改变 copy-owned 产品决策"]
 relations:
   extends: []
   related: ["020-R001"]

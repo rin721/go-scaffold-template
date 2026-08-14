@@ -9,7 +9,7 @@ languages: ["Go"]
 applicable_scenarios: ["020 产品形态决策", "外部消费者验证", "生成和升级边界设计"]
 non_applicable_scenarios: ["证明候选方案已实现", "承诺现有公共 API 稳定", "授权移动 internal 包"]
 status: active
-summary: "完整运行与装配位于 internal，外部只能导入 pkg；仓库又有大量固定身份且没有 generator、tag、所有权或升级协议，因此当前形态不能支撑成熟脚手架消费。"
+summary: "复制完整源码可以保留 internal 装配边界，但当前仍缺少受验证的复制范围、身份迁移、baseline tag、来源记录与人工升级政策。"
 evidence:
   types: ["source-code", "tests", "repository-layout", "git-metadata", "local-tool-documentation"]
   primary_sources:
@@ -27,7 +27,7 @@ verified_at: "2026-08-15"
 validity:
   mode: snapshot
   review_after: "2026-11-15"
-  refresh_triggers: ["新增 generator 或 template manifest", "移动 internal runtime", "新增 Git release tag", "修改 module path 或应用身份配置"]
+  refresh_triggers: ["复制范围或身份迁移流程落地", "新增 Git release tag", "修改 module path 或应用身份配置", "用户改变 copy-owned 产品决策"]
 relations:
   extends: ["019-R001"]
   related: ["020-R002"]

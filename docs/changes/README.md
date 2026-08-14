@@ -22,6 +22,6 @@
 - [017 应用模块能力评估门禁](017-module-capability-assessment-gate/README.md)：已完成通用 Agent 研究语境、项目级应用模块开发指南、能力评估表和生命周期契约缺口升级路径。
 - [018 Cordis 启发的插件架构](018-cordis-inspired-plugin-architecture/README.md)：已废除；研究快照作为历史保留，所有插件架构实施任务失效。
 - [019 HTTP API 成熟度缺口评估](019-http-api-maturity-gap-assessment/README.md)：已完成当前 HTTP API 运行链审计、成熟度参考、缺口优先级和分阶段路线；没有非文档实施授权。
-- [020 脚手架产品形态与升级模型](020-scaffold-product-form/README.md)：研究与计划已完成，等待确认后在隔离消费者中比较 template、generator、library 与组合模式，并以 ADR 单轨决策。
+- [020 复制型脚手架产品形态](020-scaffold-product-form/README.md)：用户已选择完整源码复制并排除 generator/library/组合模式；调整后的隔离复制、身份迁移、Todo 示例和人工升级验证计划待确认。
 
 下一个任务序号为 `021`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
