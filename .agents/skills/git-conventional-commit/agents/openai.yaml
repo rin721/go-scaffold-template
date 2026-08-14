@@ -1,0 +1,4 @@
+interface:
+  display_name: "Git Conventional Commit"
+  short_description: "按 Conventional Commits 收敛任务并自动提交"
+  default_prompt: "Use $git-conventional-commit at task completion to check the worktree, run validation, and create a Conventional Commits commit."

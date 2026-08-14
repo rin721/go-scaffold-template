@@ -1,4 +1,54 @@
+# Go 编译产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go 测试产物
+*.test
+*.out
+coverage/
+coverage.*
+profile.*
+
+# Go 工作区文件
+go.work
+go.work.sum
+
+# 构建和发布目录
+/bin/
+/build/
+/dist/
+
+# 临时文件和缓存
+/tmp/
+/temp/
+*.tmp
+*.log
+
+# 本地环境配置
+.env
+.env.*
+!.env.example
+
+# 本地配置文件
 /config.yaml
 /config.yml
 /config.json
 /.data/
+!config.example.yaml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Visual Studio Code 本地调试配置
+__debug_bin*
+
+# 操作系统生成文件
+.DS_Store
+Thumbs.db
+Desktop.ini
