@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前显式装配与生命周期基线"
+question: "当前 go-scaffold2 已有哪些可复用的插件化基础，哪些缺口阻止其成为可配置的积木式插件框架？"
+research_type: current-project
+topics: ["plugin architecture", "composition", "capabilities", "lifecycle", "application modules"]
+keywords: ["Definition", "FrozenPlan", "Binding", "Input", "Kernel", "Coordinator", "Contribution", "composition root"]
+languages: ["Go"]
+frameworks: []
+technologies: ["manual composition", "typed dependencies", "transactional reload"]
+applicable_scenarios: ["018 插件架构设计", "Kernel 与应用模块统一装配", "Profile 与 Catalog 规划"]
+non_applicable_scenarios: ["证明目标插件 Runtime 已实现", "第三方插件安全", "进程外插件协议"]
+status: superseded
+summary: "历史快照；018 方案已废除，当前项目基线由 019-R001 重新评估。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "existing-research", "local-static-analysis"]
+  primary_sources:
+    - title: "当前 Kernel App 声明、依赖与运行契约"
+      locator: "internal/kernel/app"
+      snapshot: "28fbc7a9cfe01e4e7c45505217c15f4d56e711b3"
+    - title: "当前 Kernel composition、Coordinator 与 Host"
+      locator: "internal/kernel/composition; internal/kernel/kernel.go; internal/kernel/coordinator.go; internal/kernel/host.go"
+      snapshot: "28fbc7a9cfe01e4e7c45505217c15f4d56e711b3"
+    - title: "当前 application composition 与 module contribution"
+      locator: "internal/composition; internal/module"
+      snapshot: "28fbc7a9cfe01e4e7c45505217c15f4d56e711b3"
+    - title: "既有插件与动态配置研究"
+      locator: "docs/changes/012-business-module-architecture/research/R009-hashicorp-go-plugin; docs/changes/012-business-module-architecture/research/R014-caddy-config-lifecycle"
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["Kernel App API 变化", "新增第二个应用模块", "composition root 变化", "018 开始实施"]
+relations:
+  extends: ["012-R009", "012-R014", "017-R001"]
+  related: ["012-R021", "014-R001"]
+  supersedes: []
+  superseded_by: ["019-R001"]
+report: report.md

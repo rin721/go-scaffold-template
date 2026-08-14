@@ -20,5 +20,7 @@
 - [015 Todo 路由中间件示例](015-todo-route-middleware-example/README.md)：已实现模块级 JSON Content-Type middleware、创建路由显式绑定、415 安全错误与进程验收。
 - [016 应用模块命名迁移](016-application-module-naming/README.md)：已完成；`internal/module`、`module.ID` 与 `module.todo` 已成为唯一现行命名。
 - [017 应用模块能力评估门禁](017-module-capability-assessment-gate/README.md)：已完成通用 Agent 研究语境、项目级应用模块开发指南、能力评估表和生命周期契约缺口升级路径。
+- [018 Cordis 启发的插件架构](018-cordis-inspired-plugin-architecture/README.md)：已废除；研究快照作为历史保留，所有插件架构实施任务失效。
+- [019 HTTP API 成熟度缺口评估](019-http-api-maturity-gap-assessment/README.md)：已完成当前 HTTP API 运行链审计、成熟度参考、缺口优先级和分阶段路线；没有非文档实施授权。
 
-下一个任务序号为 `018`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `020`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

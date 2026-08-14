@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前 HTTP API 运行链与成熟度基线"
+question: "当前 go-scaffold2 已实现哪些 HTTP API 保证，哪些能力只有局部工具、暂缓意向或完全没有设计？"
+research_type: current-project
+topics: ["HTTP API", "runtime lifecycle", "API contract", "operations", "delivery", "scaffold product"]
+keywords: ["httpx", "Route", "StatusError", "Host.Health", "OpenAPI", "authentication", "observability", "migration", "CI"]
+languages: ["Go"]
+frameworks: ["net/http", "chi"]
+technologies: ["Kernel", "Supervisor", "GORM", "GitHub Actions"]
+applicable_scenarios: ["019 HTTP API 成熟度评估", "后续能力路线排序", "新 HTTP 服务基线设计"]
+non_applicable_scenarios: ["证明缺失能力已经实现", "直接选择认证或观测厂商", "授权源码实施"]
+status: active
+summary: "项目已有可靠进程与资源底座，但 Route/API 契约、身份策略、管理面、遥测、生产迁移、交付和脚手架升级仍未形成统一设计。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "repository-layout", "local-validation"]
+  primary_sources:
+    - title: "应用入口、composition 与 Todo 垂直切片"
+      locator: "cmd/app; internal/composition; internal/module"
+      snapshot: "28fbc7a9cfe01e4e7c45505217c15f4d56e711b3"
+    - title: "HTTP、健康、错误、数据与运行期契约"
+      locator: "pkg/httpx; pkg/health; pkg/fault; pkg/database; internal/kernel"
+      snapshot: "28fbc7a9cfe01e4e7c45505217c15f4d56e711b3"
+    - title: "当前持续集成与仓库交付资产"
+      locator: ".github/workflows/database.yml; repository root"
+      snapshot: "verified 2026-08-15"
+    - title: "当前全量 Go 测试"
+      locator: "go test ./..."
+      snapshot: "passed 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["HTTP Route 或错误契约变化", "新增认证或管理面", "迁移机制变化", "出现第二个 HTTP 应用模块", "019 开始非文档实施"]
+relations:
+  extends: ["012-R021", "014-R001", "015-R001", "017-R001"]
+  related: ["019-R002"]
+  supersedes: ["018-R001"]
+  superseded_by: []
+report: report.md

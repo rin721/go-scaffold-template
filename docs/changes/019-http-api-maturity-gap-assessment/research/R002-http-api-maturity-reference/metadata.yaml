@@ -1,0 +1,50 @@
+schema_version: 1
+id: R002
+title: "成熟 HTTP API 脚手架参考模型"
+question: "不绑定具体云厂商或业务产品时，一个成熟 Go HTTP API 脚手架至少应设计哪些协议、运营、安全和交付保证？"
+research_type: external-reference-architecture
+topics: ["HTTP semantics", "OpenAPI", "Problem Details", "observability", "health probes", "API security", "Go security"]
+keywords: ["RFC 9110", "RFC 9457", "OpenAPI 3.2", "OpenTelemetry HTTP", "Kubernetes probes", "OWASP API Security", "govulncheck"]
+languages: ["Go"]
+frameworks: []
+technologies: ["HTTP", "OpenAPI", "OpenTelemetry", "Kubernetes", "govulncheck"]
+applicable_scenarios: ["019 成熟度基线", "API 契约与管理面设计", "安全和交付门禁"]
+non_applicable_scenarios: ["替代业务威胁模型", "直接选择 JWT/OIDC 产品", "要求所有服务部署到 Kubernetes"]
+status: active
+summary: "成熟度应覆盖稳定 API 契约、标准 HTTP 语义、身份和授权、可观测性、独立健康语义、安全交付与兼容治理；标准规定语义，不替项目选择具体实现。"
+evidence:
+  types: ["internet-standard", "official-specification", "official-documentation", "security-reference"]
+  primary_sources:
+    - title: "RFC 9110 HTTP Semantics"
+      locator: "https://www.rfc-editor.org/rfc/rfc9110.html"
+      snapshot: "STD 97, June 2022; verified 2026-08-15"
+    - title: "RFC 9457 Problem Details for HTTP APIs"
+      locator: "https://www.rfc-editor.org/rfc/rfc9457.html"
+      snapshot: "Standards Track, July 2023; verified 2026-08-15"
+    - title: "OpenAPI Specification latest"
+      locator: "https://spec.openapis.org/oas/latest.html"
+      snapshot: "3.2.0; verified 2026-08-15"
+    - title: "OpenTelemetry HTTP semantic conventions"
+      locator: "https://opentelemetry.io/docs/specs/semconv/http/http-spans/"
+      snapshot: "verified 2026-08-15"
+    - title: "Kubernetes liveness, readiness and startup probes"
+      locator: "https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/"
+      snapshot: "verified 2026-08-15"
+    - title: "OWASP API Security Top 10 2023"
+      locator: "https://owasp.org/API-Security/editions/2023/en/0x10-api-security-risks/"
+      snapshot: "2023 edition; verified 2026-08-15"
+    - title: "Go security guidance"
+      locator: "https://go.dev/doc/security/"
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2027-02-15"
+  refresh_triggers: ["OpenAPI major/minor baseline changes", "OpenTelemetry HTTP conventions change", "OWASP API Security new edition", "Go security tooling policy changes"]
+relations:
+  extends: []
+  related: ["019-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md
