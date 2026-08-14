@@ -1,0 +1,38 @@
+schema_version: 1
+id: R002
+title: "Kratos layout 与 Wire 静态装配"
+question: "Kratos/Wire 如何组织业务层、静态依赖图、Server 和 cleanup，哪些做法适合当前仓库？"
+research_type: framework
+topics: ["static dependency injection", "composition root", "clean architecture", "lifecycle"]
+keywords: ["wireApp", "ProviderSet", "biz", "data", "service", "cleanup"]
+languages: ["Go"]
+frameworks: ["Kratos", "Wire"]
+technologies: ["gRPC", "HTTP"]
+applicable_scenarios: ["静态 composition root", "分层业务服务", "显式 cleanup"]
+non_applicable_scenarios: ["把已归档 Wire 作为新必需依赖", "运行时动态模块"]
+status: active
+summary: "Kratos layout 证明静态构造链和分层可行；当前仓库应吸收结构，不引入已归档 Wire。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "kratos-layout wire_gen.go"
+      locator: "https://github.com/go-kratos/kratos-layout/blob/94dbfcc4264a6be8e7b6c4929923c1e1f738b980/cmd/server/wire_gen.go"
+      snapshot: "94dbfcc4264a6be8e7b6c4929923c1e1f738b980"
+    - title: "Kratos App lifecycle source"
+      locator: "https://github.com/go-kratos/kratos/blob/668db92c2c001e9552594ba5a8aede8456af6d7e/app.go"
+      snapshot: "668db92c2c001e9552594ba5a8aede8456af6d7e"
+    - title: "既有 Go 能力装配研究"
+      locator: "docs/research/001-go-capability-composition"
+      snapshot: "existing unstructured research, verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Kratos layout 结构变化", "Kratos App lifecycle 主要版本变化"]
+relations:
+  extends: []
+  related: ["R003", "R004", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

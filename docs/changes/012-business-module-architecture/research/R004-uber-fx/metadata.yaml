@@ -1,0 +1,41 @@
+schema_version: 1
+id: R004
+title: "Uber Fx 运行时依赖图与生命周期"
+question: "Fx 的 Module、value group 和 Lifecycle 如何治理大型对象图，与当前显式装配约束有何冲突？"
+research_type: framework
+topics: ["runtime dependency injection", "modules", "lifecycle", "value groups"]
+keywords: ["fx.Provide", "fx.Invoke", "fx.Module", "Lifecycle", "OnStart", "OnStop"]
+languages: ["Go"]
+frameworks: ["Uber Fx"]
+technologies: ["Dig"]
+applicable_scenarios: ["大型运行时类型图", "统一 constructor lifecycle", "可组合模块选项"]
+non_applicable_scenarios: ["要求从普通构造代码直接审查依赖", "顺序敏感的隐式 contribution"]
+status: active
+summary: "Fx 的生命周期成熟，但运行时类型图和无序 value group 不符合当前唯一手工 composition 约束。"
+evidence:
+  types: ["source-code", "official-docs", "tests"]
+  primary_sources:
+    - title: "Fx lifecycle documentation"
+      locator: "https://uber-go.github.io/fx/lifecycle.html"
+      snapshot: "verified 2026-08-14"
+    - title: "Fx modules documentation"
+      locator: "https://uber-go.github.io/fx/modules.html"
+      snapshot: "verified 2026-08-14"
+    - title: "Fx lifecycle source"
+      locator: "https://github.com/uber-go/fx/blob/d5da5b04ac906bfbad8b400baeee9b970c1be6f3/lifecycle.go"
+      snapshot: "d5da5b04ac906bfbad8b400baeee9b970c1be6f3"
+    - title: "既有 Go 能力装配研究"
+      locator: "docs/research/001-go-capability-composition"
+      snapshot: "existing unstructured research, verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Fx lifecycle contract 变化", "项目重新评估 runtime DI"]
+relations:
+  extends: []
+  related: ["R002", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

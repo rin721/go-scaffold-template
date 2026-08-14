@@ -1,0 +1,35 @@
+schema_version: 1
+id: R005
+title: "CloudWeGo Hertz HTTP 组织与优雅停止"
+question: "Hertz 如何组织 Router、Handler、Middleware、数据访问初始化和 Server shutdown，哪些语义可复用？"
+research_type: framework
+topics: ["http server", "routing", "middleware", "graceful shutdown", "generated layout"]
+keywords: ["Hertz", "Spin", "Shutdown", "router", "handler", "bizdemo"]
+languages: ["Go"]
+frameworks: ["CloudWeGo Hertz"]
+technologies: ["HTTP", "GORM"]
+applicable_scenarios: ["HTTP 路由组织", "middleware", "server shutdown"]
+non_applicable_scenarios: ["全局 DAL 初始化", "直接替代 Kernel Host"]
+status: active
+summary: "Hertz 提供成熟 HTTP 结构，但示例的全局 DAL 和 Spin 所有权不符合本仓库显式资源边界。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "Hertz server lifecycle source"
+      locator: "https://github.com/cloudwego/hertz/blob/3415de4ca25f550996dab49d62839ebc6165d6b9/pkg/app/server/hertz.go"
+      snapshot: "3415de4ca25f550996dab49d62839ebc6165d6b9"
+    - title: "Hertz GORM example"
+      locator: "https://github.com/cloudwego/hertz-examples/tree/fe3d6783d35f86be93255624954950ccc299b8a5/bizdemo/hertz_gorm"
+      snapshot: "fe3d6783d35f86be93255624954950ccc299b8a5"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Hertz Spin/Shutdown 语义变化", "项目 HTTP 栈重新选型"]
+relations:
+  extends: []
+  related: ["R003", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

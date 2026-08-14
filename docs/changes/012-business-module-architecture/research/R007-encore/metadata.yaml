@@ -1,0 +1,38 @@
+schema_version: 1
+id: R007
+title: "Encore 编译器驱动的服务与资源图"
+question: "Encore 如何从 Go 源码发现服务、API 和基础设施资源，这种静态工具链的收益与约束是什么？"
+research_type: runtime-platform
+topics: ["compiler", "static analysis", "service graph", "infrastructure resources"]
+keywords: ["Encore", "parser", "service", "API", "sqldb.NewDatabase"]
+languages: ["Go", "Rust"]
+frameworks: ["Encore"]
+technologies: ["compiler", "SQL database", "tracing"]
+applicable_scenarios: ["平台统一治理", "源码派生服务图", "基础设施自动化"]
+non_applicable_scenarios: ["普通 Go 二进制内的轻量模块装配", "禁止包级资源声明的项目"]
+status: active
+summary: "Encore 以编译器和平台换取自动服务图与资源治理，能力强但超出当前显式本地脚手架边界。"
+evidence:
+  types: ["source-code", "official-docs", "examples", "tests"]
+  primary_sources:
+    - title: "Encore source tree"
+      locator: "https://github.com/encoredev/encore/tree/0579d5ce623e30771f56a5760ba50362ea7dced8"
+      snapshot: "0579d5ce623e30771f56a5760ba50362ea7dced8"
+    - title: "Encore SQL database example"
+      locator: "https://github.com/encoredev/examples/blob/main/sql-database/README.md"
+      snapshot: "verified 2026-08-14"
+    - title: "Encore booking system tutorial"
+      locator: "https://encore.dev/docs/tutorials/booking-system"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Encore parser/resource model 变化", "项目考虑平台级编译工具"]
+relations:
+  extends: []
+  related: ["R008", "R009", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

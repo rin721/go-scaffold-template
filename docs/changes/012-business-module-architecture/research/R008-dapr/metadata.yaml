@@ -1,0 +1,38 @@
+schema_version: 1
+id: R008
+title: "Dapr sidecar building blocks 与分布式边界"
+question: "Dapr 解决哪些跨进程能力，为什么它不是当前进程内业务模块装配方案？"
+research_type: runtime-platform
+topics: ["sidecar", "distributed systems", "service invocation", "state", "pubsub"]
+keywords: ["Dapr", "sidecar", "building blocks", "components", "Go SDK"]
+languages: ["Go"]
+frameworks: ["Dapr"]
+technologies: ["HTTP", "gRPC", "pubsub", "state store"]
+applicable_scenarios: ["多服务跨语言通信", "平台化 building blocks", "外部组件替换"]
+non_applicable_scenarios: ["单进程 module DI", "没有分布式部署需求的脚手架"]
+status: active
+summary: "Dapr 通过 sidecar 提供分布式 building blocks；它增加部署和一致性成本，不能替代进程内显式 port。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "Dapr concepts"
+      locator: "https://docs.dapr.io/concepts/"
+      snapshot: "verified 2026-08-14"
+    - title: "Dapr runtime source"
+      locator: "https://github.com/dapr/dapr/tree/3b6d46a67a3128cf84ea70acf5aa1a1c85ff894a"
+      snapshot: "3b6d46a67a3128cf84ea70acf5aa1a1c85ff894a"
+    - title: "Dapr Go SDK source"
+      locator: "https://github.com/dapr/go-sdk/tree/9d745f76a46e23ae0d022f1abb098132b67603e5"
+      snapshot: "9d745f76a46e23ae0d022f1abb098132b67603e5"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["Dapr 主要版本变化", "项目出现多服务或跨语言需求"]
+relations:
+  extends: []
+  related: ["R007", "R009", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

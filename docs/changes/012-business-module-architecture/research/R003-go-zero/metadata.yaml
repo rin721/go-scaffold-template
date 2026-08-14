@@ -1,0 +1,35 @@
+schema_version: 1
+id: R003
+title: "go-zero 生成式业务入口与 ServiceContext"
+question: "go-zero 如何生成配置、Server、Handler、Logic 与依赖上下文，这种路径的收益和边界是什么？"
+research_type: framework
+topics: ["code generation", "http handler", "service context", "application logic"]
+keywords: ["NewServiceContext", "RegisterHandlers", "Handler", "Logic", "MustNewServer"]
+languages: ["Go"]
+frameworks: ["go-zero"]
+technologies: ["goctl", "REST"]
+applicable_scenarios: ["强模板化 API 服务", "生成 Handler/Logic 骨架", "统一项目布局"]
+non_applicable_scenarios: ["把巨型依赖上下文传入所有用例", "代替当前 Kernel 生命周期"]
+status: active
+summary: "go-zero 提供高生产率的生成路径，但 ServiceContext 容易扩大依赖面，不适合作为当前模块契约。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "goctl API main template"
+      locator: "https://github.com/zeromicro/go-zero/blob/91a4cdbaf4e987f1c44ab14fb639756f213328f0/tools/goctl/api/gogen/main.tpl"
+      snapshot: "91a4cdbaf4e987f1c44ab14fb639756f213328f0"
+    - title: "goctl handler and logic templates"
+      locator: "https://github.com/zeromicro/go-zero/tree/91a4cdbaf4e987f1c44ab14fb639756f213328f0/tools/goctl/api/gogen"
+      snapshot: "91a4cdbaf4e987f1c44ab14fb639756f213328f0"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["goctl 模板变化", "ServiceContext 推荐方式变化"]
+relations:
+  extends: []
+  related: ["R002", "R005", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

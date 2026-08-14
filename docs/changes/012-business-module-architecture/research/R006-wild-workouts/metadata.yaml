@@ -1,0 +1,38 @@
+schema_version: 1
+id: R006
+title: "Wild Workouts 纵向服务、Repository 与事务模式"
+question: "Wild Workouts 如何用 Clean Architecture/DDD 组织 use case、port、adapter 和事务，哪些原则可迁移？"
+research_type: reference-architecture
+topics: ["clean architecture", "domain driven design", "repository", "transaction", "ports and adapters"]
+keywords: ["Wild Workouts", "Repository pattern", "UpdateFn", "application", "adapters"]
+languages: ["Go"]
+frameworks: []
+technologies: ["SQL", "Firestore", "HTTP", "gRPC"]
+applicable_scenarios: ["业务纵向模块", "使用方定义 Repository", "显式事务闭包", "adapter 测试替换"]
+non_applicable_scenarios: ["直接复制示例业务模型", "把文章当当前框架 API"]
+status: active
+summary: "该参考实现支持 caller-owned port、显式事务闭包和 domain/record 分离，是 012 业务内层的主要证据。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "Repository pattern in Go"
+      locator: "https://threedots.tech/post/repository-pattern-in-go/"
+      snapshot: "verified 2026-08-14"
+    - title: "Introducing Clean Architecture"
+      locator: "https://threedots.tech/post/introducing-clean-architecture/"
+      snapshot: "verified 2026-08-14"
+    - title: "Wild Workouts source"
+      locator: "https://github.com/ThreeDotsLabs/wild-workouts-go-ddd-example/tree/f264c714c5d643bf207d72335f02d3be858d9a84"
+      snapshot: "f264c714c5d643bf207d72335f02d3be858d9a84"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: durable-principle
+  review_after: "2027-08-14"
+  refresh_triggers: ["项目数据库契约变化", "首个事务用例出现"]
+relations:
+  extends: []
+  related: ["R002", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

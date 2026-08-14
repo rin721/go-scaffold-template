@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "go-scaffold2 当前业务模块能力事实"
+question: "当前代码已经提供哪些装配、生命周期和基础能力，业务模块落地前还缺什么？"
+research_type: current-project
+topics: ["kernel", "composition", "lifecycle", "business modules", "http", "cli"]
+keywords: ["Plan", "Host", "Capabilities", "Database Access", "Cache Access", "httpx"]
+languages: ["Go"]
+frameworks: []
+technologies: ["Chi", "Cobra", "GORM", "Redis", "go-i18n", "Zap"]
+applicable_scenarios: ["012 方案基线", "后续实现漂移复核", "新模块接入前置检查"]
+non_applicable_scenarios: ["证明目标架构已实现", "替代运行时验收"]
+status: active
+summary: "仓库已具备 Kernel 资源平面和基础 Adapter，但没有业务对象图、HTTP listener 或真实业务模块。"
+evidence:
+  types: ["source-code", "local-static-analysis", "tests"]
+  primary_sources:
+    - title: "应用入口与 Kernel composition"
+      locator: "cmd/app/main.go; internal/kernel/composition/composition.go"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "Kernel 与 Host 生命周期"
+      locator: "internal/kernel/kernel.go; internal/kernel/host.go; pkg/supervisor/supervisor.go"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "Database、Cache、HTTP 与 CLI 契约"
+      locator: "internal/kernel/app; pkg/database; pkg/httpx; pkg/cli"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "既有能力装配与 Kernel App 研究"
+      locator: "docs/research/001-go-capability-composition; docs/research/002-kernel-app-manual-composition"
+      snapshot: "existing unstructured research, verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["cmd/app 或 Kernel API 变化", "首个业务模块合入", "HTTP listener 接入"]
+relations:
+  extends: []
+  related: ["R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md

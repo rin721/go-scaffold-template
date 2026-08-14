@@ -1,0 +1,32 @@
+schema_version: 1
+id: R010
+title: "业务模块架构综合比较与结论"
+question: "综合当前事实与九类样本，哪种模块、装配、生命周期和扩展模型最适合 go-scaffold2？"
+research_type: comparative
+topics: ["modular monolith", "composition", "lifecycle", "inbound adapters", "plugins"]
+keywords: ["manual composition", "Kernel resource plane", "business object graph", "typed contribution"]
+languages: ["Go"]
+frameworks: ["Kratos", "go-zero", "Uber Fx", "Hertz", "Encore", "Dapr", "go-plugin"]
+technologies: ["HTTP", "CLI", "database", "cache", "i18n"]
+applicable_scenarios: ["go-scaffold2 012 决策", "首个业务模块方案", "后续架构复核"]
+non_applicable_scenarios: ["通用框架排名", "所有 Go 项目的统一答案"]
+status: active
+summary: "推荐 Kernel 资源平面加手工静态业务图的模块化单体，拒绝当前 runtime DI、平台 runtime 和动态插件。"
+evidence:
+  types: ["source-code", "official-docs", "examples", "tests", "local-static-analysis"]
+  primary_sources:
+    - title: "本任务研究记录 R001-R009"
+      locator: "docs/changes/012-business-module-architecture/research"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["首个垂直切片完成", "Kernel composition 变化", "出现分布式或插件真实需求"]
+relations:
+  extends: ["R001", "R002", "R003", "R004", "R005", "R006", "R007", "R008", "R009"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

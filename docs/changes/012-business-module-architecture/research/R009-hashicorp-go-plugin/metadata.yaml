@@ -1,0 +1,38 @@
+schema_version: 1
+id: R009
+title: "HashiCorp go-plugin 与 Mattermost 插件 host"
+question: "真实进程外插件系统需要哪些协议、生命周期和兼容治理，当前仓库是否具备需求？"
+research_type: plugin-system
+topics: ["plugins", "process isolation", "rpc", "compatibility", "host API"]
+keywords: ["go-plugin", "HandshakeConfig", "Dispense", "Kill", "Mattermost plugin API"]
+languages: ["Go"]
+frameworks: ["HashiCorp go-plugin", "Mattermost"]
+technologies: ["RPC", "gRPC", "subprocess"]
+applicable_scenarios: ["第三方二进制扩展", "进程隔离", "跨版本插件协议"]
+non_applicable_scenarios: ["编译期内置业务模块", "仅为减少 composition import"]
+status: active
+summary: "进程外插件需要握手、RPC、版本、安全和 host API 治理；当前没有证据承担这些成本。"
+evidence:
+  types: ["source-code", "official-docs", "examples"]
+  primary_sources:
+    - title: "HashiCorp go-plugin source"
+      locator: "https://github.com/hashicorp/go-plugin/tree/bb02ea63143812eed1cb2474776f66176d2a8546"
+      snapshot: "bb02ea63143812eed1cb2474776f66176d2a8546"
+    - title: "Mattermost server plugin documentation"
+      locator: "https://developers.mattermost.com/integrate/plugins/components/server/"
+      snapshot: "verified 2026-08-14"
+    - title: "Mattermost public plugin API"
+      locator: "https://github.com/mattermost/mattermost/blob/d18f3dd278889d2644007f96fda3ccc7ebe0d4c6/server/public/plugin/api.go"
+      snapshot: "d18f3dd278889d2644007f96fda3ccc7ebe0d4c6"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: durable-principle
+  review_after: "2027-08-14"
+  refresh_triggers: ["出现第三方插件分发需求", "需要进程故障隔离", "host API 版本策略形成"]
+relations:
+  extends: []
+  related: ["R007", "R008", "R010"]
+  supersedes: []
+  superseded_by: []
+report: report.md
