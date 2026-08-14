@@ -53,7 +53,11 @@ func TestHostReloadsRealSQLiteAndKeepsCrossComponentTransactionAtomic(t *testing
 	initialValidator := capabilities.Validator
 	reloadErrors := make(chan error, 4)
 	participant := &countingParticipant{name: "application"}
-	host, err := kernel.NewHost(runtimeKernel, kernel.HostOptions{
+	coordinator, err := kernel.NewCoordinator(runtimeKernel)
+	if err != nil {
+		t.Fatalf("kernel.NewCoordinator() error = %v", err)
+	}
+	host, err := kernel.NewHost(coordinator, kernel.HostOptions{
 		Watch: &kernel.WatchOptions{OnReloadError: func(err error) { reloadErrors <- err }},
 	}, participant)
 	if err != nil {

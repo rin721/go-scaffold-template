@@ -2,11 +2,11 @@
 
 ## 1. 设计边界
 
-本设计只解决当前已确认的进程级缺口：配置候选一致性、长期运行监督、HTTP lifecycle、状态诊断、reload/终止语义与可执行治理。它不定义业务实体、Service/Repository API、动态模块或通用编排平台。
+本设计只解决当前已确认的进程级缺口：配置候选一致性、长期运行监督、HTTP lifecycle、状态诊断、reload/终止语义与可执行治理。CLI/Default 与 Config 的细化契约分别以 [cli-and-default-config-contracts.md](cli-and-default-config-contracts.md) 和 [config-contracts.md](config-contracts.md) 为准，完整状态机以 [runtime-state-machine.md](runtime-state-machine.md) 为准。它不定义业务实体、Service/Repository API、动态模块或通用编排平台。
 
 ## 2. 唯一候选与责任分离
 
-application coordinator 是 Loader 的唯一调用者。一次 Start/Reload 生成一个不可变 candidate，包含稳定 digest/identity；各 config owner 只负责自己的 decode、default、validate、sensitive redaction 和 change classification。
+application coordinator 是 Loader 的唯一调用者。一次 Start/Reload 生成一个 canonical immutable candidate，包含稳定 digest/identity；各 section owner 通过同一 registration 负责自己的 safe default、strict typed binding、semantic validation、sensitivity 和 change classification。
 
 目标阶段：
 

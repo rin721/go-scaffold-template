@@ -21,7 +21,7 @@ func TestSystemProvidesDirectClockWithoutRuntimeContracts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Freeze() error = %v", err)
 	}
-	if len(frozen.Components()) != 0 || len(frozen.Defaults()) != 0 || len(frozen.CLIContracts()) != 0 {
+	if len(frozen.Components()) != 0 || len(frozen.Configurations()) != 0 {
 		t.Fatalf("direct clock contributed runtime contracts")
 	}
 }

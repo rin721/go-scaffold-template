@@ -1,6 +1,6 @@
 # R001：当前仓库事实
 
-> 状态：已由 [R011](../R011-current-foundation-closure-audit/report.md) 替代。本文保留首轮业务能力初查，012 当前底层闭环判定以 R011/R016 为准。
+> 状态：已由 [R011](../R011-current-foundation-closure-audit/report.md) 替代。本文保留首轮业务能力初查；当前事实补充见 R017，综合判定以 [R020](../R020-foundation-contract-synthesis/report.md) 为准。
 
 ## 研究问题
 

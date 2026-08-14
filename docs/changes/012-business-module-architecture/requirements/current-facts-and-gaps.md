@@ -1,11 +1,11 @@
-# 当前事实与能力缺口
+# 实施前事实与能力缺口
 
 ## 1. 证据快照
 
 - 复核日期：2026-08-14。
 - 代码基线：`2daf47ad111141b27a1d8e100bb3d6e4cc1ea743`。
 - 范围：`cmd/app`、`internal/kernel`、`internal/kernel/composition`、`internal/kernel/app`、`pkg/supervisor`、`pkg/httpx`、`pkg/health` 及相关测试。
-- 本文是静态取证，不声称 listener、远程依赖或产品验收已经运行；详细源码证据见 [R011](../research/R011-current-foundation-closure-audit/report.md)。
+- 本文保存 012 实施前静态取证，不再描述当前代码；详细旧源码证据见 [R011](../research/R011-current-foundation-closure-audit/report.md) 与 [R017](../research/R017-current-contract-inventory/report.md)，实施后事实见 [R021](../research/R021-foundation-closure-implementation/report.md)。
 
 ## 2. 当前真实调用链
 
@@ -13,7 +13,13 @@
 
 `cmd/app/main.go` 先创建 baseline Logger，再组合 `FileSource -> EnvSource` Loader、Kernel 和 `composition.Compose`。有参数时 CLI 在 Kernel Start 前运行；无参数时 Host 包含 Kernel 和只记录日志的 `applicationLifecycle`，可选配置 Watcher 是当前唯一长期 Task。默认进程没有 HTTP listener 或业务图。
 
+CLI 分支虽然不调用 `Kernel.Start`，但 help、version、参数错误和 `config init` 都要先构造 Kernel 和完整 Plan/Defaults/Capabilities。模式只由 `len(args)` 隐式选择；命令没有 required capability 或 side-effect 声明。`pkg/cli` 已有显式 I/O 和 typed error，但只完整检查顶层 command name，nil context 会被替换成 Background，version 未由入口注入，配置错误也没有走已定义的 ExitConfig 路径。
+
 Kernel 自己在 `Start`/`Reload` 内调用 Loader。该边界对仅有 Kernel 配置的当前实现一致，但未来 application 若另读 HTTP/模块配置会产生双读取；若不另读，application owner 又无从参与候选预检。
+
+Loader 按注册顺序递归覆盖，生产顺序使 Env 高于 File；当前 Source name/value domain/nil/cancel 规则不完整。Snapshot 对 JSON-like map/slice 有复制、digest、provenance 和 heuristic redaction，但任意 `map[string]any` Source 可放入未深拷贝的 mutable 值。`DecodeSection` 使用 `WeaklyTypedInput` 且未开启 unknown-field error，因此 strict schema、duplicate/deprecated 字段与每字段 missing/zero/empty/disabled/default 仍是缺口。
+
+默认配置聚合和文件发布已有较强实现：ordered owner defaults、通用 Object 校验、全内存编码、默认不覆盖、force 显式替换、`0700/0600`、temp/Sync/Close/cleanup 错误链。尚未闭合的是生成物没有先通过运行期同一 typed binder/semantic validator；安全写入保证也必须限定到实际 OS/filesystem，不能泛化成无条件 crash-atomic。
 
 ### 2.2 显式装配与资源创建
 
@@ -96,3 +102,5 @@ Kernel/Host/Supervisor 测试覆盖大量局部失败路径，但缺少：HTTP S
 | 研究推断 | 薄 coordinator 优于第二个 runtime | 有本地问题和外部主源共同支持 |
 | 待确认目标 | 单候选协调、state diagnostics、terminal drain | 不得描述成已实现 API |
 | 延后问题 | Handler/Service/Repository/Model 形态 | 基础门禁和真实用例后再决定 |
+
+逐项契约 ID、owner、调用方、输入输出、所有权、状态和验证证据见 [foundation-contract-catalog.md](foundation-contract-catalog.md)。

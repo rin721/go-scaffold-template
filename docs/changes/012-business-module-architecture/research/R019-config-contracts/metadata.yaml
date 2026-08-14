@@ -1,0 +1,41 @@
+schema_version: 1
+id: R019
+title: "严格 Config Binding、Schema 与 Snapshot 契约研究"
+question: "外部一手实现如何暴露未知字段、重复字段和宽松转换风险，当前项目应怎样建立最小 Config 契约？"
+research_type: comparative
+topics: ["configuration", "strict decoding", "schema", "defaults", "snapshot", "reload"]
+keywords: ["ErrorUnused", "WeaklyTypedInput", "DisallowUnknownFields", "YAMLToJSONStrict", "single candidate"]
+languages: ["Go"]
+frameworks: ["mapstructure", "Kubernetes apimachinery", "Caddy"]
+technologies: ["JSON", "YAML", "typed configuration"]
+applicable_scenarios: ["Config strict binding", "默认配置回环", "未知与重复字段治理", "单 Snapshot reload"]
+non_applicable_scenarios: ["引入 Kubernetes runtime", "建立巨型全局 Config", "无真实迁移时引入版本框架"]
+status: active
+summary: "当前 decoder 默认会忽略未知字段且允许宽松转换；推荐按 section owner 建 strict binding/default/validation/change contract，并复用现有 candidate transaction。"
+evidence:
+  types: ["official-docs", "source-code"]
+  primary_sources:
+    - title: "mapstructure v2.5.0 DecoderConfig"
+      locator: "https://github.com/go-viper/mapstructure/blob/v2.5.0/mapstructure.go"
+      snapshot: "v2.5.0"
+    - title: "Go encoding/json Decoder"
+      locator: "https://pkg.go.dev/encoding/json#Decoder.DisallowUnknownFields"
+      snapshot: "verified 2026-08-14"
+    - title: "Kubernetes v1.34.1 strict config and apimachinery v0.34.1 serializer"
+      locator: "https://github.com/kubernetes/kubernetes/blob/v1.34.1/cmd/kubeadm/app/util/config/strict/strict.go; https://github.com/kubernetes/apimachinery/blob/v0.34.1/pkg/runtime/serializer/json/json.go"
+      snapshot: "v1.34.1; v0.34.1"
+    - title: "Caddy v2.11.2 config lifecycle"
+      locator: "R014"
+      snapshot: "v2.11.2"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["decoder 版本或选型变化", "Config section contract 实施", "持久配置迁移需求出现"]
+relations:
+  extends: ["R014", "R017"]
+  related: ["R018", "R020"]
+  supersedes: []
+  superseded_by: []
+report: report.md

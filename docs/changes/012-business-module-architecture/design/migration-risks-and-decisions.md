@@ -15,49 +15,59 @@
 | `D-012-09` | 只保留当前三种换代策略 | 当前组件无 NativeAtomic/Handoff/自动回滚需求 | 为未来组件预建通用热换代 |
 | `D-012-10` | package graph + 注册/生命周期测试形成治理闭环 | `internal`/文档不能表达同 module 方向 | 只靠 review；立即引入大型治理工具 |
 | `D-012-11` | 业务模块细节冻结到基础门禁通过 | 十一项门禁中 lifecycle/governance/business 未满足 | 先建 Handler/Service/Repository/Model 再补底层 |
+| `D-012-12` | CLI 在资源构造前以显式 mode/registry 选择最小 composition | 当前 `len(args)` 分支仍构造完整 Kernel/Plan，命令无副作用声明 | 所有命令拿全量 Application；直接更换框架 |
+| `D-012-13` | 每个配置节统一 safe Defaults、strict Binding、Validation、change 和 sensitivity | unknown/weak decode 与默认生成/runtime 漂移已由代码和上游源码证实 | 巨型 Config、无类型 Map、Kubernetes schema runtime |
 
 这些决策仍是 012 目标，不是现行 API。若公共接口、依赖、模块边界、配置迁移、数据或外部副作用发生实质变化，必须更新方案并重新确认；难以逆转的长期选择再进入 ADR。
 
 ## 2. 推荐实施顺序
 
-### Phase A：先固化状态和 Supervisor 契约
+### Phase A：先固化 CLI/Default/Config 契约
+
+1. 冻结 command registry、Bootstrap/Service mode、I/O、退出码、required narrow capability 与 side-effect contract。
+2. 建立 section owner registration，严格处理 Source/unknown/duplicate/type/missing/zero/disabled 和 Snapshot immutability/sensitivity。
+3. 让默认配置生成通过运行期同一 binder/validator round-trip，并证明 Bootstrap 不构造/启动资源。
+
+原因：它们决定 Application 能否获得一致、有效、无隐藏默认的输入；在这些契约不稳定时先细化运行或业务对象，只会把配置漂移扩散到更多 owner。
+
+### Phase B：状态与 Supervisor 契约
 
 1. 明确进程状态、termination cause、ready/degraded、owner ID 和 diagnostics snapshot 的内部契约。
 2. 局部修订 Supervisor 的注册校验、runner completion、runtime failure、cancel、reverse StopAndWait 与 shutdown deadline。
 3. 用 fake owner/runner 完成失败、nil 提前返回、不合作 runner 和多 cleanup error 的确定性测试。
 
-原因：HTTP 和配置协调都会依赖这些语义；先接 HTTP 再改 Supervisor 会产生第二轮生命周期迁移。
-
-### Phase B：HTTP 与健康诊断
+### Phase C：HTTP 与健康诊断
 
 1. 单轨调整/封装 `pkg/httpx.Server`，支持预绑定 listener 与阻塞 Serve。
 2. 接入唯一 HTTP owner，验证端口失败、runtime error、活跃请求 drain、Stop/Wait timeout。
 3. 将 lifecycle state 与必要 `pkg/health` checker 组合为 readiness/liveness/diagnostics；不提前加入业务路由。
 
-### Phase C：单候选和 reload/termination 协调
+### Phase D：单候选和 reload/termination 协调
 
 1. 上移 Loader 调用权，同一 immutable candidate 提供给 Kernel 与 application owners。
 2. 在 Kernel 副作用前完成所有 decode/validate/RestartRequired preflight。
 3. 分离 reload drain 与 terminal drain；持久化 committed cleanup degraded 并阻断不安全 reload。
 4. 单轨迁移入口并删除旧 Load/Start 路径。
 
-Phase A/B/C 的具体先后若实施设计发现 API 依赖相反，可调整，但必须证明每个中间状态可测试、无新旧双轨。
+Phase A 的 Config 与 Phase B 的 Supervisor 可以在不同时修改 composition root 时并行设计；HTTP 必须等待 Supervisor，single candidate 必须等待 strict Config。若实施设计发现 API 依赖相反，可调整小步顺序，但必须证明每个中间状态可测试、无新旧双轨。
 
-### Phase D：可执行治理与基础关闭
+### Phase E：可执行治理与基础关闭
 
 1. 对真实 package graph、唯一 composition、注册冲突和隐藏 fallback 建门禁。
 2. 执行 race/lifecycle/loopback 集成、静态检查和文档同步。
 3. 逐项关闭 acceptance matrix；形成可复核运行证据。
 
-### Phase E：业务设计（当前阻塞）
+### Phase F：业务设计（当前阻塞）
 
-只有 Phase A-D 全部通过，才收集首个真实业务用例并继续 012 的模块边界、Handler/Service/Repository/Model 设计。没有用例不创建骨架。
+只有 Phase A-E 全部通过，才收集首个真实业务用例并继续 012 的模块边界、Handler/Service/Repository/Model 设计。没有用例不创建骨架。
 
 ## 3. 主要风险与缓解
 
 | 风险 | 影响 | 缓解/停止条件 |
 |---|---|---|
 | Loader 所有权和 Kernel API 变化 | 触及启动/reload 核心 | candidate identity、旧代保留和单次 Load 测试；公共 API 实质变化重新确认 |
+| strict binding 拒绝既有宽松配置 | 兼容与启动风险 | 先盘点真实配置；只对已确认 deprecated 字段给出有期限迁移，完成后单轨删除 |
+| Bootstrap composition 拆分不完整 | help/config init 仍受资源图影响 | constructor spy 与 goroutine/listener/connection 断言；不把“未 Start”当无副作用证明 |
 | Supervisor 修改形成竞态或泄漏 | 进程假 ready、无法退出 | channel/event 测试、race、owner/runner 计数；不用 sleep |
 | HTTP 外部消费者依赖旧阻塞 Start | 破坏兼容 | 实施前搜索真实调用方；无消费者单轨替换，有消费者先补迁移范围 |
 | ShutdownTimeout 仍不能终止不合作 goroutine | Host 永久阻塞 | deadline 覆盖 Stop+Wait；定位 owner并失败退出，不宣称强杀成功 |
@@ -87,6 +97,9 @@ Phase A/B/C 的具体先后若实施设计发现 API 依赖相反，可调整，
 5. 是否有 hijacked connection 的真实协议需求；没有则明确不支持/不保证排空。
 6. committed cleanup failure 的资源是否有可重试 Close 证明；默认重启策略是否满足运维要求？
 7. `pkg/httpx`、`pkg/health` 和 Kernel APIs 是否存在仓库外 consumer/兼容承诺？
+8. 各 Config 字段中显式 `0`、空字符串、null 与 missing 的真实兼容语义分别是什么？
+9. 默认文件 force 并发、目录 fsync 与支持的 OS/filesystem 保证范围是什么？
+10. Kernel initial Start 是证明逐组件 PublishInitial 在 process ready 前不可见，还是改成 all-ready 后统一发布？
 
 ### 业务门禁后再回答
 

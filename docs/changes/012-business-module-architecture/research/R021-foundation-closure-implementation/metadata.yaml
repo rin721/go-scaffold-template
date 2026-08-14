@@ -1,0 +1,38 @@
+schema_version: 1
+id: R021
+title: "go-scaffold2 底层闭环实施快照"
+question: "012 的 FND/GOV-F 方案是否已按单轨实现并具有可复核的配置、生命周期、HTTP、诊断和治理证据？"
+research_type: current-project
+topics: ["bootstrap", "configuration", "composition", "lifecycle", "HTTP", "diagnostics", "governance"]
+keywords: ["ComposeBootstrap", "Coordinator", "strict binding", "Supervisor", "Start Run Stop", "package graph"]
+languages: ["Go"]
+frameworks: ["Cobra", "mapstructure"]
+technologies: ["net/http", "YAML", "JSON", "fsnotify", "Go race detector"]
+applicable_scenarios: ["012 FND/GOV-F 实施事实", "当前服务启动与停止契约", "业务设计前置门禁"]
+non_applicable_scenarios: ["业务模块 API 设计", "远程依赖产品验收", "部署环境证明"]
+status: active
+summary: "Bootstrap、严格配置、单候选、Supervisor、HTTP lifecycle、状态诊断和自动治理已单轨闭合；真实业务用例仍未确认。"
+evidence:
+  types: ["source-code", "tests", "local-static-analysis"]
+  primary_sources:
+    - title: "当前进程、配置协调与服务装配"
+      locator: "cmd/app; internal/kernel/coordinator.go; internal/kernel/composition"
+      snapshot: "012 implementation working tree based on 7eaba7174fb54c06c8bd31c7f7bc345d3f161936"
+    - title: "Supervisor、HTTP、Health 与 Kernel lifecycle"
+      locator: "pkg/supervisor; pkg/httpx; pkg/health; internal/kernel"
+      snapshot: "verified 2026-08-14"
+    - title: "架构与全量验证"
+      locator: "internal/kernel/composition/architecture_test.go; go test; go test -race; go vet; go build"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["进程入口或公共 lifecycle API 变化", "新增 application-owned 配置节", "首个真实业务用例确认"]
+relations:
+  extends: ["R018", "R019"]
+  related: ["R011", "R012", "R013", "R014", "R015"]
+  supersedes: ["R017", "R020"]
+  superseded_by: []
+report: report.md

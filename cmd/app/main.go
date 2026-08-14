@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 
 	"github.com/rin721/go-scaffold2/internal/kernel"
@@ -13,6 +14,7 @@ import (
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
 	"github.com/rin721/go-scaffold2/pkg/cli"
+	pkghttpx "github.com/rin721/go-scaffold2/pkg/httpx"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 	"github.com/rin721/go-scaffold2/pkg/supervisor"
 )
@@ -84,6 +86,23 @@ func (p process) run(ctx context.Context, args []string) error {
 	if p.logging == nil {
 		return fmt.Errorf("application logging manager is nil")
 	}
+	if len(args) > 0 {
+		bootstrap, err := composition.ComposeBootstrap(cli.Config{
+			Name:                   applicationName,
+			Description:            applicationDescription,
+			Stdin:                  p.stdin,
+			Stdout:                 p.stdout,
+			Stderr:                 p.stderr,
+			DisableInteractiveHome: true,
+		})
+		if err != nil {
+			return fmt.Errorf("compose application bootstrap: %w", err)
+		}
+		if err := bootstrap.CLI.Run(ctx, args); err != nil {
+			return fmt.Errorf("run application CLI: %w", err)
+		}
+		return nil
+	}
 
 	loader := config.New(
 		config.FileSource(p.configPath),
@@ -94,36 +113,33 @@ func (p process) run(ctx context.Context, args []string) error {
 		return fmt.Errorf("create kernel: %w", err)
 	}
 
-	compositionOptions := composition.Options{Logger: composition.ConfiguredLoggerReplacement}
-	if len(args) > 0 {
-		compositionOptions.CLI = &composition.CLIOptions{App: cli.Config{
-			Name:                   applicationName,
-			Description:            applicationDescription,
-			Stdin:                  p.stdin,
-			Stdout:                 p.stdout,
-			Stderr:                 p.stderr,
-			DisableInteractiveHome: true,
-		}}
-	}
-	capabilities, err := composition.Compose(runtime, compositionOptions)
+	capabilities, err := composition.Compose(runtime, composition.Options{Logger: composition.ConfiguredLoggerReplacement})
 	if err != nil {
 		return fmt.Errorf("compose application capabilities: %w", err)
 	}
 
-	if len(args) > 0 {
-		if capabilities.CLI == nil {
-			return fmt.Errorf("application CLI is nil")
-		}
-		if err := capabilities.CLI.Run(ctx, args); err != nil {
-			return fmt.Errorf("run application CLI: %w", err)
-		}
-		return nil
+	httpBinding := composition.HTTPConfiguration()
+	coordinator, err := kernel.NewCoordinator(runtime, httpBinding)
+	if err != nil {
+		return fmt.Errorf("create configuration coordinator: %w", err)
 	}
-
+	candidate, err := coordinator.Prepare(ctx)
+	if err != nil {
+		return fmt.Errorf("prepare application configuration: %w", err)
+	}
+	httpConfig, err := composition.HTTPServerConfig(candidate)
+	if err != nil {
+		return fmt.Errorf("compose HTTP configuration: %w", err)
+	}
+	httpServer, err := pkghttpx.NewServer(&httpConfig, http.NotFoundHandler())
+	if err != nil {
+		return fmt.Errorf("compose HTTP server: %w", err)
+	}
 	host, err := kernel.NewHost(
-		runtime,
-		serviceHostOptions(capabilities.Logger),
+		coordinator,
+		serviceHostOptions(capabilities.Logger, httpServer),
 		applicationLifecycle{logging: capabilities.Logger},
+		httpServer,
 	)
 	if err != nil {
 		return fmt.Errorf("create application host: %w", err)
@@ -134,10 +150,16 @@ func (p process) run(ctx context.Context, args []string) error {
 	return nil
 }
 
-func serviceHostOptions(logging pkglogger.Logger) kernel.HostOptions {
-	return kernel.HostOptions{
+func serviceHostOptions(logging pkglogger.Logger, server *pkghttpx.Server) kernel.HostOptions {
+	options := kernel.HostOptions{
 		Watch: &kernel.WatchOptions{OnReloadError: reloadErrorReporter(logging)},
 	}
+	if server != nil {
+		options.Runners = []supervisor.Task{{
+			Name: "http-server.serve", Run: server.Run, Ready: server.Running(),
+		}}
+	}
+	return options
 }
 
 func reloadErrorReporter(logging pkglogger.Logger) func(error) {

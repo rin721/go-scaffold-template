@@ -1,6 +1,6 @@
 # Kernel 与 App 组件装配
 
-`internal/kernel` 治理当前进程选择的底层 App 组件：加载配置、按计划启动、监控配置变化、执行安全换代并反向关闭资源。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
+`internal/kernel` 治理当前进程选择的底层 App 组件：Coordinator 生成全应用唯一配置候选，Kernel 按计划启动和安全换代，Host 监督长期任务并反向关闭资源。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
 
 ## 固定接入路径
 
@@ -9,13 +9,13 @@ pkg/<name>
     -> internal/kernel/app/<name>
     -> internal/kernel/composition/<name>.go
     -> app.Plan / Kernel.Install
-    -> Kernel / Host
+    -> Coordinator / Kernel / Host
 ```
 
 - `pkg/<name>` 定义项目能力契约并隔离第三方库。
 - `internal/kernel/app/<name>` 把独立实现声明为无安装副作用的 `Definition[O]`；明确接管内置 target 的实现使用 `ReplacementDefinition[T]`。
 - `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并用 typed `Replace` 指明替换目标；所有检查成功后才一次性安装。
-- Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
+- Coordinator 是 Loader 的唯一进程级调用者；Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
 
 当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database、Cache、I18n、Storage。修改清单只发生在 composition，不使用 `init` 自动注册。
 
@@ -88,17 +88,17 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 
 这里的 `Resolve` 只解析该 Definition 已声明的 Input，不接受字符串或类型查询，也不能保存为运行期 Resolver。
 
-## 配置、Defaults 与 CLI
+## 配置、Defaults 与 Bootstrap CLI
 
-配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。composition 在本地 Plan Freeze 后聚合真实 Defaults 与 CLI Contract，全部构造成功后才 `Kernel.Install`。
+配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。Plan Freeze 后只把真实配置节注册安装到 Kernel；服务能力 composition 不再持有 CLI。
 
-当前 `cmd/app` 显式选择配置化 Logger replacement，因此 `config init` 生成 Logger、Database、Cache、I18n、Storage 五段：
+当前 `cmd/app` 的有参数分支调用 `composition.ComposeBootstrap`，只构造默认配置管理器和 CLI，不创建 Kernel、稳定 facade、资源、listener 或 goroutine。`config init` 生成 Logger、Database、Cache、I18n、Storage、HTTP 六段：
 
 ```powershell
 go run ./cmd/app config init
 ```
 
-CLI 未启用时 `Capabilities.CLI` 为 nil；直接配置生成可使用 `Capabilities.Configuration.Generate`。
+生成前先用每个 owner 的同一 strict binder 和 semantic validator 完成回环校验；未知字段、重复字段和跨类型值在资源副作用前失败。CLI registry 在第一次执行时冻结，命令树冲突、mode、副作用分类和位置参数契约在执行前校验。
 
 ## 生命周期与重载
 
@@ -109,7 +109,7 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 -> Publish Access 或 Activate Replacement
 ```
 
-启动失败时反向排空并关闭已发布节点。Stop 时 Host 先停上层 Participant，Kernel 再反向 drain；Replacement 先恢复 target，再关闭自身实例。
+启动失败时反向排空并关闭已发布节点。Stop 时 Host 先撤销进程 readiness、取消 runner、反向停止上层 Participant，再让 Coordinator 触发 Kernel 的不可回滚终止 drain；终止超时不会恢复旧入口。Replacement 先恢复 target，再关闭自身实例。
 
 006 已实现三种策略：
 
@@ -119,9 +119,9 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 | `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
 | `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
 
-候选准备期间旧 Access 继续服务。Decode、Build、Ready、排空或超时失败时，候选被清理且旧入口恢复。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效，不能伪装成回滚。
+候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、标记必须重启并阻断后续 Reload。
 
-`WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Kernel 串行循环投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
+`WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
 
 Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。Reload 比较的是合并后的有效配置段摘要：如果文件字段已被环境变量覆盖，文件变化不会重建相关组件。运行中只能重新读取进程启动时继承的环境，另一个 shell 后续设置的变量不会进入该进程。
 
@@ -140,23 +140,43 @@ capabilities, err := composition.Compose(runtime, composition.Options{
 if err != nil {
 	return err
 }
-host, err := kernel.NewHost(runtime, kernel.HostOptions{
+coordinator, err := kernel.NewCoordinator(runtime, composition.HTTPConfiguration())
+if err != nil {
+	return err
+}
+candidate, err := coordinator.Prepare(ctx)
+if err != nil {
+	return err
+}
+httpConfig, err := composition.HTTPServerConfig(candidate)
+if err != nil {
+	return err
+}
+httpServer, err := httpx.NewServer(&httpConfig, http.NotFoundHandler())
+if err != nil {
+	return err
+}
+// HTTP Server 同时是负责预绑定/停止的 Participant 和阻塞 Serve runner。
+host, err := kernel.NewHost(coordinator, kernel.HostOptions{
 	Watch: &kernel.WatchOptions{OnReloadError: reportReloadError},
-})
+    Runners: []supervisor.Task{{
+        Name: "http-server.serve", Run: httpServer.Run, Ready: httpServer.Running(),
+    }},
+}, application, httpServer)
 if err != nil {
 	return err
 }
 return host.Run(ctx)
 ```
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`Options{}` 保留内置 baseline；示例显式选择配置化 replacement。`Compose` 完成底层组件装配；创建 Host 不会新增或查找组件。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`Options{}` 保留内置 baseline；示例显式选择配置化 replacement。`Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP 配置与 Kernel 共用。HTTP runner 的完整注册见 `cmd/app/main.go`；创建 Host 不会新增或查找组件。
 
 ## 边界
 
-- 当前没有 HTTP Server、middleware、handler、service、repository、model 等业务层装配。
+- 当前默认 Service 已接入 application-owned HTTP lifecycle；它只使用 `http.NotFoundHandler`，没有业务 middleware、handler、service、repository 或 model 装配。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
 - Database 与 Storage App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 关闭 Redis，泛型 Cache Client 由其构造调用方关闭。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
 - 默认应用入口显式选择 Watch；启动前 CLI 不创建 Host、连接或 watcher。
-- HTTP 同端口、文件锁、单消费者等排他资源不能套用双实例 Swap；在专用 Handoff 落地前应选择 `RestartRequired`。
+- HTTP 配置是 application-owned `RestartRequired` 节；同端口、文件锁、单消费者等排他资源不能套用双实例 Swap，在专用 Handoff 落地前均应选择 `RestartRequired`。

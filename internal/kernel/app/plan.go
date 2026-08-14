@@ -3,7 +3,6 @@ package app
 import (
 	"fmt"
 
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
@@ -21,8 +20,7 @@ type Plan struct {
 	outputs    []any
 	tokens     []*bindingToken
 	components []RuntimeComponent
-	defaults   []config.Binding
-	cli        []kernelcli.Contract
+	configs    []config.Binding
 	replaced   map[*bindingToken]struct{}
 }
 
@@ -63,18 +61,9 @@ func Add[O any](plan *Plan, definition Definition[O]) (Added[O], error) {
 	if component != nil {
 		plan.components = append(plan.components, component)
 	}
-	if definition.defaults != nil {
-		path := ""
-		if configured, ok := component.(interface{ ConfigPath() string }); ok {
-			path = configured.ConfigPath()
-		}
-		plan.defaults = append(plan.defaults, config.Binding{
-			CapabilityID: string(definition.id),
-			ConfigPath:   path,
-			Contract:     definition.defaults,
-		})
+	if definition.configuration != nil {
+		plan.configs = append(plan.configs, *definition.configuration)
 	}
-	plan.cli = append(plan.cli, definition.cli...)
 	binding := Binding[O]{plan: plan, index: index, token: token}
 	return Added[O]{Binding: binding, Output: output}, nil
 }
@@ -121,18 +110,9 @@ func Replace[T any](plan *Plan, target Binding[T], replacement ReplacementDefini
 	plan.ids[replacement.id] = struct{}{}
 	plan.replaced[target.token] = struct{}{}
 	plan.components = append(plan.components, component)
-	if replacement.defaults != nil {
-		path := ""
-		if configured, ok := component.(interface{ ConfigPath() string }); ok {
-			path = configured.ConfigPath()
-		}
-		plan.defaults = append(plan.defaults, config.Binding{
-			CapabilityID: string(replacement.id),
-			ConfigPath:   path,
-			Contract:     replacement.defaults,
-		})
+	if replacement.configuration != nil {
+		plan.configs = append(plan.configs, *replacement.configuration)
 	}
-	plan.cli = append(plan.cli, replacement.cli...)
 	return nil
 }
 
@@ -140,8 +120,7 @@ func Replace[T any](plan *Plan, target Binding[T], replacement ReplacementDefini
 type FrozenPlan struct {
 	valid      bool
 	components []RuntimeComponent
-	defaults   []config.Binding
-	cli        []kernelcli.Contract
+	configs    []config.Binding
 }
 
 // Freeze 封存 Plan。成功后不能继续 Add。
@@ -156,8 +135,7 @@ func (p *Plan) Freeze() (FrozenPlan, error) {
 	return FrozenPlan{
 		valid:      true,
 		components: append([]RuntimeComponent(nil), p.components...),
-		defaults:   append([]config.Binding(nil), p.defaults...),
-		cli:        append([]kernelcli.Contract(nil), p.cli...),
+		configs:    append([]config.Binding(nil), p.configs...),
 	}, nil
 }
 
@@ -179,12 +157,7 @@ func (p FrozenPlan) Components() []RuntimeComponent {
 	return append([]RuntimeComponent(nil), p.components...)
 }
 
-// Defaults 返回当前组件真实贡献的默认配置绑定副本。
-func (p FrozenPlan) Defaults() []config.Binding {
-	return append([]config.Binding(nil), p.defaults...)
-}
-
-// CLIContracts 返回当前组件真实贡献的 CLI 契约副本。
-func (p FrozenPlan) CLIContracts() []kernelcli.Contract {
-	return append([]kernelcli.Contract(nil), p.cli...)
+// Configurations 返回当前组件真实贡献的配置节契约副本。
+func (p FrozenPlan) Configurations() []config.Binding {
+	return append([]config.Binding(nil), p.configs...)
 }

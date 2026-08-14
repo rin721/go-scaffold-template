@@ -46,6 +46,7 @@ type Binding struct {
 	CapabilityID string
 	ConfigPath   string
 	Contract     DefaultContract
+	Validate     func(Snapshot) error
 }
 
 // Object 是保持字段声明顺序的配置对象。

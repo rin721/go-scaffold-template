@@ -53,12 +53,14 @@ type Kernel struct {
 	loader  *config.Loader
 	options Options
 
-	operationMu sync.Mutex
-	mu          sync.Mutex
-	state       kernelState
-	installed   bool
-	components  []app.RuntimeComponent
-	snapshot    config.Snapshot
+	operationMu    sync.Mutex
+	mu             sync.Mutex
+	state          kernelState
+	installed      bool
+	coordinated    bool
+	components     []app.RuntimeComponent
+	configurations []config.Binding
+	snapshot       config.Snapshot
 }
 
 // New 创建尚未安装组件计划的空 Kernel。
@@ -124,12 +126,13 @@ func (k *Kernel) Install(plan app.FrozenPlan) error {
 		return fmt.Errorf("kernel component plan is already installed")
 	}
 	k.components = components
+	k.configurations = plan.Configurations()
 	k.installed = true
 	return nil
 }
 
-// Start 加载初始配置，并按计划顺序准备和发布运行组件。
-func (k *Kernel) Start(ctx context.Context) error {
+// startCandidate 从进程级 coordinator 提供的同一候选启动全部 Kernel 组件。
+func (k *Kernel) startCandidate(ctx context.Context, snapshot config.Snapshot) error {
 	if ctx == nil {
 		return ErrNilContext
 	}
@@ -150,10 +153,6 @@ func (k *Kernel) Start(ctx context.Context) error {
 
 	operationCtx, cancel := context.WithTimeout(ctx, k.options.ReloadTimeout)
 	defer cancel()
-	snapshot, err := k.loader.Load(operationCtx)
-	if err != nil {
-		return fmt.Errorf("load initial kernel config: %w", err)
-	}
 
 	started := make([]app.RuntimeComponent, 0, len(components))
 	for _, component := range components {
@@ -201,8 +200,8 @@ func prepareComponent(ctx context.Context, component app.RuntimeComponent) error
 	return component.Ready(ctx)
 }
 
-// Reload 执行一轮配置预检、候选准备、排空和提交事务。
-func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
+// reloadCandidate 从进程级 coordinator 提供的同一候选执行配置事务。
+func (k *Kernel) reloadCandidate(ctx context.Context, candidateSnapshot config.Snapshot) (ReloadResult, error) {
 	if ctx == nil {
 		return ReloadResult{}, ErrNilContext
 	}
@@ -224,10 +223,6 @@ func (k *Kernel) Reload(ctx context.Context) (ReloadResult, error) {
 
 	operationCtx, cancel := context.WithTimeout(ctx, k.options.ReloadTimeout)
 	defer cancel()
-	candidateSnapshot, err := k.loader.Load(operationCtx)
-	if err != nil {
-		return ReloadResult{}, fmt.Errorf("load candidate kernel config: %w", err)
-	}
 	result := ReloadResult{PreviousDigest: previousSnapshot.Digest(), CurrentDigest: previousSnapshot.Digest()}
 
 	changed := make([]app.RuntimeComponent, 0, len(components))
@@ -336,27 +331,43 @@ func (k *Kernel) Stop(ctx context.Context) error {
 	}
 	k.mu.Unlock()
 
-	drained, err := drainReverse(ctx, components)
-	if err != nil {
-		for index := len(drained) - 1; index >= 0; index-- {
-			drained[index].Rollback()
-		}
-		return err
-	}
-	for index := len(components) - 1; index >= 0; index-- {
-		components[index].PrepareStop()
+	drained, drainErr := terminalDrainReverse(ctx, components)
+	for _, component := range drained {
+		component.PrepareStop()
 	}
 	k.mu.Lock()
 	k.state = kernelStopped
 	k.mu.Unlock()
 	var joined error
-	for index := len(components) - 1; index >= 0; index-- {
-		joined = errors.Join(joined, components[index].StopCurrent(ctx))
+	for _, component := range drained {
+		joined = errors.Join(joined, component.StopCurrent(ctx))
 	}
 	if joined == nil {
 		k.options.Logging.Info("kernel stopped")
 	}
-	return joined
+	return errors.Join(drainErr, joined)
+}
+
+func terminalDrainReverse(ctx context.Context, components []app.RuntimeComponent) ([]app.RuntimeComponent, error) {
+	drained := make([]app.RuntimeComponent, 0, len(components))
+	var joined error
+drainLoop:
+	for index := len(components) - 1; index >= 0; index-- {
+		component := components[index]
+		ready, err := component.BeginDrain()
+		if err != nil {
+			joined = errors.Join(joined, fmt.Errorf("drain component %s: %w", component.ID(), err))
+			break
+		}
+		select {
+		case <-ctx.Done():
+			joined = errors.Join(joined, fmt.Errorf("wait component %s terminal drain: %w", component.ID(), ctx.Err()))
+			break drainLoop
+		case <-ready:
+			drained = append(drained, component)
+		}
+	}
+	return drained, joined
 }
 
 func discardCandidatesAfterFailure(parent context.Context, timeout time.Duration, components []app.RuntimeComponent) error {

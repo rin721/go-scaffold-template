@@ -8,6 +8,7 @@ import (
 	"io"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
@@ -41,26 +42,26 @@ func TestNewAppRejectsInvalidContractsWithoutReturningPartialApp(t *testing.T) {
 }
 
 func TestConfigInitUsesDefaultsAndFlags(t *testing.T) {
-	manager := &recordingManager{result: config.GenerateResult{Path: filepath.Join("absolute", "config.json")}}
+	manager := &recordingManager{result: config.GenerateResult{Path: filepath.Join("absolute", "config.json"), Format: config.FormatJSON, Replaced: true, SectionIDs: []string{"database"}}}
 	app, err := NewApp(pkgcli.Config{Name: "test", DisableInteractiveHome: true}, ConfigCommands(manager))
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
 	var stdout bytes.Buffer
-	if err := app.RunWithIO(t.Context(), []string{"config", "init", "-o", "custom.json", "-f"}, nil, &stdout, io.Discard); err != nil {
+	if err := app.RunWithIO(t.Context(), []string{"config", "init", "-o", "custom.json", "-f"}, strings.NewReader(""), &stdout, io.Discard); err != nil {
 		t.Fatalf("RunWithIO() error = %v", err)
 	}
 	wantRequest := config.GenerateRequest{Path: "custom.json", Force: true}
 	if !reflect.DeepEqual(manager.request, wantRequest) {
 		t.Fatalf("Generate request = %#v, want %#v", manager.request, wantRequest)
 	}
-	wantOutput := "created default configuration: " + manager.result.Path + "\n"
+	wantOutput := "created default configuration: " + manager.result.Path + " (format=json replaced=true sections=database)\n"
 	if stdout.String() != wantOutput {
 		t.Fatalf("stdout = %q, want %q", stdout.String(), wantOutput)
 	}
 
 	manager.request = config.GenerateRequest{}
-	if err := app.RunWithIO(t.Context(), []string{"config", "init"}, nil, io.Discard, io.Discard); err != nil {
+	if err := app.RunWithIO(t.Context(), []string{"config", "init"}, strings.NewReader(""), io.Discard, io.Discard); err != nil {
 		t.Fatalf("RunWithIO(defaults) error = %v", err)
 	}
 	if manager.request.Path != "config.yaml" || manager.request.Force {
@@ -75,19 +76,20 @@ func TestConfigInitMapsUsageCommandAndOutputErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
-	if err := app.RunWithIO(t.Context(), []string{"config", "init", "unexpected"}, nil, io.Discard, io.Discard); pkgcli.GetExitCode(err) != pkgcli.ExitUsage {
+	if err := app.RunWithIO(t.Context(), []string{"config", "init", "unexpected"}, strings.NewReader(""), io.Discard, io.Discard); pkgcli.GetExitCode(err) != pkgcli.ExitUsage {
 		t.Fatalf("positional args error = %v, exit = %d; want usage", err, pkgcli.GetExitCode(err))
 	}
-	err = app.RunWithIO(t.Context(), []string{"config", "init"}, nil, io.Discard, io.Discard)
-	var commandErr *pkgcli.CommandError
-	if !errors.As(err, &commandErr) || !errors.Is(err, cause) || pkgcli.GetExitCode(err) != pkgcli.ExitError {
-		t.Fatalf("generation error = %v, want CommandError preserving cause", err)
+	err = app.RunWithIO(t.Context(), []string{"config", "init"}, strings.NewReader(""), io.Discard, io.Discard)
+	var configErr *pkgcli.ConfigError
+	if !errors.As(err, &configErr) || !errors.Is(err, cause) || pkgcli.GetExitCode(err) != pkgcli.ExitConfig {
+		t.Fatalf("generation error = %v, want ConfigError preserving cause", err)
 	}
 
 	manager.err = nil
 	manager.result.Path = "config.yaml"
 	outputErr := errors.New("stdout failed")
-	err = app.RunWithIO(t.Context(), []string{"config", "init"}, nil, failingWriter{err: outputErr}, io.Discard)
+	err = app.RunWithIO(t.Context(), []string{"config", "init"}, strings.NewReader(""), failingWriter{err: outputErr}, io.Discard)
+	var commandErr *pkgcli.CommandError
 	if !errors.As(err, &commandErr) || !errors.Is(err, outputErr) {
 		t.Fatalf("stdout error = %v, want CommandError preserving output error", err)
 	}

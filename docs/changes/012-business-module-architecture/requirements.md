@@ -2,21 +2,23 @@
 
 ## 1. 背景与问题
 
-仓库已经实现显式 Kernel Plan、配置候选事务、stable Capability facade、Lease、Host 和可选 CLI，但还没有完整 application composition、HTTP listener、生产 readiness/diagnostics 或真实业务模块。首轮 012 在此基础上直接细化了模块分层；本轮复核证明 Kernel 内部资源事务与全进程生命周期不是同一层面的“闭环”。
+仓库在实施前已有显式 Kernel Plan、配置候选事务、stable Capability facade、Lease、Host 和可选 CLI，但还没有完整 application composition、HTTP listener、生产 readiness/diagnostics 或真实业务模块。首轮 012 在此基础上直接细化了模块分层；复核证明 Kernel 内部资源事务与全进程生命周期不是同一层面的“闭环”。
 
-因此 012 当前先回答：从配置输入到验证的底层责任、契约、状态和失败语义是否完整，是否已有足够证据允许继续业务设计。事实详见 [current-facts-and-gaps.md](requirements/current-facts-and-gaps.md)，外部比较与推荐见 [R016](research/R016-foundation-gate-synthesis/report.md)。
+012 已回答并实施从 Bootstrap、CLI、配置输入到停止清理的底层责任、契约、状态和失败语义。实施前事实见 [current-facts-and-gaps.md](requirements/current-facts-and-gaps.md) 与 [foundation-contract-catalog.md](requirements/foundation-contract-catalog.md)，实施证据见 [R021](research/R021-foundation-closure-implementation/report.md)。
 
 ## 2. 当前结论
 
-- **局部闭环**：Kernel 管理的既有资源在构造、启动、发布、重载、排空、回滚和清理方面有较完整代码与测试。
-- **全进程未闭环**：application 配置、长期 runner、HTTP、service readiness、终止排空、degraded 诊断和架构治理仍缺少统一 owner 与可执行证据。
-- **演进策略**：保持 Kernel 核心，局部补齐其上层控制面；不整体重写，不扩大 Kernel 为业务容器。
-- **业务门禁**：底层闭环验收全部满足前，Handler/Service/Repository/Model 只保留方向性约束，不继续确定 API、目录或实现。
+- **基础闭环已完成**：CLI mode/副作用、strict Config/Default round-trip、application 单候选、长期 runner、HTTP、service readiness、终止排空、degraded 诊断和架构治理已有统一 owner 与可执行证据。
+- **演进策略保持**：Kernel 核心未被整体重写，也没有扩大为业务容器。
+- **业务门禁继续生效**：真实用例尚未确认，Handler/Service/Repository/Model 只保留方向性约束，不确定 API、目录或实现。
 
 ## 3. 本轮目标
 
 ### 3.1 基础闭环目标
 
+- 建立覆盖 Bootstrap/CLI/Default/Config/Composition/Capability/Resource/Lifecycle/Reload/Diagnostics/Adapter 的统一契约台账和状态语言。
+- 让 help、version、默认配置生成等 Bootstrap 命令只组装所需配置契约，不构造或启动 Database、Cache、Storage、HTTP 等资源。
+- 让默认配置生成、实际加载和运行期绑定共享同一配置节 owner contract，未知/重复/类型/零值/禁用语义可验证。
 - 让同一不可变配置候选覆盖 Kernel 与 application-owned 配置，唯一 Loader 调用者和各节 owner 可定位。
 - 让启动、阻塞运行、运行期异常、取消、排空、反序停止、等待和超时形成单一 Supervisor 闭环。
 - 让 HTTP listener 的绑定失败、Serve 退出、Shutdown/Close/Wait 和活跃请求排空由唯一 owner 管理。
@@ -33,13 +35,15 @@
 ### 4.1 包含
 
 - 配置输入、Plan、Kernel、Host、Supervisor、Watcher、Lease、httpx、health 和相关测试的静态审计。
+- CLI 注册/冲突、I/O、退出码、命令模式与默认配置安全生成契约。
+- Config Source/priority、Default、strict Binding、Validation、Snapshot、change classification 与敏感信息契约。
 - 单一候选协调、运行监督、状态/诊断、HTTP lifecycle、重载/终止语义和治理门禁的目标设计。
 - 保留/补齐/局部优化/整体替换候选的比较、迁移成本、风险、验证和未决项。
 - 对原 012 业务设计的状态校正及后续解锁条件。
 
 ### 4.2 不包含
 
-- 本轮任何源码、配置、依赖、脚本、测试或生成物修改，以及启动、生成、stage、commit、push 或外部写入。
+- 真实业务源码、依赖、数据迁移、部署和外部系统写入。
 - 无真实需求的业务实体、Handler、Service、Repository、Model、路由、命令或缓存策略。
 - runtime DI、自动扫描、全局 Registry、Service Locator、动态插件、消息总线、Saga/CQRS/Event Sourcing。
 - 未经证据需要的通用热重建、动态路由、listener handoff、自动观测回滚或完整服务框架。
@@ -48,6 +52,10 @@
 
 ### 5.1 配置与装配
 
+- 运行模式在重资源构造前显式选择；Bootstrap、ApplicationCommand 和 Service 的完成语义、最小依赖与副作用边界可验证。
+- 配置节由语义 owner 统一关联 path、safe defaults、strict typed binding、semantic validation、change classification 和 sensitivity；不建立巨型 Config。
+- 未知/重复字段和不允许的弱类型转换在资源副作用前失败；missing、zero、empty、disabled 和 default 逐字段明确。
+- 默认配置在写文件前通过运行期同一 binder/validator 回环校验；默认不覆盖，覆盖显式，写入失败不遗留错误目标或临时文件。
 - Loader 只有一个进程级调用者；Kernel 与 application owner 必须从同一候选解码和校验。
 - 所有 RestartRequired 判定在 Kernel/外部资源副作用之前完成；候选只能整体接受或拒绝。
 - Kernel Plan 继续只治理当前底层资源；普通业务对象和协议入口不进入 Plan。
@@ -80,7 +88,7 @@
 - 基于解析后的 Go package graph 验证禁止依赖方向；`internal` 和 grep 不能作为唯一证据。
 - contribution/Participant/Task/runner 的 ID、重复、顺序和规范化使用生产同源规则验证。
 - 每条架构规则有违规样例和合法样例；生命周期测试使用 channel/event，不用 sleep 碰运气。
-- 当前文档只描述真实实现；012 作为待确认变更记录，不成为第二套现行规范。
+- 当前文档只描述真实实现；012 作为已实施变更记录，不成为第二套现行规范。
 
 ## 6. 十一项通用门禁
 
@@ -88,6 +96,6 @@
 
 ## 7. 成功判定
 
-基础批次只有在以下事实全部可执行验证后才完成：单一候选、全进程 Supervisor、HTTP 预绑定与排空、readiness/degraded 状态、reload/终止差异、错误合并和自动治理均有成功/失败/超时证据；权威文档同步，旧入口/双轨删除，未执行项明确。
+基础批次只有在以下事实全部可执行验证后才完成：Bootstrap 不启动无关资源，CLI 冲突/I/O/退出/副作用闭合，默认配置与 strict runtime binding 同源，单一候选、全进程 Supervisor、HTTP 预绑定与排空、readiness/degraded 状态、reload/终止差异、错误合并和自动治理均有成功/失败/超时证据；权威文档同步，旧入口/双轨删除，未执行项明确。
 
-满足这些条件只解除业务设计阻塞。首个真实垂直切片仍需单独确认业务 actor、用例、不变量、数据/事务、入口和验收数据。
+这些基础条件已通过本地验证，只解除“可以提交真实业务设计”的前置阻塞。首个真实垂直切片仍需单独确认业务 actor、用例、不变量、数据/事务、入口和验收数据。

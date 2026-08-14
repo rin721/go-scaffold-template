@@ -43,7 +43,7 @@ func TestFileSourceLoadsYAMLAndReportsPath(t *testing.T) {
 	if err := os.WriteFile(path, []byte("database:\n  pingTimeout: 3s\n"), 0o600); err != nil {
 		t.Fatalf("write config fixture: %v", err)
 	}
-	loader := New(FileSource(path), FileSource(path))
+	loader := New(FileSource(path))
 	snapshot, err := loader.Load(context.Background())
 	if err != nil {
 		t.Fatalf("Load(file) error = %v", err)
@@ -57,6 +57,53 @@ func TestFileSourceLoadsYAMLAndReportsPath(t *testing.T) {
 	}
 	if paths := loader.FilePaths(); len(paths) != 1 || paths[0] != filepath.Clean(path) {
 		t.Fatalf("FilePaths() = %#v, want %q", paths, filepath.Clean(path))
+	}
+	if _, err := New(FileSource(path), FileSource(path)).Load(t.Context()); err == nil {
+		t.Fatal("Load(duplicate source names) error = nil")
+	}
+}
+
+func TestFileSourceRejectsDuplicateJSONAndYAMLKeys(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		ext     string
+		content string
+	}{
+		{name: "json", ext: ".json", content: `{"database":{"dsn":"one","dsn":"two"}}`},
+		{name: "yaml", ext: ".yaml", content: "database:\n  dsn: one\n  dsn: two\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config"+test.ext)
+			if err := os.WriteFile(path, []byte(test.content), 0o600); err != nil {
+				t.Fatalf("write duplicate fixture: %v", err)
+			}
+			if _, err := New(FileSource(path)).Load(t.Context()); err == nil {
+				t.Fatal("Load(duplicate keys) error = nil")
+			}
+		})
+	}
+}
+
+func TestSnapshotDecodeRejectsUnknownAndCrossTypeValues(t *testing.T) {
+	snapshot, err := New(MapSource("strict", map[string]any{
+		"database": map[string]any{"dsn": "db", "unknown": true},
+	})).Load(t.Context())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	var decoded databaseConfig
+	if err := snapshot.DecodeSection("database", &decoded); err == nil {
+		t.Fatal("DecodeSection(unknown field) error = nil")
+	}
+
+	snapshot, err = New(MapSource("strict", map[string]any{
+		"database": map[string]any{"dsn": false},
+	})).Load(t.Context())
+	if err != nil {
+		t.Fatalf("Load(cross type) error = %v", err)
+	}
+	if err := snapshot.DecodeSection("database", &decoded); err == nil {
+		t.Fatal("DecodeSection(bool to string) error = nil")
 	}
 }
 

@@ -9,8 +9,6 @@ import (
 	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold2/internal/kernel/app/database"
 	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
-	"github.com/rin721/go-scaffold2/internal/kernel/config"
-	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 	pkgclock "github.com/rin721/go-scaffold2/pkg/clock"
 	pkgi18n "github.com/rin721/go-scaffold2/pkg/i18n"
 	pkgidgen "github.com/rin721/go-scaffold2/pkg/idgen"
@@ -28,27 +26,21 @@ const (
 	ConfiguredLoggerReplacement
 )
 
-// Options 配置 composition 可选的启动前能力。
+// Options 配置 Service composition 的显式底层能力选择。
 type Options struct {
 	Logger LoggerSelection
-	CLI    *CLIOptions
 }
-
-// CLIOptions 配置可选的启动前 CLI App。
-type CLIOptions struct{ App pkgcli.Config }
 
 // Capabilities 保存当前进程已经显式选择的稳定能力入口。
 type Capabilities struct {
-	Logger        pkglogger.Logger
-	Clock         pkgclock.Clock
-	IDGenerator   pkgidgen.Generator
-	Validator     pkgvalidation.Validator
-	Database      databaseapp.Access
-	Cache         cacheapp.Access
-	I18n          pkgi18n.Translator
-	Storage       storageapp.Access
-	Configuration config.DefaultManager
-	CLI           pkgcli.App
+	Logger      pkglogger.Logger
+	Clock       pkgclock.Clock
+	IDGenerator pkgidgen.Generator
+	Validator   pkgvalidation.Validator
+	Database    databaseapp.Access
+	Cache       cacheapp.Access
+	I18n        pkgi18n.Translator
+	Storage     storageapp.Access
 }
 
 // Compose 在本地完整构造并校验 Plan，最后一次性安装到 Kernel。
@@ -102,15 +94,6 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, fmt.Errorf("freeze component plan: %w", err)
 	}
-	configurationOutput, err := composeConfiguration(frozen.Defaults()...)
-	if err != nil {
-		return Capabilities{}, err
-	}
-	contracts := append(configurationOutput.cliContracts, frozen.CLIContracts()...)
-	cliOutput, err := composeCLI(options.CLI, contracts...)
-	if err != nil {
-		return Capabilities{}, err
-	}
 	if err := runtime.Install(frozen); err != nil {
 		return Capabilities{}, fmt.Errorf("install component plan: %w", err)
 	}
@@ -119,6 +102,5 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 		IDGenerator: idOutput.Output, Validator: validatorOutput.Output,
 		Database: databaseOutput.Output, Cache: cacheOutput.Output,
 		I18n: i18nOutput.Output, Storage: storageOutput.Output,
-		Configuration: configurationOutput.manager, CLI: cliOutput,
 	}, nil
 }

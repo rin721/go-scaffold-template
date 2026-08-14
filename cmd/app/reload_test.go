@@ -14,7 +14,7 @@ import (
 
 func TestServiceHostOptionsEnablesWatch(t *testing.T) {
 	logging := pkglogger.NewTestLogger()
-	options := serviceHostOptions(logging)
+	options := serviceHostOptions(logging, nil)
 	if options.Watch == nil || options.Watch.OnReloadError == nil {
 		t.Fatal("service HostOptions does not enable config watch")
 	}

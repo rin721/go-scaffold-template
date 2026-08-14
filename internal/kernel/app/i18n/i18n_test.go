@@ -25,9 +25,9 @@ func TestDefinitionContributesConfiguredTranslator(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Freeze() error = %v", err)
 	}
-	bindings := frozen.Defaults()
+	bindings := frozen.Configurations()
 	if len(bindings) != 1 || bindings[0].CapabilityID != string(ID) || bindings[0].ConfigPath != ConfigPath {
-		t.Fatalf("Defaults() = %#v", bindings)
+		t.Fatalf("Configurations() = %#v", bindings)
 	}
 	components := frozen.Components()
 	if len(components) != 1 || components[0].Policy() != app.KernelInstanceSwap {

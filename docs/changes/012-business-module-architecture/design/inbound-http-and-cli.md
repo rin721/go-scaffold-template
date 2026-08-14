@@ -1,6 +1,6 @@
 # HTTP 与 CLI 入站边界
 
-> 当前状态：HTTP listener/Serve/Shutdown 的进程生命周期属于基础闭环；Handler、Route、业务 Command 与公开错误协议在业务延伸门禁通过前均为候选约束，不得实施占位 API。
+> 当前状态：HTTP listener/Serve/Shutdown 的进程生命周期与 Bootstrap CLI 属于基础闭环；CLI mode、registry、默认配置和退出契约以 [cli-and-default-config-contracts.md](cli-and-default-config-contracts.md) 为准。Handler、Route、业务 Command 与公开错误协议在业务延伸门禁通过前均为候选约束，不得实施占位 API。
 
 ## 1. 基础闭环与业务边界的分界
 

@@ -5,76 +5,72 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
 )
 
 func TestKernelNewDoesNotComposeCapabilities(t *testing.T) {
 	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	if err := runtime.Start(t.Context()); err != nil {
+	coordinator, err := kernel.NewCoordinator(runtime)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	if err := coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() without Compose error = %v", err)
 	}
-	if err := runtime.Stop(t.Context()); err != nil {
+	if err := coordinator.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }
 
-func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
-	disabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	disabled, err := Compose(disabledRuntime, Options{})
+func TestComposeBuildsServiceCapabilitiesWithoutCLI(t *testing.T) {
+	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
+	capabilities, err := Compose(runtime, Options{})
 	if err != nil {
-		t.Fatalf("Compose(disabled) error = %v", err)
+		t.Fatalf("Compose() error = %v", err)
 	}
-	if disabled.Logger == nil || disabled.Clock == nil || disabled.IDGenerator == nil || disabled.Validator == nil || disabled.Database == nil || disabled.Cache == nil || disabled.I18n == nil || disabled.Storage == nil || disabled.Configuration == nil || disabled.CLI != nil {
-		t.Fatalf("Compose(disabled) = %#v", disabled)
+	if capabilities.Logger == nil || capabilities.Clock == nil || capabilities.IDGenerator == nil || capabilities.Validator == nil || capabilities.Database == nil || capabilities.Cache == nil || capabilities.I18n == nil || capabilities.Storage == nil {
+		t.Fatalf("Compose() = %#v", capabilities)
 	}
-	if disabled.Logger != disabledRuntime.Logger() {
-		t.Fatal("Compose(disabled) did not return the Kernel builtin Logger facade")
+	if capabilities.Logger != runtime.Logger() {
+		t.Fatal("Compose() did not return the Kernel builtin Logger facade")
 	}
-	if _, err := disabled.IDGenerator.New(); err != nil {
+	if _, err := capabilities.IDGenerator.New(); err != nil {
 		t.Fatalf("IDGenerator.New() error = %v", err)
 	}
-	if err := disabled.Validator.Struct(struct {
+	if err := capabilities.Validator.Struct(struct {
 		Name string `validate:"required"`
 	}{Name: "ready"}); err != nil {
 		t.Fatalf("Validator.Struct() error = %v", err)
 	}
-	if disabled.Clock.Now().IsZero() {
+	if capabilities.Clock.Now().IsZero() {
 		t.Fatal("Clock.Now() returned zero time")
 	}
+}
 
-	enabledRuntime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	enabled, err := Compose(enabledRuntime, Options{
-		Logger: ConfiguredLoggerReplacement,
-		CLI: &CLIOptions{App: pkgcli.Config{
-			Name:                   "test",
-			DisableInteractiveHome: true,
-		}}})
+func TestComposeBootstrapGeneratesAllServiceSectionsWithoutKernel(t *testing.T) {
+	bootstrap, err := ComposeBootstrap(pkgcli.Config{Name: "test", DisableInteractiveHome: true})
 	if err != nil {
-		t.Fatalf("Compose(enabled) error = %v", err)
-	}
-	if enabled.CLI == nil {
-		t.Fatal("Compose(enabled) CLI is nil")
-	}
-	if enabled.Logger != enabledRuntime.Logger() {
-		t.Fatal("Compose(enabled) replaced the Logger facade identity")
+		t.Fatalf("ComposeBootstrap() error = %v", err)
 	}
 	directory := t.TempDir()
-	target := filepath.Join(directory, "cli.yaml")
+	cliTarget := filepath.Join(directory, "cli.yaml")
 	var stdout bytes.Buffer
-	if err := enabled.CLI.RunWithIO(t.Context(), []string{"config", "init", "-o", target}, nil, &stdout, io.Discard); err != nil {
+	if err := bootstrap.CLI.RunWithIO(t.Context(), []string{"config", "init", "-o", cliTarget}, strings.NewReader(""), &stdout, io.Discard); err != nil {
 		t.Fatalf("config init error = %v", err)
 	}
 	if stdout.Len() == 0 {
 		t.Fatal("config init stdout is empty")
 	}
 	directTarget := filepath.Join(directory, "direct.yaml")
-	if _, err := enabled.Configuration.Generate(t.Context(), config.GenerateRequest{Path: directTarget}); err != nil {
+	if _, err := bootstrap.Configuration.Generate(t.Context(), config.GenerateRequest{Path: directTarget}); err != nil {
 		t.Fatalf("Configuration.Generate() error = %v", err)
 	}
-	cliPayload, err := os.ReadFile(target)
+	cliPayload, err := os.ReadFile(cliTarget)
 	if err != nil {
 		t.Fatalf("ReadFile(CLI) error = %v", err)
 	}
@@ -85,47 +81,29 @@ func TestComposeMakesCLIExplicitlyOptional(t *testing.T) {
 	if !bytes.Equal(cliPayload, directPayload) {
 		t.Fatalf("CLI and direct generation differ:\nCLI:\n%s\ndirect:\n%s", cliPayload, directPayload)
 	}
-	loggerIndex := bytes.Index(cliPayload, []byte("logger:"))
-	databaseIndex := bytes.Index(cliPayload, []byte("database:"))
-	cacheIndex := bytes.Index(cliPayload, []byte("cache:"))
-	i18nIndex := bytes.Index(cliPayload, []byte("i18n:"))
-	storageIndex := bytes.Index(cliPayload, []byte("storage:"))
-	if loggerIndex < 0 || databaseIndex < 0 || cacheIndex < 0 || i18nIndex < 0 || storageIndex < 0 ||
-		loggerIndex >= databaseIndex || databaseIndex >= cacheIndex || cacheIndex >= i18nIndex || i18nIndex >= storageIndex {
-		t.Fatalf("generated capability order is not Logger, Database, Cache, I18n, Storage:\n%s", cliPayload)
+	previous := -1
+	for _, section := range []string{"logger:", "database:", "cache:", "i18n:", "storage:", "http:"} {
+		index := bytes.Index(cliPayload, []byte(section))
+		if index <= previous {
+			t.Fatalf("generated section %s is missing or out of order:\n%s", section, cliPayload)
+		}
+		previous = index
 	}
 }
 
-func TestComposeBuiltinLoggerOmitsConfiguredDefaults(t *testing.T) {
-	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	capabilities, err := Compose(runtime, Options{})
+func TestExampleConfigSatisfiesCurrentServiceBindings(t *testing.T) {
+	bindings, err := bootstrapConfigBindings()
 	if err != nil {
-		t.Fatalf("Compose() error = %v", err)
+		t.Fatalf("bootstrap config bindings: %v", err)
 	}
-	if capabilities.Logger == nil {
-		t.Fatal("Compose() Logger is nil")
-	}
-	directory := t.TempDir()
-	target := filepath.Join(directory, "builtin.yaml")
-	if _, err := capabilities.Configuration.Generate(t.Context(), config.GenerateRequest{Path: target}); err != nil {
-		t.Fatalf("Configuration.Generate() error = %v", err)
-	}
-	payload, err := os.ReadFile(target)
+	path := filepath.Join("..", "..", "..", "config.example.yaml")
+	snapshot, err := config.New(config.FileSource(path)).Load(t.Context())
 	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
+		t.Fatalf("load config example: %v", err)
 	}
-	if bytes.Contains(payload, []byte("logger:")) {
-		t.Fatalf("builtin-only configuration unexpectedly contains logger defaults:\n%s", payload)
+	if err := config.ValidateCandidate(snapshot, bindings...); err != nil {
+		t.Fatalf("validate config example: %v", err)
 	}
-	if !bytes.Contains(payload, []byte("database:")) {
-		t.Fatalf("builtin-only configuration misses database defaults:\n%s", payload)
-	}
-	for _, section := range [][]byte{[]byte("cache:"), []byte("i18n:"), []byte("storage:")} {
-		if !bytes.Contains(payload, section) {
-			t.Fatalf("builtin-only configuration misses %s defaults:\n%s", section, payload)
-		}
-	}
-	capabilities.Logger.Info("builtin logger active")
 }
 
 func TestComposeRejectsUnknownLoggerSelectionWithoutInstallingPlan(t *testing.T) {
@@ -142,17 +120,13 @@ func TestComposeRejectsUnknownLoggerSelectionWithoutInstallingPlan(t *testing.T)
 	}
 }
 
-func TestComposeCLIErrorReturnsZeroCapabilities(t *testing.T) {
+func TestComposeBootstrapFailureDoesNotTouchServiceRuntime(t *testing.T) {
+	if bootstrap, err := ComposeBootstrap(pkgcli.Config{}); err == nil || bootstrap.CLI != nil {
+		t.Fatalf("ComposeBootstrap(invalid app) = %#v, %v", bootstrap, err)
+	}
 	runtime := newTestRuntime(t, config.MapSource("empty", map[string]any{}))
-	capabilities, err := Compose(runtime, Options{CLI: &CLIOptions{}})
-	if err == nil {
-		t.Fatal("Compose(invalid CLI) error = nil")
-	}
-	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Cache != nil || capabilities.I18n != nil || capabilities.Storage != nil || capabilities.Configuration != nil || capabilities.CLI != nil {
-		t.Fatalf("Compose(invalid CLI) = %#v, want zero capabilities", capabilities)
-	}
 	if _, err := Compose(runtime, Options{}); err != nil {
-		t.Fatalf("Compose(valid after CLI failure) error = %v", err)
+		t.Fatalf("Compose() after bootstrap failure error = %v", err)
 	}
 }
 
@@ -165,13 +139,14 @@ func TestComposeRejectsDuplicateCapabilitySet(t *testing.T) {
 	if err == nil {
 		t.Fatal("second Compose() error = nil")
 	}
-	if capabilities.Logger != nil || capabilities.Clock != nil || capabilities.IDGenerator != nil || capabilities.Validator != nil || capabilities.Database != nil || capabilities.Cache != nil || capabilities.I18n != nil || capabilities.Storage != nil {
-		t.Fatal("second Compose() returned partial capabilities")
+	if capabilities != (Capabilities{}) {
+		t.Fatalf("second Compose() = %#v, want zero capabilities", capabilities)
 	}
-	if capabilities.Configuration != nil || capabilities.CLI != nil {
-		t.Fatal("second Compose() returned partial configuration or CLI capabilities")
+	coordinator, err := kernel.NewCoordinator(runtime)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
 	}
-	if err := runtime.Stop(t.Context()); err != nil {
+	if err := coordinator.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 }

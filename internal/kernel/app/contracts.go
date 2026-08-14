@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
@@ -38,6 +37,18 @@ type ConfiguredSource[C any] struct {
 	defaults config.DefaultContract
 }
 
+func (s ConfiguredSource[C]) binding(id ID) config.Binding {
+	return config.Binding{
+		CapabilityID: string(id),
+		ConfigPath:   s.path,
+		Contract:     s.defaults,
+		Validate: func(snapshot config.Snapshot) error {
+			_, err := s.decode(snapshot)
+			return err
+		},
+	}
+}
+
 // Configured 创建 typed 配置源。defaults 可以为 nil，表示不生成默认配置段。
 func Configured[C any](path string, decode Decoder[C], defaults config.DefaultContract) (ConfiguredSource[C], error) {
 	if path == "" {
@@ -58,10 +69,9 @@ type lifecycle[I any] struct {
 	stop       func(context.Context, I) error
 	activate   func(I)
 	deactivate func(I)
-	cli        []kernelcli.Contract
 }
 
-// Option 为 Managed 组件按需附加生命周期或 CLI 契约。
+// Option 为 Managed 组件按需附加真实生命周期契约。
 type Option[I any] func(*lifecycle[I]) error
 
 // WithStart 声明实例启动动作。
@@ -102,17 +112,6 @@ func WithStop[I any](stop func(context.Context, I) error) Option[I] {
 			return fmt.Errorf("component stop function is duplicated")
 		}
 		target.stop = stop
-		return nil
-	}
-}
-
-// WithCLI 声明组件贡献的启动前 CLI 契约。
-func WithCLI[I any](contract kernelcli.Contract) Option[I] {
-	return func(target *lifecycle[I]) error {
-		if isNil(contract) {
-			return fmt.Errorf("component CLI contract is nil")
-		}
-		target.cli = append(target.cli, contract)
 		return nil
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/rin721/go-scaffold2/internal/kernel"
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	cacheapp "github.com/rin721/go-scaffold2/internal/kernel/app/cache"
 	storageapp "github.com/rin721/go-scaffold2/internal/kernel/app/storage"
@@ -35,10 +36,14 @@ func TestComposeSwapsI18nAndStorageAndPreflightsCacheRestart(t *testing.T) {
 	}
 	initialI18n := capabilities.I18n
 	initialStorage := capabilities.Storage
-	if err := runtime.Start(t.Context()); err != nil {
+	coordinator, err := kernel.NewCoordinator(runtime)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	if err := coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = coordinator.Stop(context.Background()) })
 
 	if _, err := capabilities.I18n.Translate("zh-CN", pkgi18n.Text("missing")); err == nil {
 		t.Fatal("initial I18n missing message error = nil")
@@ -57,7 +62,7 @@ func TestComposeSwapsI18nAndStorageAndPreflightsCacheRestart(t *testing.T) {
 	putStorageValue(t, capabilities.Storage, "v1.txt", "v1")
 
 	writeCapabilityConfig(t, configPath, databasePath, "disabled", "use-id", "[]", storageV2)
-	result, err := runtime.Reload(t.Context())
+	result, err := coordinator.Reload(t.Context())
 	if err != nil {
 		t.Fatalf("Reload(v2) error = %v", err)
 	}
@@ -78,7 +83,7 @@ func TestComposeSwapsI18nAndStorageAndPreflightsCacheRestart(t *testing.T) {
 
 	missingMessages := "[" + yamlString(filepath.Join(directory, "missing.zh-CN.yaml")) + "]"
 	writeCapabilityConfig(t, configPath, databasePath, "disabled", "error", missingMessages, storageInvalid)
-	result, err = runtime.Reload(t.Context())
+	result, err = coordinator.Reload(t.Context())
 	if err == nil {
 		t.Fatal("Reload(invalid i18n) error = nil")
 	}
@@ -95,7 +100,7 @@ func TestComposeSwapsI18nAndStorageAndPreflightsCacheRestart(t *testing.T) {
 	putStorageValue(t, capabilities.Storage, "after-invalid.txt", "v2")
 
 	writeCapabilityConfig(t, configPath, databasePath, "redis", "error", "[]", storageRestart)
-	result, err = runtime.Reload(t.Context())
+	result, err = coordinator.Reload(t.Context())
 	if !errors.Is(err, app.ErrRestartRequired) {
 		t.Fatalf("Reload(cache change) error = %v, want ErrRestartRequired", err)
 	}

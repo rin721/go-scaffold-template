@@ -26,11 +26,13 @@ type streams struct {
 }
 
 type app struct {
-	cfg      Config
-	theme    Theme
-	commands []CommandSpec
-	names    map[string]struct{}
-	mu       sync.RWMutex
+	cfg       Config
+	theme     Theme
+	commands  []CommandSpec
+	names     map[string]struct{}
+	mu        sync.RWMutex
+	frozen    bool
+	freezeErr error
 
 	runHome  func(context.Context, homeModel, streams, programOptions) (homeResult, error)
 	runShell func(context.Context, *app, homeModel, streams, programOptions) (homeResult, error)
@@ -76,6 +78,9 @@ func (a *app) AddCommand(spec CommandSpec) error {
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.frozen {
+		return fmt.Errorf("cli command registry is frozen")
+	}
 
 	if _, exists := a.names[name]; exists {
 		return fmt.Errorf("%s: %s", ErrMsgDuplicateCommand, name)
@@ -95,6 +100,9 @@ func (a *app) Run(ctx context.Context, args []string) error {
 }
 
 func (a *app) RunWithIO(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) error {
+	if stdin == nil || stdout == nil || stderr == nil {
+		return fmt.Errorf("cli command streams must be non-nil")
+	}
 	s := streams{
 		stdin:  firstReader(stdin, os.Stdin),
 		stdout: firstWriter(stdout, io.Discard),
@@ -105,7 +113,10 @@ func (a *app) RunWithIO(ctx context.Context, args []string, stdin io.Reader, std
 
 func (a *app) run(ctx context.Context, args []string, s streams) error {
 	if ctx == nil {
-		ctx = context.Background()
+		return fmt.Errorf("cli context is nil")
+	}
+	if err := a.freeze(); err != nil {
+		return err
 	}
 	cleanedArgs, chainAnswers, err := extractChainArgs(args)
 	if err != nil {
@@ -158,6 +169,10 @@ func normalizeExecuteError(err error) error {
 	if errors.As(err, &cancelledErr) {
 		return cancelledErr
 	}
+	var configErr *ConfigError
+	if errors.As(err, &configErr) {
+		return configErr
+	}
 	return &UsageError{Message: err.Error()}
 }
 
@@ -186,6 +201,7 @@ func (a *app) rootCommand(ctx context.Context, s streams) (*cobra.Command, error
 		},
 	}
 	root.CompletionOptions.DisableDefaultCmd = true
+	registerCommandGroups(root, a.cfg.CommandGroups)
 	root.SetIn(s.stdin)
 	root.SetOut(s.stdout)
 	root.SetErr(s.stderr)
@@ -220,6 +236,7 @@ func (a *app) command(ctx context.Context, spec CommandSpec, s streams) (*cobra.
 		Short:         firstString(spec.Description, spec.Long),
 		Long:          firstString(spec.Long, spec.Description),
 		Example:       spec.Example,
+		GroupID:       spec.GroupID,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -230,7 +247,10 @@ func (a *app) command(ctx context.Context, spec CommandSpec, s streams) (*cobra.
 			if err := validateRequiredFlags(commandCtx, spec.Flags); err != nil {
 				return err
 			}
-			if spec.Args != nil {
+			if err := validatePositionals(spec, commandCtx); err != nil {
+				return &UsageError{Command: cmd.CommandPath(), Message: err.Error()}
+			}
+			if spec.Positional == PositionalCustom {
 				if err := spec.Args(commandCtx); err != nil {
 					var usageErr *UsageError
 					if errors.As(err, &usageErr) {
@@ -255,6 +275,10 @@ func (a *app) command(ctx context.Context, spec CommandSpec, s streams) (*cobra.
 				if errors.As(err, &cancelledErr) {
 					return cancelledErr
 				}
+				var configErr *ConfigError
+				if errors.As(err, &configErr) {
+					return configErr
+				}
 				return &CommandError{
 					Command: cmd.CommandPath(),
 					Message: "execution failed",
@@ -267,6 +291,7 @@ func (a *app) command(ctx context.Context, spec CommandSpec, s streams) (*cobra.
 	cmd.SetIn(s.stdin)
 	cmd.SetOut(s.stdout)
 	cmd.SetErr(s.stderr)
+	registerCommandGroups(cmd, a.cfg.CommandGroups)
 
 	if err := registerFlags(cmd, spec.Flags); err != nil {
 		return nil, err
@@ -281,6 +306,155 @@ func (a *app) command(ctx context.Context, spec CommandSpec, s streams) (*cobra.
 	}
 
 	return cmd, nil
+}
+
+func registerCommandGroups(command *cobra.Command, groups []CommandGroup) {
+	for _, group := range groups {
+		command.AddGroup(&cobra.Group{ID: group.ID, Title: group.Title})
+	}
+}
+
+func validatePositionals(spec CommandSpec, ctx *Context) error {
+	switch spec.Positional {
+	case PositionalNone:
+		if len(ctx.Args) != 0 {
+			return fmt.Errorf("command accepts no positional arguments")
+		}
+	case PositionalAny:
+		return nil
+	case PositionalCustom:
+		if spec.Args == nil {
+			return fmt.Errorf("custom positional validator is nil")
+		}
+	default:
+		return fmt.Errorf("command positional policy is unspecified")
+	}
+	return nil
+}
+
+func (a *app) freeze() error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.frozen {
+		return a.freezeErr
+	}
+	a.frozen = true
+	a.freezeErr = validateRegistry(a.cfg, a.commands)
+	return a.freezeErr
+}
+
+func validateRegistry(cfg Config, commands []CommandSpec) error {
+	groups := make(map[string]struct{}, len(cfg.CommandGroups))
+	for index, group := range cfg.CommandGroups {
+		id := strings.TrimSpace(group.ID)
+		if id == "" {
+			return fmt.Errorf("command group %d id is required", index)
+		}
+		if _, exists := groups[id]; exists {
+			return fmt.Errorf("command group %q is duplicated", id)
+		}
+		if strings.TrimSpace(group.Title) == "" {
+			return fmt.Errorf("command group %q title is required", id)
+		}
+		groups[id] = struct{}{}
+	}
+	globalNames, globalShorts, err := validateFlagSpecs(cfg.GlobalFlags, nil, nil, cfg.Name)
+	if err != nil {
+		return err
+	}
+	return validateSiblings(commands, groups, globalNames, globalShorts, cfg.Name)
+}
+
+func validateSiblings(specs []CommandSpec, groups map[string]struct{}, inheritedNames, inheritedShorts map[string]struct{}, parent string) error {
+	identities := make(map[string]string)
+	for index, spec := range specs {
+		name := strings.TrimSpace(spec.Name)
+		if name == "" {
+			return fmt.Errorf("command %s child %d name is required", parent, index)
+		}
+		path := parent + " " + name
+		for _, identity := range append([]string{name}, spec.Aliases...) {
+			identity = strings.TrimSpace(identity)
+			if identity == "" {
+				return fmt.Errorf("command %s has an empty alias", path)
+			}
+			if strings.ContainsAny(identity, " \t\r\n") {
+				return fmt.Errorf("command %s identity %q contains whitespace", path, identity)
+			}
+			if identity == "help" || identity == "completion" {
+				return fmt.Errorf("command %s uses reserved identity %q", path, identity)
+			}
+			if owner, exists := identities[identity]; exists {
+				return fmt.Errorf("command identity %q conflicts between %s and %s", identity, owner, path)
+			}
+			identities[identity] = path
+		}
+		if spec.GroupID != "" {
+			if _, exists := groups[spec.GroupID]; !exists {
+				return fmt.Errorf("command %s references unknown group %q", path, spec.GroupID)
+			}
+		}
+		if spec.Run != nil {
+			if spec.Mode != CommandModeBootstrap && spec.Mode != CommandModeApplication {
+				return fmt.Errorf("command %s mode is unspecified", path)
+			}
+			if spec.SideEffect < SideEffectNone || spec.SideEffect > SideEffectExternalWrite {
+				return fmt.Errorf("command %s side effect is unspecified", path)
+			}
+			if spec.Positional < PositionalNone || spec.Positional > PositionalCustom {
+				return fmt.Errorf("command %s positional policy is unspecified", path)
+			}
+			if spec.Positional == PositionalCustom && spec.Args == nil {
+				return fmt.Errorf("command %s custom positional validator is nil", path)
+			}
+			if spec.Positional != PositionalCustom && spec.Args != nil {
+				return fmt.Errorf("command %s positional validator requires custom policy", path)
+			}
+		}
+		localNames, localShorts, err := validateFlagSpecs(spec.Flags, inheritedNames, inheritedShorts, path)
+		if err != nil {
+			return err
+		}
+		if err := validateSiblings(spec.Commands, groups, localNames, localShorts, path); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateFlagSpecs(specs []FlagSpec, inheritedNames, inheritedShorts map[string]struct{}, owner string) (map[string]struct{}, map[string]struct{}, error) {
+	names := cloneSet(inheritedNames)
+	shorts := cloneSet(inheritedShorts)
+	for index, spec := range specs {
+		name := strings.TrimSpace(spec.Name)
+		if name == "" {
+			return nil, nil, fmt.Errorf("command %s flag %d name is required", owner, index)
+		}
+		if _, exists := names[name]; exists {
+			return nil, nil, fmt.Errorf("command %s flag --%s is duplicated or shadows an inherited flag", owner, name)
+		}
+		names[name] = struct{}{}
+		short := strings.TrimSpace(firstString(spec.Shorthand, spec.ShortName))
+		if short == "" {
+			continue
+		}
+		if len([]rune(short)) != 1 {
+			return nil, nil, fmt.Errorf("command %s flag --%s shorthand must be one character", owner, name)
+		}
+		if _, exists := shorts[short]; exists {
+			return nil, nil, fmt.Errorf("command %s flag shorthand -%s is duplicated or shadows an inherited flag", owner, short)
+		}
+		shorts[short] = struct{}{}
+	}
+	return names, shorts, nil
+}
+
+func cloneSet(source map[string]struct{}) map[string]struct{} {
+	cloned := make(map[string]struct{}, len(source))
+	for value := range source {
+		cloned[value] = struct{}{}
+	}
+	return cloned
 }
 
 func registerFlags(cmd *cobra.Command, specs []FlagSpec) error {
@@ -394,7 +568,7 @@ func (a *app) commandContext(ctx context.Context, cmd *cobra.Command, args []str
 		}
 	}
 	if ctx == nil {
-		ctx = context.Background()
+		return nil, fmt.Errorf("cli command context is nil")
 	}
 	ui := s.ui
 	if ui == nil {

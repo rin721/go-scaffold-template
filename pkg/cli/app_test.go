@@ -24,6 +24,9 @@ func TestRunRoutesCobraCommandAndParsesFlags(t *testing.T) {
 	err = app.AddCommand(CommandSpec{
 		Name:        "run",
 		Description: "run command",
+		Mode:        CommandModeBootstrap,
+		SideEffect:  SideEffectNone,
+		Positional:  PositionalAny,
 		Flags: []FlagSpec{
 			{Name: "name", Type: FlagTypeString, Required: true},
 			{Name: "count", Type: FlagTypeInt, Default: 1},
@@ -87,7 +90,8 @@ func TestRunMapsUsageAndExecutionErrors(t *testing.T) {
 
 	cause := errors.New("boom")
 	if err := app.AddCommand(CommandSpec{
-		Name:  "run",
+		Name: "run",
+		Mode: CommandModeBootstrap, SideEffect: SideEffectNone, Positional: PositionalNone,
 		Flags: []FlagSpec{{Name: "name", Type: FlagTypeString, Required: true}},
 		Run: func(*Context) error {
 			return cause
@@ -96,7 +100,7 @@ func TestRunMapsUsageAndExecutionErrors(t *testing.T) {
 		t.Fatalf("AddCommand() error = %v", err)
 	}
 
-	err = app.RunWithIO(context.Background(), []string{"run"}, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err = app.RunWithIO(context.Background(), []string{"run"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	var usageErr *UsageError
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("missing required error = %T, want *UsageError", err)
@@ -105,7 +109,7 @@ func TestRunMapsUsageAndExecutionErrors(t *testing.T) {
 		t.Fatalf("usage exit = %d, want %d", got, ExitUsage)
 	}
 
-	err = app.RunWithIO(context.Background(), []string{"run", "--name", "alice"}, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err = app.RunWithIO(context.Background(), []string{"run", "--name", "alice"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	var commandErr *CommandError
 	if !errors.As(err, &commandErr) {
 		t.Fatalf("execution error = %T, want *CommandError", err)
@@ -126,14 +130,15 @@ func TestRunMapsInvalidEnvDefaultToUsageError(t *testing.T) {
 		t.Fatalf("NewApp() error = %v", err)
 	}
 	if err := app.AddCommand(CommandSpec{
-		Name:  "run",
+		Name: "run",
+		Mode: CommandModeBootstrap, SideEffect: SideEffectNone, Positional: PositionalNone,
 		Flags: []FlagSpec{{Name: "count", Type: FlagTypeInt, EnvVar: "CLI_TEST_COUNT"}},
 		Run:   func(*Context) error { return nil },
 	}); err != nil {
 		t.Fatalf("AddCommand() error = %v", err)
 	}
 
-	err = app.RunWithIO(context.Background(), []string{"run"}, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err = app.RunWithIO(context.Background(), []string{"run"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	var usageErr *UsageError
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("invalid env error = %T, want *UsageError", err)
@@ -161,6 +166,71 @@ func TestAddCommandRejectsDuplicateNames(t *testing.T) {
 	}
 }
 
+func TestRegistryRejectsNestedIdentityFlagAndContractConflictsBeforeRun(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  Config
+		spec CommandSpec
+	}{
+		{
+			name: "nested alias",
+			cfg:  Config{Name: "tool"},
+			spec: CommandSpec{Name: "config", Commands: []CommandSpec{
+				{Name: "init", Aliases: []string{"create"}}, {Name: "create"},
+			}},
+		},
+		{
+			name: "inherited flag shorthand",
+			cfg:  Config{Name: "tool", GlobalFlags: []FlagSpec{{Name: "force", Shorthand: "f", Type: FlagTypeBool}}},
+			spec: CommandSpec{Name: "run", Flags: []FlagSpec{{Name: "format", Shorthand: "f", Type: FlagTypeString}}},
+		},
+		{
+			name: "unknown group",
+			cfg:  Config{Name: "tool"},
+			spec: CommandSpec{Name: "run", GroupID: "operations"},
+		},
+		{
+			name: "executable without mode",
+			cfg:  Config{Name: "tool"},
+			spec: CommandSpec{Name: "run", Run: func(*Context) error { return nil }},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			application, err := NewApp(test.cfg)
+			if err != nil {
+				t.Fatalf("NewApp() error = %v", err)
+			}
+			if err := application.AddCommand(test.spec); err != nil {
+				t.Fatalf("AddCommand() error = %v", err)
+			}
+			if err := application.RunWithIO(t.Context(), []string{"--help"}, strings.NewReader(""), io.Discard, io.Discard); err == nil {
+				t.Fatal("RunWithIO() registry error = nil")
+			}
+		})
+	}
+}
+
+func TestRegistryFreezesAfterFirstRun(t *testing.T) {
+	application, err := NewApp(Config{Name: "tool"})
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	if err := application.RunWithIO(t.Context(), []string{"--help"}, strings.NewReader(""), io.Discard, io.Discard); err != nil {
+		t.Fatalf("RunWithIO() error = %v", err)
+	}
+	if err := application.AddCommand(CommandSpec{Name: "late"}); err == nil {
+		t.Fatal("AddCommand() after freeze error = nil")
+	}
+}
+
+func TestGetExitCodePrioritizesCancellationThroughConfigError(t *testing.T) {
+	err := &ConfigError{Command: "tool config init", Stage: "generate", Cause: context.Canceled}
+	if code := GetExitCode(err); code != ExitInterrupted {
+		t.Fatalf("GetExitCode(cancelled config) = %d, want %d", code, ExitInterrupted)
+	}
+}
+
 func TestRunHelpAndVersionUseCobra(t *testing.T) {
 	app, err := NewApp(Config{Name: "tool", Version: "1.2.3", Description: "test cli"})
 	if err != nil {
@@ -171,7 +241,7 @@ func TestRunHelpAndVersionUseCobra(t *testing.T) {
 	}
 
 	var help bytes.Buffer
-	if err := app.RunWithIO(context.Background(), []string{"--help"}, nil, &help, &bytes.Buffer{}); err != nil {
+	if err := app.RunWithIO(context.Background(), []string{"--help"}, strings.NewReader(""), &help, &bytes.Buffer{}); err != nil {
 		t.Fatalf("RunWithIO(--help) error = %v", err)
 	}
 	helpText := help.String()
@@ -182,7 +252,7 @@ func TestRunHelpAndVersionUseCobra(t *testing.T) {
 	}
 
 	var version bytes.Buffer
-	if err := app.RunWithIO(context.Background(), []string{"--version"}, nil, &version, &bytes.Buffer{}); err != nil {
+	if err := app.RunWithIO(context.Background(), []string{"--version"}, strings.NewReader(""), &version, &bytes.Buffer{}); err != nil {
 		t.Fatalf("RunWithIO(--version) error = %v", err)
 	}
 	if got := strings.TrimSpace(version.String()); got != "tool version 1.2.3" {
@@ -211,7 +281,7 @@ func TestRunWithoutArgsStartsInteractiveHome(t *testing.T) {
 		return homeResult{}, &CancelledError{}
 	}
 
-	err = appImpl.RunWithIO(context.Background(), nil, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err = appImpl.RunWithIO(context.Background(), nil, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	var cancelled *CancelledError
 	if !errors.As(err, &cancelled) {
 		t.Fatalf("RunWithIO(nil) error = %T, want *CancelledError", err)
@@ -375,6 +445,7 @@ func TestHomeSelectionExecutesCommand(t *testing.T) {
 	var ran bool
 	if err := appImpl.AddCommand(CommandSpec{
 		Name: "run",
+		Mode: CommandModeBootstrap, SideEffect: SideEffectNone, Positional: PositionalNone,
 		Run: func(*Context) error {
 			ran = true
 			return nil
@@ -489,7 +560,8 @@ func TestChainArgsAutofillKeyedPrompts(t *testing.T) {
 	var gotPassword string
 	var changed map[string]bool
 	if err := app.AddCommand(CommandSpec{
-		Name:  "ask",
+		Name: "ask",
+		Mode: CommandModeBootstrap, SideEffect: SideEffectNone, Positional: PositionalNone,
 		Flags: []FlagSpec{{Name: "name", Type: FlagTypeString}},
 		Run: func(ctx *Context) error {
 			gotName = ctx.GetString("name")
@@ -558,11 +630,11 @@ func TestChainArgsDoNotSwallowUnknownFlags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
-	if err := app.AddCommand(CommandSpec{Name: "run", Run: func(*Context) error { return nil }}); err != nil {
+	if err := app.AddCommand(CommandSpec{Name: "run", Mode: CommandModeBootstrap, SideEffect: SideEffectNone, Positional: PositionalNone, Run: func(*Context) error { return nil }}); err != nil {
 		t.Fatalf("AddCommand() error = %v", err)
 	}
 
-	err = app.RunWithIO(context.Background(), []string{"run", "--unknown=value"}, nil, &bytes.Buffer{}, &bytes.Buffer{})
+	err = app.RunWithIO(context.Background(), []string{"run", "--unknown=value"}, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	var usageErr *UsageError
 	if !errors.As(err, &usageErr) {
 		t.Fatalf("RunWithIO(unknown flag) error = %T %v, want *UsageError", err, err)

@@ -1,18 +1,18 @@
 # 装配、配置与生命周期
 
-## 1. 当前问题
+## 1. 实施前问题
 
-现有 Kernel 内部读取配置并管理底层资源，当前 Supervisor 又把 Participant.Start/Stop 与 Task.Run 分成两个无法闭合的集合。未来直接加入 HTTP 或业务 composition 会产生三类确定性问题：同一次启动读取两份 snapshot、Serve 运行错误没有 owner，以及 Task Wait 必须等 Participant.Stop 才能结束的停止互锁。
+实施前 Kernel 内部读取配置并管理底层资源，Supervisor 又把 Participant.Start/Stop 与 Task.Run 分成两个无法闭合的集合。直接加入 HTTP 或业务 composition 会产生三类确定性问题：同一次启动读取两份 snapshot、Serve 运行错误没有 owner，以及 Task Wait 必须等 Participant.Stop 才能结束的停止互锁。
 
-本设计保留 Kernel 资源平面，通过薄 application coordinator 和局部 Supervisor/httpx 调整解决这些问题；不建立第二个容器或通用 DAG。
+本设计保留 Kernel 资源平面，通过薄 application coordinator 和局部 Supervisor/httpx 调整解决这些问题；不建立第二个容器或通用 DAG。配置节注册、strict binding 和默认值回环以 [config-contracts.md](config-contracts.md) 为当前权威细化，完整事件状态以 [runtime-state-machine.md](runtime-state-machine.md) 为准。
 
 ## 2. 单一配置候选
 
-目标流程：
+已实施流程：
 
 1. baseline Logger 先建立。
 2. coordinator 调用 Loader 一次，取得 immutable candidate、digest 和来源诊断。
-3. 每个已注册 config owner 独立 decode/default/validate，并返回 change classification；不把 Secret 回显给 coordinator。
+3. 每个已注册 section owner 从同一 contract 执行 strict bind/default/semantic validation，并返回 change classification；不把 Secret 回显给 coordinator。
 4. 所有 RestartRequired 预检成功后，Kernel 从同一 candidate view 执行 Plan 的 Stage/Build/Start/Ready/Publish 或 Reload。
 5. coordinator 只在全局决策成功后更新 committed candidate/state。
 

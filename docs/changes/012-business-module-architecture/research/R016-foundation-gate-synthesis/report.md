@@ -1,5 +1,7 @@
 # R016：底层闭环综合判定
 
+> 状态：历史记录，已由 [R020](../R020-foundation-contract-synthesis/report.md) 单轨替代。本文保留 2026-08-14 前一轮证据，不再代表 012 当前完整结论。
+
 ## 1. 当前唯一结论
 
 当前底层装配和治理 **尚未形成全进程闭环，不能进入 Handler、Service、Repository、Model 的详细设计或实现**。但问题集中在 Kernel 上层的进程控制面，而不是 Kernel 核心方向错误：应保留显式 Plan、stable facade、Lease 和候选事务，实施局部优化与缺口补齐，不整体替换架构。

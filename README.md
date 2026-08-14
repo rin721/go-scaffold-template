@@ -8,7 +8,7 @@
 - 所有当前进程选择的底层能力都通过 `kernel/app/<name>` 和 composition；Clock、ID Generator、Validator 直接输出普通接口，Database、Cache、Storage 输出稳定租约 Access，Logger 与 I18n 输出稳定 facade。
 - `app.Plan` 只支持显式有序 `Add`、typed `Binding/Input` 和针对既有 typed target 的 `Replace`；不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
 - 配置变化时先准备全部候选，再反向排空旧租约；失败恢复旧入口，`RestartRequired` 在任何副作用前阻止整轮应用。
-- 配置与默认值是可选组件契约；只有显式选择配置化 Logger replacement 时才贡献 `logger` 段，Database、Cache、I18n、Storage 始终贡献自身默认配置，CLI 只在显式启用时构造。
+- 配置节的默认值与严格绑定由同一个 owner 契约提供；服务入口由唯一 Coordinator 加载同一不可变候选，Bootstrap CLI 则只构造默认配置所需契约，不创建 Kernel、资源或监听器。
 
 ## 已实现底层库
 
@@ -28,11 +28,13 @@
 - [pkg/cli/README.md](pkg/cli/README.md)：项目自有 CLI 契约、I/O 与退出码语义。
 - [AGENTS.md](AGENTS.md)：AI Agent 协作红线和工程底线。
 
-## 默认配置与可选 CLI
+## Bootstrap CLI 与 Service
 
-`composition.Compose(runtime, options)` 先加入 Kernel 内置 Logger target；`options.Logger` 可以保留基线，也可以显式加入配置化 Logger replacement，随后按 Clock、ID Generator、Validator、Database、Cache、I18n、Storage 建立完整 Plan。返回的 Logger 和 I18n Translator 是稳定 facade，Database、Cache、Storage 是稳定 Access；只有 `options.CLI` 非 nil 时才构造 CLI App。当前 `cmd/app` 明确选择配置化 replacement，因此默认配置包含 Logger、Database、Cache、I18n、Storage 五段。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
+有参数时，`cmd/app` 先选择 Bootstrap mode，`composition.ComposeBootstrap` 只构造配置节契约、默认配置管理器和命令树。无参数时才创建 Loader、Kernel、服务能力、Coordinator、HTTP Server 和 Host。`composition.Compose(runtime, options)` 先加入 Kernel 内置 Logger target；`options.Logger` 可以保留基线，也可以显式加入配置化 Logger replacement，随后按 Clock、ID Generator、Validator、Database、Cache、I18n、Storage 建立完整 Plan。返回的 Logger 和 I18n Translator 是稳定 facade，Database、Cache、Storage 是稳定 Access。
 
-根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database、Cache、I18n、Storage 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。Database 的 GORM 实现在 `internal/kernel/app/database` 构造代码中固定选择；Cache 只选择 `disabled/redis`；Storage 的 Kernel 配置只治理对象存储，不接管进程内文件工具。
+当前 `cmd/app` 选择配置化 Logger replacement；默认配置由 Bootstrap 聚合 Logger、Database、Cache、I18n、Storage 和 application-owned HTTP 六段。默认值在写文件前经过与运行时相同的严格解码和语义校验。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
+
+根目录 [config.example.yaml](config.example.yaml) 提供当前 Logger、Database、Cache、I18n、Storage、HTTP 的全量字段、合法选项和环境变量示例；它用于人工选择本地方案，不是运行时自动加载的第二个配置来源。Database 的 GORM 实现在 `internal/kernel/app/database` 构造代码中固定选择；Cache 只选择 `disabled/redis`；Storage 的 Kernel 配置只治理对象存储，不接管进程内文件工具。
 
 [docs/changes/001-default-config-cli-contracts](docs/changes/001-default-config-cli-contracts/README.md) 保留本能力的需求、设计和实施证据，不作为当前 API 使用入口。
 
@@ -63,13 +65,13 @@ go run ./cmd/app config init
 go run ./cmd/app config init --force
 ```
 
-生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，并把 Storage 设为本地 `.data/storage`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
+生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，把 Storage 设为本地 `.data/storage`，并让 HTTP 监听 `:8080`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`。无参数模式会先发布配置化 Logger，再依次启动 Database、Cache、I18n 和 Storage，并执行相应就绪检查；应用生命周期 Participant 记录启动、停止后等待 `Ctrl+C` 或 `SIGTERM`，再由 Host 优雅停止。配置缺失、字段非法或资源不可达都会返回非零退出码；当前未组合 HTTP 服务，因此不会创建网络监听器。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_HTTP__ADDR`。无参数模式只加载一次候选，所有 Kernel 与 application owner 在资源副作用前完成严格解码和校验；随后启动 Database、Cache、I18n、Storage 和 HTTP listener。只有 listener 已绑定、受监督 Serve runner 已确认运行且全部必需 owner 启动后，进程才 ready。当前没有业务 Handler，未匹配请求返回 404。配置缺失、未知/重复字段、类型非法或资源不可达都会返回非零退出码；`Ctrl+C` 或 `SIGTERM` 会撤销 readiness 并触发有界反向停止。
 
-无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Kernel Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
+无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，要求重启恢复。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，三项能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)。
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，三项能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，本轮 Bootstrap/Config/监督/HTTP/诊断闭环见 [012 业务模块架构](docs/changes/012-business-module-architecture/README.md)。
 
 ## 本地验证
 

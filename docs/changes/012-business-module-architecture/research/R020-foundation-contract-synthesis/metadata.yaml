@@ -1,0 +1,38 @@
+schema_version: 1
+id: R020
+title: "底层契约治理与业务设计门禁综合判定"
+question: "综合当前契约台账与外部证据，哪些契约应保留、补齐、优化或重设，何时允许继续业务模块设计？"
+research_type: comparative
+topics: ["foundation contracts", "CLI", "configuration", "composition", "lifecycle", "reload", "governance"]
+keywords: ["Bootstrap mode", "strict section contract", "single candidate", "Supervisor", "HTTP lifecycle", "business gate"]
+languages: ["Go"]
+frameworks: ["Cobra", "mapstructure", "controller-runtime", "Grafana dskit", "Caddy"]
+technologies: ["net/http", "errgroup", "YAML", "JSON", "architecture tests"]
+applicable_scenarios: ["012 当前唯一推荐方案", "底层契约实施排序", "业务详细设计解锁"]
+non_applicable_scenarios: ["通用框架排名", "声明目标契约已实现", "虚构业务接口"]
+status: superseded
+summary: "保留 Kernel 资源平面；先补 CLI/Config 单契约、Application 单候选、监督/HTTP/诊断与治理闭环，全部验收后才以真实用例恢复业务设计。"
+evidence:
+  types: ["source-code", "tests", "official-docs", "local-static-analysis"]
+  primary_sources:
+    - title: "当前底层契约与基础闭环审计"
+      locator: "R011; R017"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "CLI、Config、HTTP、Supervisor、Reload 与治理专题"
+      locator: "R012-R015; R018-R019"
+      snapshot: "verified 2026-08-14"
+    - title: "仍适用的代表项目边界证据"
+      locator: "R002; R004; R005"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["FND 实施完成", "公共 CLI/Config/Lifecycle API 变化", "首个真实业务用例明确"]
+relations:
+  extends: ["R011", "R012", "R013", "R014", "R015", "R017", "R018", "R019", "R002", "R004", "R005"]
+  related: []
+  supersedes: ["R016"]
+  superseded_by: ["R021"]
+report: report.md

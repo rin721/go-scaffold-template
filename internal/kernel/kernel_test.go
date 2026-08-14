@@ -69,8 +69,9 @@ func (l *eventLog) snapshot() []string {
 }
 
 type testAssembly struct {
-	runtime *Kernel
-	plan    *app.Plan
+	runtime     *Kernel
+	coordinator *Coordinator
+	plan        *app.Plan
 }
 
 func newTestAssembly(t *testing.T, source config.Source, options Options) *testAssembly {
@@ -136,6 +137,10 @@ func (a *testAssembly) add(t *testing.T, name string, policy app.ReloadPolicy, l
 }
 
 func (a *testAssembly) install(t *testing.T) {
+	a.installWith(t)
+}
+
+func (a *testAssembly) installWith(t *testing.T, bindings ...config.Binding) {
 	t.Helper()
 	frozen, err := a.plan.Freeze()
 	if err != nil {
@@ -143,6 +148,10 @@ func (a *testAssembly) install(t *testing.T) {
 	}
 	if err := a.runtime.Install(frozen); err != nil {
 		t.Fatalf("Install() error = %v", err)
+	}
+	a.coordinator, err = NewCoordinator(a.runtime, bindings...)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
 	}
 }
 
@@ -155,10 +164,10 @@ func TestKernelStartsAndStopsInPlanOrder(t *testing.T) {
 	assembly.add(t, "second", app.KernelInstanceSwap, log, nil, nil)
 	assembly.install(t)
 
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	if err := assembly.runtime.Stop(t.Context()); err != nil {
+	if err := assembly.coordinator.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	want := []string{
@@ -168,7 +177,7 @@ func TestKernelStartsAndStopsInPlanOrder(t *testing.T) {
 	if got := log.snapshot(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("events = %#v, want %#v", got, want)
 	}
-	if err := assembly.runtime.Stop(t.Context()); err != nil {
+	if err := assembly.coordinator.Stop(t.Context()); err != nil {
 		t.Fatalf("second Stop() error = %v", err)
 	}
 }
@@ -183,7 +192,7 @@ func TestKernelStartFailureCleansPublishedComponentsAndStopsAccess(t *testing.T)
 		return errors.New("start transaction rejected")
 	}, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err == nil {
+	if err := assembly.coordinator.Start(t.Context()); err == nil {
 		t.Fatal("Start() error = nil")
 	}
 	want := []string{"build:first:v1", "start:first:v1", "stop:first:v1"}
@@ -193,7 +202,7 @@ func TestKernelStartFailureCleansPublishedComponentsAndStopsAccess(t *testing.T)
 	if err := first.Use(t.Context(), func(*testInstance) error { return nil }); !errors.Is(err, app.ErrStopped) {
 		t.Fatalf("Use() after failed Start error = %v", err)
 	}
-	if err := assembly.runtime.Start(t.Context()); !errors.Is(err, ErrStopped) {
+	if err := assembly.coordinator.Start(t.Context()); !errors.Is(err, ErrStopped) {
 		t.Fatalf("second Start() error = %v, want ErrStopped", err)
 	}
 }
@@ -231,15 +240,15 @@ func TestReloadKeepsOldAccessAvailableWhileCandidateBuilds(t *testing.T) {
 		}
 	}, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 
 	source.set(versionValues("service", "v2"))
 	reloadDone := make(chan error, 1)
 	go func() {
-		_, err := assembly.runtime.Reload(t.Context())
+		_, err := assembly.coordinator.Reload(t.Context())
 		reloadDone <- err
 	}()
 	<-buildStarted
@@ -264,14 +273,14 @@ func TestReloadFailureRetainsEveryOldInstance(t *testing.T) {
 		return nil
 	}, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	source.set(map[string]any{
 		"first": map[string]any{"version": "v2"}, "second": map[string]any{"version": "bad"},
 	})
-	result, err := assembly.runtime.Reload(t.Context())
+	result, err := assembly.coordinator.Reload(t.Context())
 	if err == nil || result.Applied {
 		t.Fatalf("Reload() = %#v, %v; want rollback error", result, err)
 	}
@@ -284,10 +293,10 @@ func TestReloadTimeoutRestoresOldInstance(t *testing.T) {
 	assembly := newTestAssembly(t, source, Options{ReloadTimeout: 100 * time.Millisecond})
 	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	holding := make(chan struct{})
 	release := make(chan struct{})
 	go func() {
@@ -299,7 +308,7 @@ func TestReloadTimeoutRestoresOldInstance(t *testing.T) {
 	}()
 	<-holding
 	source.set(versionValues("service", "v2"))
-	result, err := assembly.runtime.Reload(t.Context())
+	result, err := assembly.coordinator.Reload(t.Context())
 	if err == nil || result.Applied {
 		t.Fatalf("Reload() = %#v, %v; want timeout rollback", result, err)
 	}
@@ -318,15 +327,24 @@ func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
 		return nil
 	})
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	source.set(versionValues("service", "v2"))
-	result, err := assembly.runtime.Reload(t.Context())
+	result, err := assembly.coordinator.Reload(t.Context())
 	var committed *CommittedCleanupError
 	if !result.Applied || !errors.As(err, &committed) || !errors.Is(err, cleanupErr) {
 		t.Fatalf("Reload() = %#v, %v; want committed cleanup error", result, err)
+	}
+	assertAccessVersion(t, access, "v2")
+	diagnostics := assembly.coordinator.Diagnostics()
+	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.RestartRequired || diagnostics.Generation != 2 {
+		t.Fatalf("Diagnostics() = %#v, want degraded generation 2", diagnostics)
+	}
+	source.set(versionValues("service", "v3"))
+	if _, err := assembly.coordinator.Reload(t.Context()); err == nil {
+		t.Fatal("Reload() after committed cleanup failure error = nil")
 	}
 	assertAccessVersion(t, access, "v2")
 }
@@ -337,16 +355,16 @@ func TestReloadAndStopCloseEachGenerationOnce(t *testing.T) {
 	log := &eventLog{}
 	access := assembly.add(t, "service", app.KernelInstanceSwap, log, nil, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
 	source.set(versionValues("service", "v2"))
-	result, err := assembly.runtime.Reload(t.Context())
+	result, err := assembly.coordinator.Reload(t.Context())
 	if err != nil || !result.Applied {
 		t.Fatalf("Reload() = %#v, %v", result, err)
 	}
 	assertAccessVersion(t, access, "v2")
-	if err := assembly.runtime.Stop(t.Context()); err != nil {
+	if err := assembly.coordinator.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	want := []string{
@@ -359,6 +377,54 @@ func TestReloadAndStopCloseEachGenerationOnce(t *testing.T) {
 	}
 }
 
+func TestTerminalDrainTimeoutDoesNotResumeOrForceCloseActiveLease(t *testing.T) {
+	source := &mutableSource{values: versionValues("service", "v1")}
+	assembly := newTestAssembly(t, source, Options{})
+	log := &eventLog{}
+	access := assembly.add(t, "service", app.KernelInstanceSwap, log, nil, nil)
+	assembly.install(t)
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	release := make(chan struct{})
+	using := make(chan struct{})
+	useDone := make(chan error, 1)
+	go func() {
+		useDone <- access.Use(context.Background(), func(*testInstance) error {
+			close(using)
+			<-release
+			return nil
+		})
+	}()
+	<-using
+	stopCtx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	if err := assembly.coordinator.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop() error = %v, want terminal drain deadline", err)
+	}
+	blockedCtx, blockedCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer blockedCancel()
+	if err := access.Use(blockedCtx, func(*testInstance) error { return nil }); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Use() after terminal drain error = %v, want not resumed", err)
+	}
+	if got := log.snapshot(); containsEvent(got, "stop:service:v1") {
+		t.Fatalf("terminal timeout force-closed active instance: %#v", got)
+	}
+	close(release)
+	if err := <-useDone; err != nil {
+		t.Fatalf("active Use() error = %v", err)
+	}
+}
+
+func containsEvent(events []string, want string) bool {
+	for _, event := range events {
+		if event == want {
+			return true
+		}
+	}
+	return false
+}
+
 func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
 	source := &mutableSource{values: map[string]any{
 		"swap": map[string]any{"version": "v1"}, "fixed-port": map[string]any{"version": "v1"},
@@ -368,15 +434,15 @@ func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
 	swapAccess := assembly.add(t, "swap", app.KernelInstanceSwap, log, nil, nil)
 	restartAccess := assembly.add(t, "fixed-port", app.RestartRequired, log, nil, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	before := log.snapshot()
 	source.set(map[string]any{
 		"swap": map[string]any{"version": "v2"}, "fixed-port": map[string]any{"version": "v2"},
 	})
-	result, err := assembly.runtime.Reload(t.Context())
+	result, err := assembly.coordinator.Reload(t.Context())
 	if !errors.Is(err, app.ErrRestartRequired) || result.Applied {
 		t.Fatalf("Reload() = %#v, %v; want restart required", result, err)
 	}
@@ -393,24 +459,33 @@ func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
 	assertAccessVersion(t, restartAccess, "v1")
 }
 
-func TestReloadSkipsUnchangedComponent(t *testing.T) {
+func TestReloadRequiresRestartForApplicationOwnedSection(t *testing.T) {
 	source := &mutableSource{values: map[string]any{
 		"service": map[string]any{"version": "v1"}, "other": map[string]any{"value": "one"},
 	}}
 	assembly := newTestAssembly(t, source, Options{})
 	log := &eventLog{}
 	assembly.add(t, "service", app.KernelInstanceSwap, log, nil, nil)
-	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	assembly.installWith(t, config.Binding{
+		CapabilityID: "application.other",
+		ConfigPath:   "other",
+		Validate: func(snapshot config.Snapshot) error {
+			var value struct {
+				Value string `mapstructure:"value"`
+			}
+			return snapshot.DecodeSection("other", &value)
+		},
+	})
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	source.set(map[string]any{
 		"service": map[string]any{"version": "v1"}, "other": map[string]any{"value": "two"},
 	})
-	result, err := assembly.runtime.Reload(t.Context())
-	if err != nil || result.Applied || len(result.Changed) != 0 {
-		t.Fatalf("Reload() = %#v, %v; want unchanged", result, err)
+	result, err := assembly.coordinator.Reload(t.Context())
+	if !errors.Is(err, app.ErrRestartRequired) || result.Applied || len(result.RestartRequired) != 1 {
+		t.Fatalf("Reload() = %#v, %v; want application restart requirement", result, err)
 	}
 }
 
@@ -425,14 +500,14 @@ func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
 		return nil
 	}, nil)
 	assembly.install(t)
-	if err := assembly.runtime.Start(t.Context()); err != nil {
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
-	t.Cleanup(func() { _ = assembly.runtime.Stop(context.Background()) })
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
 	watchCtx, cancel := context.WithCancel(t.Context())
 	errorsSeen := make(chan error, 2)
 	watchDone := make(chan error, 1)
-	go func() { watchDone <- assembly.runtime.Watch(watchCtx, func(err error) { errorsSeen <- err }) }()
+	go func() { watchDone <- assembly.coordinator.Watch(watchCtx, func(err error) { errorsSeen <- err }) }()
 	writeVersionFile(t, path, "bad")
 	select {
 	case err := <-errorsSeen:

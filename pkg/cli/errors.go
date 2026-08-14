@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 )
@@ -28,6 +29,21 @@ type CommandError struct {
 	Message string
 	Cause   error
 }
+
+// ConfigError 标识配置契约、绑定、校验或安全发布失败。
+type ConfigError struct {
+	Command string
+	Stage   string
+	Cause   error
+}
+
+func (e *ConfigError) Error() string {
+	return fmt.Sprintf("%s: configuration %s failed: %v", e.Command, e.Stage, e.Cause)
+}
+
+func (e *ConfigError) Unwrap() error { return e.Cause }
+
+func (e *ConfigError) ExitCode() int { return ExitConfig }
 
 func (e *CommandError) Error() string {
 	if e.Cause != nil {
@@ -70,6 +86,9 @@ type ExitCoder interface {
 func GetExitCode(err error) int {
 	if err == nil {
 		return ExitSuccess
+	}
+	if errors.Is(err, context.Canceled) {
+		return ExitInterrupted
 	}
 	var exitCoder ExitCoder
 	if errors.As(err, &exitCoder) {

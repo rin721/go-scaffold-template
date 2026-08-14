@@ -58,7 +58,7 @@ definition, err := app.ManagedConfigured(
 - `decodeAndValidate` 只解码并校验，不打开资源。
 - `build` 接收 Context、typed 配置和 typed 依赖，返回 Kernel 私有实例。
 - `newAccess` 把 `app.Lease[I]` 收窄为组件自己的 Access；不得泄漏 `I` 的关闭权。
-- `WithStart/WithReady/WithStop/WithCLI` 全部可选，只声明真实行为。普通 Definition 不允许用隐藏 Activation 接管其他能力。
+- `WithStart/WithReady/WithStop` 全部可选，只声明真实行为。普通 Definition 不允许用隐藏 Activation 接管其他能力；CLI 由独立 Bootstrap composition 拥有，不是组件 contribution。
 - Builder 返回 typed nil 会失败，实例不会发布。
 
 ## Configured Replacement 示例
@@ -75,7 +75,7 @@ if err := app.Replace(plan, builtinLogger.Binding, replacement); err != nil {
 }
 ```
 
-`ReplacementDefinition[T]` 与普通 `Definition[O]` 是不同类型，因此不能传给 `app.Add`。`app.Replace` 只接受同一 Plan 中更早的 `Binding[T]`，从该 Binding 解析并注入同一个 target；组件构造函数不能另收一个可能身份错配的 Manager。一个 target 最多有一个 replacement，失败不会留下 ID、Defaults、CLI 或占用状态。
+`ReplacementDefinition[T]` 与普通 `Definition[O]` 是不同类型，因此不能传给 `app.Add`。`app.Replace` 只接受同一 Plan 中更早的 `Binding[T]`，从该 Binding 解析并注入同一个 target；组件构造函数不能另收一个可能身份错配的 Manager。一个 target 最多有一个 replacement，失败不会留下 ID、配置节或占用状态。
 
 Replacement 不返回 `Added.Output`。普通消费者继续使用 target 原有输出；替换组件只拥有自己构造的 Resource，并在提交/撤回边界切换 target。当前只有 Logger 有真实 mandatory baseline 和稳定 facade；其他能力不得因为 API 存在就机械套用。
 
@@ -111,7 +111,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - 第三方类型没有越过 `pkg` 契约；
 - ID 表达稳定能力角色，同一 Plan 不重复；
 - Replacement 的 target 与实际被切换对象是同一个 typed Binding 输出，且同一 target 不重复；
-- 没有虚构配置、默认值、CLI 或生命周期；
+- 没有虚构配置、默认值或生命周期；
 - Direct 输出是普通接口，普通 Swap 输出只能通过 Lease Access 使用，Replacement 只复用稳定 target；
 - 创建资源的组件拥有并释放资源，消费者没有 `Close` 权；
 - 配置策略符合资源特性，排他资源使用 `RestartRequired`；
@@ -129,4 +129,4 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/i18n`：配置化 Translator，Leased Swap；对消费者输出身份稳定的 `pkg/i18n.Translator` facade。
 - `app/storage`：配置化对象存储 Manager，Leased Swap；按 route 借用无 Close Client，文件工具不进入该组件。
 
-当前项目还没有 HTTP、middleware、handler、service、repository、model；本组件模型不替它们定义目录、构造器或容器职责。
+当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。

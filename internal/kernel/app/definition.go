@@ -4,25 +4,22 @@ import (
 	"fmt"
 	"reflect"
 
-	kernelcli "github.com/rin721/go-scaffold2/internal/kernel/cli"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 )
 
 // Definition 是一个无安装副作用的底层组件声明。
 type Definition[O any] struct {
-	id          ID
-	defaults    config.DefaultContract
-	cli         []kernelcli.Contract
-	instantiate func(*Plan, int) (O, RuntimeComponent, error)
+	id            ID
+	configuration *config.Binding
+	instantiate   func(*Plan, int) (O, RuntimeComponent, error)
 }
 
 // ReplacementDefinition 声明一个明确替换既有 typed target、但不发布第二份输出的组件。
 // target 只能由 Replace 从同一 Plan 的 Binding 解析并注入。
 type ReplacementDefinition[T any] struct {
-	id          ID
-	defaults    config.DefaultContract
-	cli         []kernelcli.Contract
-	instantiate func(*Plan, int, T) (RuntimeComponent, error)
+	id            ID
+	configuration *config.Binding
+	instantiate   func(*Plan, int, T) (RuntimeComponent, error)
 }
 
 // Value 创建代码固定、直接输出、无配置和无生命周期的组件声明。
@@ -103,9 +100,8 @@ func ManagedConfiguredReplacement[C, T, I any](
 		}
 	}
 	definition := ReplacementDefinition[T]{
-		id:       id,
-		defaults: source.defaults,
-		cli:      append([]kernelcli.Contract(nil), lifecycle.cli...),
+		id:            id,
+		configuration: pointerBinding(source.binding(id)),
 	}
 	definition.instantiate = func(plan *Plan, _ int, target T) (RuntimeComponent, error) {
 		if isNil(target) {
@@ -188,9 +184,18 @@ func newManagedDefinition[C, D, I, O any](
 		}
 	}
 	definition := Definition[O]{
-		id:       id,
-		defaults: defaults,
-		cli:      append([]kernelcli.Contract(nil), lifecycle.cli...),
+		id: id,
+	}
+	if decode != nil {
+		definition.configuration = &config.Binding{
+			CapabilityID: string(id),
+			ConfigPath:   path,
+			Contract:     defaults,
+			Validate: func(snapshot config.Snapshot) error {
+				_, err := decode(snapshot)
+				return err
+			},
+		}
 	}
 	definition.instantiate = func(plan *Plan, index int) (O, RuntimeComponent, error) {
 		var zero O
@@ -222,6 +227,24 @@ func newManagedDefinition[C, D, I, O any](
 	}
 	return definition, nil
 }
+
+// Configuration 返回声明拥有的配置节契约；无配置的声明返回 false。
+func Configuration[O any](definition Definition[O]) (config.Binding, bool) {
+	if definition.configuration == nil {
+		return config.Binding{}, false
+	}
+	return *definition.configuration, true
+}
+
+// ReplacementConfiguration 返回替换声明拥有的配置节契约。
+func ReplacementConfiguration[T any](definition ReplacementDefinition[T]) (config.Binding, bool) {
+	if definition.configuration == nil {
+		return config.Binding{}, false
+	}
+	return *definition.configuration, true
+}
+
+func pointerBinding(binding config.Binding) *config.Binding { return &binding }
 
 func isNil(value any) bool {
 	if value == nil {

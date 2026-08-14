@@ -132,3 +132,12 @@ storage:
     secretAccessKey: ""
     usePathStyle: true
     publicBaseUrl: ""
+
+http:
+  # HTTP listener 在进程 ready 前同步绑定；端口占用会使启动失败。
+  addr: :8080
+  readHeaderTimeout: 5s
+  readTimeout: 15s
+  writeTimeout: 30s
+  idleTimeout: 1m0s
+  maxHeaderBytes: 1048576

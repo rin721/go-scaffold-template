@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,6 +47,7 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		"database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s",
 		"cache:", "driver: disabled", "i18n:", "defaultLanguage: zh-CN",
 		"storage:", "basePath: .data/storage",
+		"http:", "addr: :8080",
 	} {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)
@@ -66,8 +69,8 @@ func TestProcessServiceModePreservesMissingConfigError(t *testing.T) {
 	if !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("service mode error = %v, want os.ErrNotExist", err)
 	}
-	if !strings.Contains(err.Error(), "run application host") {
-		t.Fatalf("service mode error = %v, want host context", err)
+	if !strings.Contains(err.Error(), "prepare application configuration") {
+		t.Fatalf("service mode error = %v, want preparation context", err)
 	}
 }
 
@@ -76,6 +79,7 @@ func TestProcessServiceModeStartsDefaultCapabilitiesWithoutExternalServices(t *t
 	databasePath := filepath.Join(directory, "app.db")
 	storagePath := filepath.Join(directory, "storage")
 	configPath := filepath.Join(directory, "config.yaml")
+	httpAddress := reserveLoopbackAddress(t)
 	payload := fmt.Sprintf(`logger:
   environment: development
   level: info
@@ -92,7 +96,9 @@ storage:
   driver: local
   local:
     basePath: %q
-`, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath))
+http:
+  addr: %q
+`, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), httpAddress)
 	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write service config: %v", err)
 	}
@@ -108,12 +114,23 @@ storage:
 	defer ticker.Stop()
 	timeout := time.NewTimer(5 * time.Second)
 	defer timeout.Stop()
+	httpClient := &http.Client{Timeout: 250 * time.Millisecond}
 	for {
 		select {
 		case err := <-done:
 			t.Fatalf("service exited before readiness: %v", err)
 		case <-ticker.C:
 			if fileExists(databasePath) && directoryExists(storagePath) {
+				response, requestErr := httpClient.Get("http://" + httpAddress + "/not-registered")
+				if requestErr != nil {
+					continue
+				}
+				response.Body.Close()
+				if response.StatusCode != http.StatusNotFound {
+					cancel()
+					<-done
+					t.Fatalf("default service HTTP status = %d, want %d", response.StatusCode, http.StatusNotFound)
+				}
 				cancel()
 				select {
 				case err := <-done:
@@ -135,6 +152,19 @@ storage:
 			}
 		}
 	}
+}
+
+func reserveLoopbackAddress(t *testing.T) string {
+	t.Helper()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("reserve loopback address: %v", err)
+	}
+	address := listener.Addr().String()
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release loopback address: %v", err)
+	}
+	return address
 }
 
 func fileExists(path string) bool {
@@ -167,6 +197,32 @@ func TestExecuteUsesCLIExitCodeAndReportsError(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "go-scaffold2: run application CLI") {
 		t.Fatalf("stderr = %q, want application context", stderr.String())
+	}
+}
+
+func TestExecuteCoversSuccessConfigAndCancellationExitCodes(t *testing.T) {
+	tests := []struct {
+		name string
+		ctx  context.Context
+		args []string
+		want int
+	}{
+		{name: "success", ctx: t.Context(), args: []string{"--help"}, want: cli.ExitSuccess},
+		{name: "config", ctx: t.Context(), args: []string{"config", "init", "--output", filepath.Join(t.TempDir(), "config.txt")}, want: cli.ExitConfig},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			current := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+			if code := execute(test.ctx, current, test.args); code != test.want {
+				t.Fatalf("execute() = %d, want %d", code, test.want)
+			}
+		})
+	}
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	current := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
+	if code := execute(cancelled, current, []string{"config", "init", "--output", filepath.Join(t.TempDir(), "cancelled.yaml")}); code != cli.ExitInterrupted {
+		t.Fatalf("execute(cancelled) = %d, want %d", code, cli.ExitInterrupted)
 	}
 }
 

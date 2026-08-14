@@ -3,8 +3,10 @@ package config
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -26,9 +28,10 @@ type GenerateRequest struct {
 
 // GenerateResult 描述成功生成的目标和参与能力。
 type GenerateResult struct {
-	Path         string
-	Format       Format
-	Capabilities []string
+	Path       string
+	Format     Format
+	Replaced   bool
+	SectionIDs []string
 }
 
 // DefaultManager 聚合当前 composition 显式绑定的全部默认配置契约。
@@ -43,31 +46,75 @@ type defaultManager struct {
 // NewDefaultManager 校验并冻结按 composition 登记顺序传入的 Binding。
 func NewDefaultManager(bindings ...Binding) (DefaultManager, error) {
 	copied := append([]Binding(nil), bindings...)
+	if err := ValidateBindings(copied...); err != nil {
+		return nil, err
+	}
+	return &defaultManager{bindings: copied}, nil
+}
+
+// ValidateBindings 校验并冻结前置所需的 section ID、path 和契约唯一性。
+func ValidateBindings(copied ...Binding) error {
+	return validateBindings(true, copied...)
+}
+
+// ValidateRegistrations 校验运行期 section 契约；不要求该 section 贡献生成默认值。
+func ValidateRegistrations(copied ...Binding) error {
+	return validateBindings(false, copied...)
+}
+
+func validateBindings(requireDefaults bool, copied ...Binding) error {
 	paths := make([][]string, 0, len(copied))
 	ids := make(map[string]struct{}, len(copied))
 	for index, binding := range copied {
 		if strings.TrimSpace(binding.CapabilityID) == "" {
-			return nil, fmt.Errorf("default binding %d capability id is required", index)
+			return fmt.Errorf("default binding %d capability id is required", index)
 		}
 		if _, exists := ids[binding.CapabilityID]; exists {
-			return nil, fmt.Errorf("default binding capability %s is duplicated", binding.CapabilityID)
+			return fmt.Errorf("default binding capability %s is duplicated", binding.CapabilityID)
 		}
 		ids[binding.CapabilityID] = struct{}{}
 		segments, err := splitConfigPath(binding.ConfigPath)
 		if err != nil {
-			return nil, fmt.Errorf("default binding capability %s: %w", binding.CapabilityID, err)
+			return fmt.Errorf("default binding capability %s: %w", binding.CapabilityID, err)
 		}
-		if isNilContract(binding.Contract) {
-			return nil, fmt.Errorf("default binding capability %s contract is nil", binding.CapabilityID)
+		if requireDefaults && isNilContract(binding.Contract) {
+			return fmt.Errorf("default binding capability %s contract is nil", binding.CapabilityID)
+		}
+		if binding.Validate == nil {
+			return fmt.Errorf("default binding capability %s validator is nil", binding.CapabilityID)
 		}
 		for previousIndex, previous := range paths {
 			if pathsOverlap(previous, segments) {
-				return nil, fmt.Errorf("default binding paths %q and %q overlap", copied[previousIndex].ConfigPath, binding.ConfigPath)
+				return fmt.Errorf("default binding paths %q and %q overlap", copied[previousIndex].ConfigPath, binding.ConfigPath)
 			}
 		}
 		paths = append(paths, segments)
 	}
-	return &defaultManager{bindings: copied}, nil
+	return nil
+}
+
+// ValidateCandidate 对完整候选执行未知 section 门禁和每个 owner 的严格校验。
+func ValidateCandidate(snapshot Snapshot, bindings ...Binding) error {
+	knownRoots := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		root := binding.ConfigPath
+		if separator := strings.IndexByte(root, '.'); separator >= 0 {
+			root = root[:separator]
+		}
+		knownRoots[root] = struct{}{}
+		if binding.Validate == nil {
+			return fmt.Errorf("config section %s validator is nil", binding.CapabilityID)
+		}
+		if err := binding.Validate(snapshot); err != nil {
+			return fmt.Errorf("validate config section %s at %s: %w", binding.CapabilityID, binding.ConfigPath, err)
+		}
+	}
+	for root := range snapshot.Data() {
+		if _, exists := knownRoots[root]; !exists {
+			return fmt.Errorf("unknown config section %q", root)
+		}
+	}
+	return nil
 }
 
 func (m *defaultManager) Generate(ctx context.Context, request GenerateRequest) (GenerateResult, error) {
@@ -80,7 +127,7 @@ func (m *defaultManager) Generate(ctx context.Context, request GenerateRequest) 
 	}
 
 	root := &documentNode{}
-	capabilities := make([]string, 0, len(m.bindings))
+	sectionIDs := make([]string, 0, len(m.bindings))
 	for _, binding := range m.bindings {
 		if err := ctx.Err(); err != nil {
 			return GenerateResult{}, fmt.Errorf("generate default configuration: %w", err)
@@ -103,17 +150,72 @@ func (m *defaultManager) Generate(ctx context.Context, request GenerateRequest) 
 			return GenerateResult{}, fmt.Errorf("defaults for capability %s: %w", binding.CapabilityID, err)
 		}
 		root.insert(strings.Split(binding.ConfigPath, "."), object)
-		capabilities = append(capabilities, binding.CapabilityID)
+		sectionIDs = append(sectionIDs, binding.CapabilityID)
+	}
+	candidate, err := newSnapshot(objectMap(root.object()), []string{"generated-defaults"})
+	if err != nil {
+		return GenerateResult{}, fmt.Errorf("build default configuration candidate: %w", err)
+	}
+	for _, binding := range m.bindings {
+		if err := binding.Validate(candidate); err != nil {
+			return GenerateResult{}, fmt.Errorf("validate defaults for capability %s: %w", binding.CapabilityID, err)
+		}
 	}
 
 	payload, err := encodeDefaultDocument(root.object(), format)
 	if err != nil {
 		return GenerateResult{}, err
 	}
+	if err := ctx.Err(); err != nil {
+		return GenerateResult{}, fmt.Errorf("write default configuration: %w", err)
+	}
+	replaced := request.Force && regularFileExists(target)
 	if err := writeDefaultFile(target, payload, request.Force); err != nil {
 		return GenerateResult{}, err
 	}
-	return GenerateResult{Path: target, Format: format, Capabilities: capabilities}, nil
+	return GenerateResult{Path: target, Format: format, Replaced: replaced, SectionIDs: sectionIDs}, nil
+}
+
+func objectMap(object Object) map[string]any {
+	values := make(map[string]any, len(object))
+	for _, field := range object {
+		values[field.Name] = defaultValueData(field.Value)
+	}
+	return values
+}
+
+func defaultValueData(value Value) any {
+	concrete := value.(configValue)
+	switch concrete.kind {
+	case valueString, valueDuration:
+		return concrete.text
+	case valueBool:
+		return concrete.boolean
+	case valueNumber:
+		if strings.ContainsAny(concrete.text, ".eE") {
+			parsed, _ := strconv.ParseFloat(concrete.text, 64)
+			return parsed
+		}
+		parsed, _ := strconv.ParseInt(concrete.text, 10, 64)
+		return parsed
+	case valueNull:
+		return nil
+	case valueObject:
+		return objectMap(concrete.object)
+	case valueList:
+		values := make([]any, len(concrete.elements))
+		for index, element := range concrete.elements {
+			values[index] = defaultValueData(element)
+		}
+		return values
+	default:
+		panic("validated default value has unknown kind")
+	}
+}
+
+func regularFileExists(path string) bool {
+	info, err := os.Lstat(path)
+	return err == nil && info.Mode().IsRegular()
 }
 
 func resolveTarget(path string) (string, Format, error) {

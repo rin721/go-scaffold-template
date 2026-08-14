@@ -6,7 +6,7 @@
 
 仓库已有 [Go 能力装配研究](../../../research/001-go-capability-composition/README.md) 和 [Kernel App 手工装配研究](../../../research/002-kernel-app-manual-composition/README.md)。本次不复制其全文，而是把相关结论纳入带 metadata 的任务级索引；后续可另行治理旧研究目录，但不在 012 范围内迁移历史文件。
 
-开始本轮研究前先检索了 `012/research/**/metadata.yaml`。R002、R004、R005 及其余代表项目的版本化事实仍可复用；R001 对当前仓库的审计深度不足，R010 又在底层闭环尚未证明时过早形成业务设计结论，因此分别由 R011 和 R016 单轨替代。被替代记录保留为历史证据，但不再代表 012 当前结论。
+每轮研究前先检索 `012/research/**/metadata.yaml`。R002、R004、R005 及其余代表项目的版本化事实仍可复用；R001 对当前仓库的审计深度不足，由 R011 替代；R010 过早形成业务设计结论，先由 R016 校正；R020 汇总实施前契约方案。FND/GOV-F 完成后，R021 单轨替代实施前事实 R017 与方案结论 R020，成为当前实现快照。被替代记录保留为历史证据，但不再代表 012 当前结论。
 
 ## 2. 记录格式
 
@@ -91,13 +91,18 @@ any -> superseded | rejected
 | [R007](R007-encore/report.md) | Encore | runtime-platform | 编译器发现资源与服务图的成本 |
 | [R008](R008-dapr/report.md) | Dapr | runtime-platform | 进程外 building blocks 的适用边界 |
 | [R009](R009-hashicorp-go-plugin/report.md) | go-plugin / Mattermost | plugin-system | 真实插件协议与 host 成本 |
-| [R010](R010-comparative-synthesis/report.md) | 业务模块综合比较 | comparative | 历史记录；由 R016 替代 |
+| [R010](R010-comparative-synthesis/report.md) | 业务模块综合比较 | comparative | 历史记录；经 R016 后由 R020 替代 |
 | [R011](R011-current-foundation-closure-audit/report.md) | 当前底层闭环审计 | current-project | 从配置到验证逐段确认实现与缺口 |
 | [R012](R012-go-http-errgroup-lifecycle/report.md) | Go HTTP 与并发等待语义 | standard-library | 证明当前 Supervisor/HTTP 组合的阻塞风险 |
 | [R013](R013-controller-runtime-dskit-supervision/report.md) | 运行监督与状态模型 | framework | 参照运行期错误回传、停止等待和状态诊断 |
 | [R014](R014-caddy-config-lifecycle/report.md) | 候选配置与资源换代 | reference-architecture | 验证当前 Kernel 先新后旧方向及适用边界 |
 | [R015](R015-executable-import-governance/report.md) | 可执行依赖治理 | governance | 证明边界规则需由测试/静态检查持续约束 |
-| [R016](R016-foundation-gate-synthesis/report.md) | 底层闭环综合判定 | comparative | 012 当前唯一推荐结论和业务延伸门禁 |
+| [R016](R016-foundation-gate-synthesis/report.md) | 底层闭环综合判定 | comparative | 历史记录；由 R020 替代 |
+| [R017](R017-current-contract-inventory/report.md) | 当前进程、CLI 与 Config 契约清点 | current-project | 实施前历史快照；由 R021 替代 |
+| [R018](R018-cli-default-contracts/report.md) | CLI 与默认文件契约 | comparative | 支撑 registry、I/O、退出、Bootstrap 和文件保证边界 |
+| [R019](R019-config-contracts/report.md) | 严格 Config Binding 与 Snapshot | comparative | 支撑 strict section contract、重复字段与单候选 |
+| [R020](R020-foundation-contract-synthesis/report.md) | 底层契约综合判定 | comparative | 实施前方案记录；由 R021 替代 |
+| [R021](R021-foundation-closure-implementation/report.md) | 底层闭环实施快照 | current-project | 当前 FND/GOV-F 实现、验证和业务门禁结论 |
 
 ## 6. 复用规则
 

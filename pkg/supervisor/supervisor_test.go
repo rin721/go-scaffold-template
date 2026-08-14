@@ -84,6 +84,82 @@ func TestSupervisorTaskFailureCancelsSiblingAndStopsParticipants(t *testing.T) {
 	}
 }
 
+func TestSupervisorTreatsEarlyNilCompletionAsFailure(t *testing.T) {
+	process := New(Config{})
+	if err := process.AddTask("server", func(context.Context) error { return nil }); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+	err := process.Run(t.Context())
+	var unexpected *UnexpectedCompletionError
+	if !errors.As(err, &unexpected) || unexpected.Task != "server" {
+		t.Fatalf("Run() error = %v, want unexpected server completion", err)
+	}
+	if snapshot := process.Snapshot(); snapshot.Ready || snapshot.State != StateFailed {
+		t.Fatalf("Snapshot() = %#v, want failed and not ready", snapshot)
+	}
+}
+
+func TestSupervisorBoundsUncooperativeRunnerAndReportsOwner(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	process := New(Config{ShutdownTimeout: 20 * time.Millisecond})
+	if err := process.AddTask("stuck", func(context.Context) error {
+		close(started)
+		<-release
+		return nil
+	}); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- process.Run(ctx) }()
+	<-started
+	cancel()
+	err := <-done
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Run() error = %v, want shutdown deadline", err)
+	}
+	snapshot := process.Snapshot()
+	if snapshot.State != StateFailed || !reflect.DeepEqual(snapshot.PendingUnits, []string{"stuck"}) {
+		t.Fatalf("Snapshot() = %#v, want failed stuck owner", snapshot)
+	}
+	close(release)
+}
+
+func TestSupervisorWaitsForRunnerReadyAcknowledgement(t *testing.T) {
+	ready := make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	process := New(Config{})
+	if err := process.AddRunner(Task{
+		Name:  "server",
+		Ready: ready,
+		Run: func(ctx context.Context) error {
+			<-ctx.Done()
+			return ctx.Err()
+		},
+	}); err != nil {
+		t.Fatalf("AddRunner() error = %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- process.Run(ctx) }()
+	if snapshot := process.Snapshot(); snapshot.Ready {
+		t.Fatalf("Snapshot() ready before runner acknowledgement: %#v", snapshot)
+	}
+	close(ready)
+	deadline := time.After(time.Second)
+	for !process.Snapshot().Ready {
+		select {
+		case <-deadline:
+			t.Fatal("supervisor did not become ready")
+		default:
+		}
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+}
+
 func TestSupervisorWithoutTasksWaitsForCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	started := make(chan struct{})
@@ -145,6 +221,23 @@ func TestSupervisorPreservesTaskErrorJoinedWithIntentionalCancellation(t *testin
 	err := process.Run(ctx)
 	if !errors.Is(err, taskErr) {
 		t.Fatalf("Run() error = %v, want task cleanup error", err)
+	}
+}
+
+func TestSupervisorKeepsFailedDiagnosticsAfterRuntimeError(t *testing.T) {
+	runtimeFailure := errors.New("runtime failure")
+	s := New(Config{}, &recordParticipant{name: "application"})
+	if err := s.AddTask("runner", func(context.Context) error { return runtimeFailure }); err != nil {
+		t.Fatalf("add task: %v", err)
+	}
+
+	err := s.Run(t.Context())
+	if !errors.Is(err, runtimeFailure) {
+		t.Fatalf("run error = %v, want runtime failure", err)
+	}
+	snapshot := s.Snapshot()
+	if snapshot.State != StateFailed || snapshot.Ready {
+		t.Fatalf("snapshot = %+v, want failed and not ready", snapshot)
 	}
 }
 

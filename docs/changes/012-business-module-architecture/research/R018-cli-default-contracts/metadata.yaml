@@ -1,0 +1,38 @@
+schema_version: 1
+id: R018
+title: "CLI 注册、I/O、退出与默认文件发布契约研究"
+question: "外部一手实现如何处理命令树、参数校验、I/O、退出清理和默认文件安全发布，哪些做法适合当前项目？"
+research_type: comparative
+topics: ["CLI", "command registry", "I/O", "exit code", "atomic file", "default config"]
+keywords: ["Cobra", "IOStreams", "os.Exit", "CreateTemp", "Rename", "RunE"]
+languages: ["Go"]
+frameworks: ["Cobra", "Kubernetes cli-runtime"]
+technologies: ["filesystem", "standard streams"]
+applicable_scenarios: ["Bootstrap CLI", "默认配置生成", "命令冲突和副作用治理"]
+non_applicable_scenarios: ["要求更换 CLI 框架", "跨所有文件系统的 crash durability 证明"]
+status: active
+summary: "保留框架 Adapter 和显式 IOStreams；项目需自行冻结完整命令契约、在资源前解析，并把文件替换保证限定到已验证平台。"
+evidence:
+  types: ["official-docs", "source-code"]
+  primary_sources:
+    - title: "Cobra v1.10.2 user guide and command implementation"
+      locator: "https://github.com/spf13/cobra/tree/v1.10.2"
+      snapshot: "v1.10.2"
+    - title: "Kubernetes cli-runtime IOStreams"
+      locator: "https://github.com/kubernetes/cli-runtime/blob/v0.34.1/pkg/genericiooptions/io_options.go"
+      snapshot: "v0.34.1"
+    - title: "Go os package Exit/CreateTemp/Rename"
+      locator: "https://pkg.go.dev/os"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["Cobra major behavior change", "默认文件发布实现改变", "支持新操作系统/文件系统"]
+relations:
+  extends: ["R017"]
+  related: ["R019", "R020"]
+  supersedes: []
+  superseded_by: []
+report: report.md

@@ -36,6 +36,7 @@ type Registry struct {
 	timeout time.Duration
 	mu      sync.RWMutex
 	checks  map[string]Check
+	order   []string
 }
 
 // New 创建健康检查注册表。
@@ -60,6 +61,7 @@ func (r *Registry) Register(name string, check Check) error {
 		return fmt.Errorf("health check %s already registered", name)
 	}
 	r.checks[name] = check
+	r.order = append(r.order, name)
 	return nil
 }
 
@@ -69,20 +71,26 @@ func (r *Registry) Snapshot(ctx context.Context) Snapshot {
 		ctx = context.Background()
 	}
 	r.mu.RLock()
-	checks := make(map[string]Check, len(r.checks))
-	for name, check := range r.checks {
-		checks[name] = check
+	checks := make([]struct {
+		name  string
+		check Check
+	}, 0, len(r.order))
+	for _, name := range r.order {
+		checks = append(checks, struct {
+			name  string
+			check Check
+		}{name: name, check: r.checks[name]})
 	}
 	r.mu.RUnlock()
 
 	results := make([]Result, 0, len(checks))
 	overall := StatusPass
-	for name, check := range checks {
+	for _, registered := range checks {
 		startedAt := time.Now()
 		checkCtx, cancel := context.WithTimeout(ctx, r.timeout)
-		result := check(checkCtx)
+		result := registered.check(checkCtx)
 		cancel()
-		result.Name = name
+		result.Name = registered.name
 		result.CheckedAt = startedAt
 		result.Duration = time.Since(startedAt)
 		if result.Status == "" {

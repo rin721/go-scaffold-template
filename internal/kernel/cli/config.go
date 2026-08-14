@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"reflect"
+	"strings"
 
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	pkgcli "github.com/rin721/go-scaffold2/pkg/cli"
@@ -44,21 +45,18 @@ func ConfigCommands(manager config.DefaultManager) Contract {
 						Description: "替换已经存在的目标文件",
 					},
 				},
-				Args: func(ctx *pkgcli.Context) error {
-					if len(ctx.Args) != 0 {
-						return fmt.Errorf("config init accepts no positional arguments")
-					}
-					return nil
-				},
+				Mode:       pkgcli.CommandModeBootstrap,
+				SideEffect: pkgcli.SideEffectFileReplace,
+				Positional: pkgcli.PositionalNone,
 				Run: func(ctx *pkgcli.Context) error {
 					result, err := manager.Generate(ctx.Context, config.GenerateRequest{
 						Path:  ctx.GetString(outputFlagName),
 						Force: ctx.GetBool(forceFlagName),
 					})
 					if err != nil {
-						return err
+						return &pkgcli.ConfigError{Command: ctx.CommandPath, Stage: "generate", Cause: err}
 					}
-					if _, err := fmt.Fprintf(ctx.Stdout, "created default configuration: %s\n", result.Path); err != nil {
+					if _, err := fmt.Fprintf(ctx.Stdout, "created default configuration: %s (format=%s replaced=%t sections=%s)\n", result.Path, result.Format, result.Replaced, strings.Join(result.SectionIDs, ",")); err != nil {
 						return fmt.Errorf("write config init result: %w", err)
 					}
 					return nil

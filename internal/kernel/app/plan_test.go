@@ -276,8 +276,8 @@ func TestReplaceRequiresSamePlanTargetAndIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Freeze() error = %v", err)
 	}
-	if len(frozen.Components()) != 1 || len(frozen.Defaults()) != 0 {
-		t.Fatalf("FrozenPlan components/defaults = %d/%d", len(frozen.Components()), len(frozen.Defaults()))
+	if len(frozen.Components()) != 1 || len(frozen.Configurations()) != 1 {
+		t.Fatalf("FrozenPlan components/configurations = %d/%d", len(frozen.Components()), len(frozen.Configurations()))
 	}
 	if err := app.Replace(second, validTarget.Binding, newStringReplacement(t, "frozen")); err == nil {
 		t.Fatal("Replace(after Freeze) error = nil")

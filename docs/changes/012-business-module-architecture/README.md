@@ -2,46 +2,56 @@
 
 ## 状态
 
-- 当前状态：**待确认；业务详细设计被底层闭环门禁阻塞**。
-- 文档建立日期：2026-08-14；本轮底层复核日期：2026-08-14。
-- 代码事实基线：`main@2daf47ad111141b27a1d8e100bb3d6e4cc1ea743`；本轮开始时当前分支除既有未跟踪 `tmp/` 外无新工作区改动，`tmp/` 未触碰。
-- 研究阶段只补充 012 研究与方案文档，没有修改源码、配置、依赖、脚本或测试，也没有启动或生成；本报告后的独立发布仅获授权提交并 push 这些文档，不构成基础实施确认。
-- 目标设计不代表当前实现。只有用户在本报告之后明确确认本轮基础闭环方案及任务范围，才允许实施。
+- 当前状态：**FND 与 GOV-F 已实施并完成本地门禁；业务详细设计继续被真实用例门禁阻塞**。
+- 文档建立、契约校正与基础实施日期：2026-08-14。
+- 方案代码基线：`main@2daf47ad111141b27a1d8e100bb3d6e4cc1ea743`；实施从分支提交 `7eaba7174fb54c06c8bd31c7f7bc345d3f161936` 开始。
+- 用户已在方案报告后的独立消息中明确要求“开始实施 `012` 方案计划”，授权范围为 FND 与 GOV-F；没有授权虚构业务用例或进入 VSL。
+- 实施快照、验证命令与剩余边界见 [R021](research/R021-foundation-closure-implementation/report.md)。
 
 ## 一句话结论
 
-当前 **Kernel 资源装配与候选换代已形成局部闭环，但全进程装配和治理尚未闭环，暂不足以支撑业务模块详细设计**。推荐保留显式 Kernel Plan、stable facade、Lease 和候选配置事务，在其上补齐 application 配置协调、Supervisor 运行监督、HTTP lifecycle、readiness/degraded 诊断与可执行治理；不引入第二个 DI/生命周期容器，也不把普通业务对象塞入 Kernel。
+当前已形成从 mode-specific Bootstrap、严格配置、全应用单候选，到 Supervisor、HTTP lifecycle、readiness/degraded、重载/终止和 package graph 门禁的基础闭环。实现保留显式 Kernel Plan、stable facade、Lease、默认配置安全发布和候选事务，没有引入第二个 DI/生命周期容器，也没有把普通业务对象塞入 Kernel。基础门禁通过只允许重新讨论真实业务设计；因首个真实用例尚未确认，BIZ-D/VSL 仍保持阻塞。
 
-## 本轮判定
+## 实施判定
 
 ### 已满足或应保持
 
 - 依赖来源与构造顺序可定位的显式 Plan，Freeze 后安装，没有扫描、Resolver 或 `init` 注册。
 - Kernel 组件的 Stage/Build/Start/Ready/Publish、候选失败回滚、旧代排空和 stable facade/Lease。
 - baseline Logger、配置候选预检、反序清理以及当前 Database/Cache/I18n/Storage 的项目契约边界。
+- 显式标准流、typed CLI error、ordered defaults，以及默认配置全内存编码、no-overwrite/force 和临时文件清理。
 
-### 尚未闭合
+### 已闭合的基础能力
 
-- Loader 只属于 Kernel，尚无整份 application snapshot 的唯一协调者。
-- Supervisor 先等待 Task 再 Stop Participant，无法安全组合需由 Stop 触发退出的 HTTP Serve；Participant 也没有运行期错误回传。
-- 关键 Task 提前返回 nil、忽略 context、终止排空超时和 committed cleanup error 都没有完整进程状态与后续策略。
-- Kernel `Ready` 只是候选发布门禁；生产 readiness/liveness、generation、last reload/cleanup 和 degraded 状态未接入。
-- `pkg/health` 是未接入生产的原语；HTTP listener、真实业务图和 application composition 仍不存在。
-- 边界和唯一装配位置尚未由 package graph、注册冲突和全链路生命周期测试持续约束。
+- Bootstrap CLI 只构造六个配置节、DefaultManager 和 command tree；完整服务资源只在无参数 Service mode 构造。
+- 同一配置节 registration 同时提供 defaults 与 strict typed validator；Source、重复字段、unknown/type、Snapshot 值域和默认生成回环均有失败测试。
+- Coordinator 是 Loader 唯一调用者；Kernel 与 application-owned HTTP 从同一候选读取，RestartRequired 在资源副作用前预检。
+- Supervisor 监督 blocking runner 的 ready、异常 error/nil 完成和不合作退出；终止先取消、反序 Stop，再在总期限内等待。
+- HTTP Server 由单一 owner 预绑定并执行阻塞 Serve、有界 Shutdown/Close/Wait；默认 Service 有 listener，但没有业务路由。
+- Host 接入 process readiness/liveness 与安全 diagnostics；committed cleanup failure 进入 degraded、要求重启并阻断后续 reload。
+- 解析后的 Go package graph、注册冲突、生命周期、race 和静态检查进入可执行门禁。
+
+### 继续阻塞
+
+- 尚无用户确认的首个真实业务 actor、不变量、数据/事务 owner、入站协议和验收数据。
+- 因此 Handler、Service、Repository、Model、业务 Route/Command contribution 与公开错误协议仍不得实施。
 
 ## 方案性质
 
-本轮对原 012 做单轨校正：原有“Kernel 资源平面 + 手工业务对象图”的方向继续保留，但 Handler、Service、Repository、Model、Route contribution 等细节只作为 **底层门禁通过后的候选约束**，当前不得实施或继续冻结公共接口。R001/R010 已由更完整的 R011/R016 替代，避免两套现行结论并存。
+原 012 的“Kernel 资源平面 + 手工业务对象图”方向继续保留；R021 记录 FND/GOV-F 的实现快照并替代实施前事实 R017 和方案综合结论 R020。历史记录继续保留，但当前行为以根主题文档和代码为准。Handler、Service、Repository、Model、Route contribution 仍只是不冻结接口的候选约束。
 
 ## 阅读顺序
 
 1. [requirements.md](requirements.md)：本轮目标、范围、约束和业务延伸门禁。
 2. [当前事实与缺口](requirements/current-facts-and-gaps.md)：配置到验证的逐段代码事实。
-3. [需求与验收矩阵](requirements/acceptance-matrix.md)：十一项门禁和基础闭环证据。
-4. [design.md](design.md)：保留、补齐、拒绝和分阶段目标设计。
-5. [底层闭环设计](design/foundation-closure.md)：状态、数据流、失败语义和候选比较。
-6. [研究档案](research/README.md)：R001-R016 的版本、关系和证据。
-7. [tasks.md](tasks.md)：实施顺序、确认状态、风险和业务解锁条件。
+3. [底层契约清单](requirements/foundation-contract-catalog.md)：统一状态、语义 owner、调用方、输入输出、所有权与缺口。
+4. [需求与验收矩阵](requirements/acceptance-matrix.md)：十一项门禁和基础闭环证据。
+5. [design.md](design.md)：保留、补齐、拒绝和分阶段目标设计。
+6. [CLI 与默认配置契约](design/cli-and-default-config-contracts.md)：mode、注册、I/O、退出、副作用与安全生成。
+7. [Config 契约](design/config-contracts.md)：Source、Default、Binding、Validation、Snapshot 与 Reload。
+8. [运行责任图与状态机](design/runtime-state-machine.md)：装配、启动、运行、重载、终止、错误和诊断。
+9. [研究档案](research/README.md)：R001-R021 的版本、关系和证据。
+10. [tasks.md](tasks.md)：实施顺序、完成状态、验证证据和业务解锁条件。
 
 ## 文档结构
 
@@ -51,10 +61,14 @@
 ├── requirements.md
 ├── requirements/
 │   ├── current-facts-and-gaps.md
+│   ├── foundation-contract-catalog.md
 │   └── acceptance-matrix.md
 ├── design.md
 ├── design/
 │   ├── foundation-closure.md
+│   ├── cli-and-default-config-contracts.md
+│   ├── config-contracts.md
+│   ├── runtime-state-machine.md
 │   ├── composition-and-lifecycle.md
 │   ├── module-boundaries.md
 │   ├── inbound-http-and-cli.md
@@ -62,7 +76,7 @@
 │   ├── errors-observability-and-i18n.md
 │   ├── module-development-guide.md
 │   └── migration-risks-and-decisions.md
-├── research/R001-R016/metadata.yaml + report.md
+├── research/R001-R021/metadata.yaml + report.md
 ├── tasks.md
 └── tasks/
     ├── foundation.md
@@ -72,4 +86,4 @@
 
 ## 交付边界
 
-本轮没有为尚不存在的业务需求创造 `User`、`Order`、空 CRUD、Module SDK 或公开 contribution API。底层闭环通过后，还必须先获得首个真实业务用例、数据边界和入口验收，才能恢复业务模块详细设计。
+本轮没有为尚不存在的业务需求创造 `User`、`Order`、空 CRUD、Module SDK 或公开 contribution API。底层闭环已经通过；仍必须先获得首个真实业务用例、数据边界和入口验收，并重新确认业务方案，才能恢复业务模块详细设计。

@@ -38,8 +38,8 @@ func TestReplacementSwitchesTypedTargetAndRestoresBaseline(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Freeze() error = %v", err)
 	}
-	if len(frozen.Defaults()) != 1 || frozen.Defaults()[0].CapabilityID != string(ID) || frozen.Defaults()[0].ConfigPath != ConfigPath {
-		t.Fatalf("Defaults() = %#v", frozen.Defaults())
+	if len(frozen.Configurations()) != 1 || frozen.Configurations()[0].CapabilityID != string(ID) || frozen.Configurations()[0].ConfigPath != ConfigPath {
+		t.Fatalf("Configurations() = %#v", frozen.Configurations())
 	}
 	logPath := filepath.Join(t.TempDir(), "configured.log")
 	snapshot, err := config.New(config.MapSource("logger", map[string]any{

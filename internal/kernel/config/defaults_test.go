@@ -96,6 +96,7 @@ func TestDefaultManagerGeneratesOrderedYAMLAndJSON(t *testing.T) {
 		CapabilityID: "database",
 		ConfigPath:   "database",
 		Contract:     fixedDefaults(database),
+		Validate:     acceptSnapshot,
 	})
 	if err != nil {
 		t.Fatalf("NewDefaultManager() error = %v", err)
@@ -123,7 +124,7 @@ func TestDefaultManagerGeneratesOrderedYAMLAndJSON(t *testing.T) {
 				t.Fatalf("payload:\n%s\nwant:\n%s", payload, test.want)
 			}
 			absolute, _ := filepath.Abs(target)
-			if result.Path != absolute || !reflect.DeepEqual(result.Capabilities, []string{"database"}) {
+			if result.Path != absolute || !reflect.DeepEqual(result.SectionIDs, []string{"database"}) {
 				t.Fatalf("Generate() result = %#v", result)
 			}
 			if runtime.GOOS != "windows" {
@@ -145,6 +146,7 @@ func TestDefaultManagerRejectsExistingTargetAndForceReplacesAtomically(t *testin
 		CapabilityID: "database",
 		ConfigPath:   "database",
 		Contract:     fixedDefaults(Object{FieldOf("driver", String("sqlite"))}),
+		Validate:     acceptSnapshot,
 	})
 	if err != nil {
 		t.Fatalf("NewDefaultManager() error = %v", err)
@@ -153,8 +155,12 @@ func TestDefaultManagerRejectsExistingTargetAndForceReplacesAtomically(t *testin
 		t.Fatalf("Generate(existing) error = %v, want ErrTargetExists", err)
 	}
 	assertFileBytes(t, target, original)
-	if _, err := manager.Generate(t.Context(), GenerateRequest{Path: target, Force: true}); err != nil {
+	result, err := manager.Generate(t.Context(), GenerateRequest{Path: target, Force: true})
+	if err != nil {
 		t.Fatalf("Generate(force) error = %v", err)
+	}
+	if !result.Replaced || !reflect.DeepEqual(result.SectionIDs, []string{"database"}) {
+		t.Fatalf("Generate(force) result = %#v", result)
 	}
 	assertFileBytes(t, target, []byte("database:\n  driver: sqlite\n"))
 	entries, err := os.ReadDir(filepath.Dir(target))
@@ -168,18 +174,42 @@ func TestDefaultManagerRejectsExistingTargetAndForceReplacesAtomically(t *testin
 	}
 }
 
+func TestDefaultManagerRejectsSymlinkTarget(t *testing.T) {
+	directory := t.TempDir()
+	realTarget := filepath.Join(directory, "real.yaml")
+	if err := os.WriteFile(realTarget, []byte("original\n"), 0o600); err != nil {
+		t.Fatalf("write real target: %v", err)
+	}
+	symlinkTarget := filepath.Join(directory, "config.yaml")
+	if err := os.Symlink(realTarget, symlinkTarget); err != nil {
+		t.Skipf("current environment cannot create symlink: %v", err)
+	}
+	manager, err := NewDefaultManager(Binding{
+		CapabilityID: "database", ConfigPath: "database",
+		Contract: fixedDefaults(Object{FieldOf("driver", String("sqlite"))}),
+		Validate: acceptSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("NewDefaultManager() error = %v", err)
+	}
+	if _, err := manager.Generate(t.Context(), GenerateRequest{Path: symlinkTarget, Force: true}); err == nil {
+		t.Fatal("Generate(force symlink) error = nil")
+	}
+	assertFileBytes(t, realTarget, []byte("original\n"))
+}
+
 func TestDefaultManagerAbortStopsContractsAndPreservesTarget(t *testing.T) {
 	cause := errors.New("operator rejected defaults")
 	called := false
 	manager, err := NewDefaultManager(
-		Binding{CapabilityID: "one", ConfigPath: "one", Contract: fixedDefaults(Object{FieldOf("value", String("one"))})},
+		Binding{CapabilityID: "one", ConfigPath: "one", Contract: fixedDefaults(Object{FieldOf("value", String("one"))}), Validate: acceptSnapshot},
 		Binding{CapabilityID: "two", ConfigPath: "two", Contract: DefaultContractFunc(func(context.Context) (Object, Control, error) {
 			return nil, Abort, cause
-		})},
+		}), Validate: acceptSnapshot},
 		Binding{CapabilityID: "three", ConfigPath: "three", Contract: DefaultContractFunc(func(context.Context) (Object, Control, error) {
 			called = true
 			return Object{}, Continue, nil
-		})},
+		}), Validate: acceptSnapshot},
 	)
 	if err != nil {
 		t.Fatalf("NewDefaultManager() error = %v", err)
@@ -220,7 +250,7 @@ func TestDefaultManagerRejectsInvalidControlResultsWithoutOutput(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			manager, err := NewDefaultManager(Binding{CapabilityID: "test", ConfigPath: "test", Contract: test.contract})
+			manager, err := NewDefaultManager(Binding{CapabilityID: "test", ConfigPath: "test", Contract: test.contract, Validate: acceptSnapshot})
 			if err != nil {
 				t.Fatalf("NewDefaultManager() error = %v", err)
 			}
@@ -240,7 +270,7 @@ func TestDefaultManagerRejectsNilAndCancelledContextBeforeContract(t *testing.T)
 	manager, err := NewDefaultManager(Binding{CapabilityID: "test", ConfigPath: "test", Contract: DefaultContractFunc(func(context.Context) (Object, Control, error) {
 		called = true
 		return Object{}, Continue, nil
-	})})
+	}), Validate: acceptSnapshot})
 	if err != nil {
 		t.Fatalf("NewDefaultManager() error = %v", err)
 	}
@@ -256,6 +286,8 @@ func TestDefaultManagerRejectsNilAndCancelledContextBeforeContract(t *testing.T)
 		t.Fatal("contract was called after context cancellation")
 	}
 }
+
+func acceptSnapshot(Snapshot) error { return nil }
 
 func TestDefaultFileTransactionPreservesPrimaryAndCleanupErrors(t *testing.T) {
 	writeErr := errors.New("write failed")

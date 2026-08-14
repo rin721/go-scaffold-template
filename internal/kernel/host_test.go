@@ -13,6 +13,7 @@ import (
 	"github.com/rin721/go-scaffold2/internal/kernel/app"
 	"github.com/rin721/go-scaffold2/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold2/internal/kernel/logging"
+	pkghealth "github.com/rin721/go-scaffold2/pkg/health"
 	pkglogger "github.com/rin721/go-scaffold2/pkg/logger"
 )
 
@@ -21,7 +22,6 @@ func TestHostRunsKernelBeforeAndStopsKernelAfterUpperParticipants(t *testing.T) 
 	assembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
 	assembly.add(t, "service", app.KernelInstanceSwap, events, nil, nil)
 	assembly.install(t)
-	runtime := assembly.runtime
 	ctx, cancel := context.WithCancel(t.Context())
 	server := &hostParticipant{name: "server", events: events}
 	worker := &hostParticipant{
@@ -31,7 +31,7 @@ func TestHostRunsKernelBeforeAndStopsKernelAfterUpperParticipants(t *testing.T) 
 			cancel()
 		},
 	}
-	host, err := NewHost(runtime, HostOptions{}, server, worker)
+	host, err := NewHost(assembly.coordinator, HostOptions{}, server, worker)
 	if err != nil {
 		t.Fatalf("NewHost() error = %v", err)
 	}
@@ -53,6 +53,34 @@ func TestHostRunsKernelBeforeAndStopsKernelAfterUpperParticipants(t *testing.T) 
 	}
 }
 
+func TestHostReadinessAndHealthFollowSupervisedLifecycle(t *testing.T) {
+	assembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
+	assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	assembly.install(t)
+	host, err := NewHost(assembly.coordinator, HostOptions{})
+	if err != nil {
+		t.Fatalf("NewHost() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- host.Run(ctx) }()
+	<-host.Ready()
+	kernelState, processState := host.Diagnostics()
+	if !kernelState.Ready || !processState.Ready {
+		t.Fatalf("Diagnostics() = %#v / %#v, want ready", kernelState, processState)
+	}
+	if snapshot := host.Health(t.Context()); snapshot.Status != pkghealth.StatusPass {
+		t.Fatalf("Health() = %#v, want pass", snapshot)
+	}
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if snapshot := host.Health(t.Context()); snapshot.Status != pkghealth.StatusFail {
+		t.Fatalf("Health() after stop = %#v, want fail", snapshot)
+	}
+}
+
 func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
 	if _, err := NewHost(nil, HostOptions{}); err == nil {
 		t.Fatal("NewHost(nil) error = nil")
@@ -63,14 +91,17 @@ func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
-	if _, err := NewHost(runtime, HostOptions{Watch: &WatchOptions{}}); err == nil {
+	coordinator, err := NewCoordinator(runtime)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	if _, err := NewHost(coordinator, HostOptions{Watch: &WatchOptions{}}); err == nil {
 		t.Fatal("NewHost(nil reload callback) error = nil")
 	}
 
 	mapAssembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
 	mapAssembly.install(t)
-	mapRuntime := mapAssembly.runtime
-	if _, err := NewHost(mapRuntime, HostOptions{Watch: &WatchOptions{OnReloadError: func(error) {}}}); err == nil {
+	if _, err := NewHost(mapAssembly.coordinator, HostOptions{Watch: &WatchOptions{OnReloadError: func(error) {}}}); err == nil {
 		t.Fatal("NewHost(watch without FileSource) error = nil")
 	}
 }
@@ -89,9 +120,8 @@ func TestHostWatchReloadsCapabilityAndStopsOnCancellation(t *testing.T) {
 	})
 	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
 	assembly.install(t)
-	runtime := assembly.runtime
 	reloadErrors := make(chan error, 1)
-	host, err := NewHost(runtime, HostOptions{
+	host, err := NewHost(assembly.coordinator, HostOptions{
 		Watch: &WatchOptions{OnReloadError: func(err error) { reloadErrors <- err }},
 	})
 	if err != nil {
@@ -155,7 +185,7 @@ func TestHostWatchReconcilesChangeMadeBeforeWatcherReady(t *testing.T) {
 		},
 	}
 	reloadErrors := make(chan error, 1)
-	host, err := NewHost(assembly.runtime, HostOptions{
+	host, err := NewHost(assembly.coordinator, HostOptions{
 		Watch: &WatchOptions{OnReloadError: func(err error) { reloadErrors <- err }},
 	}, participant)
 	if err != nil {
@@ -202,7 +232,7 @@ func TestHostWatchInfrastructureFailureStopsUpperParticipantAndKernel(t *testing
 			}
 		},
 	}
-	host, err := NewHost(assembly.runtime, HostOptions{
+	host, err := NewHost(assembly.coordinator, HostOptions{
 		Watch: &WatchOptions{OnReloadError: func(error) {}},
 	}, participant)
 	if err != nil {

@@ -24,6 +24,9 @@ func TestRegistrySnapshotAggregatesStatusAndErrors(t *testing.T) {
 	if snapshot.Status != StatusFail {
 		t.Fatalf("Status = %q, want fail", snapshot.Status)
 	}
+	if len(snapshot.Results) != 2 || snapshot.Results[0].Name != "db" || snapshot.Results[1].Name != "cache" {
+		t.Fatalf("Results order = %#v, want registration order", snapshot.Results)
+	}
 	if !errors.Is(snapshot.Error(), cause) {
 		t.Fatalf("Snapshot.Error() = %v, want cause", snapshot.Error())
 	}

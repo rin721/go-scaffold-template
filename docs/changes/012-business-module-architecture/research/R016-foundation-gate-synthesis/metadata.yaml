@@ -10,8 +10,8 @@ frameworks: ["controller-runtime", "Grafana dskit", "Caddy", "Kratos", "Uber Fx"
 technologies: ["net/http", "errgroup", "health checks", "architecture tests"]
 applicable_scenarios: ["012 当前推荐方案", "实施排序", "业务延伸门禁"]
 non_applicable_scenarios: ["通用 Go 框架排名", "未经实现验证的完成声明"]
-status: active
-summary: "保留 Kernel 核心并局部补齐应用配置协调、进程监督、HTTP/诊断与治理；门禁通过前暂停业务细节设计。"
+status: superseded
+summary: "历史综合结论；由补入 CLI、Default、strict Config 与契约台账的 R020 单轨替代。"
 evidence:
   types: ["source-code", "tests", "official-docs", "local-static-analysis"]
   primary_sources:
@@ -31,5 +31,5 @@ relations:
   extends: ["R011", "R012", "R013", "R014", "R015", "R002", "R004", "R005"]
   related: []
   supersedes: ["R010"]
-  superseded_by: []
+  superseded_by: ["R020"]
 report: report.md

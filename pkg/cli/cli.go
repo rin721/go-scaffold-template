@@ -54,6 +54,14 @@ type Config struct {
 
 	// GlobalFlags 声明根命令持久 flag，所有子命令都能读取这些 flag。
 	GlobalFlags []FlagSpec
+	// CommandGroups 声明命令可引用的稳定分组。
+	CommandGroups []CommandGroup
+}
+
+// CommandGroup 声明一个稳定命令分组。
+type CommandGroup struct {
+	ID    string
+	Title string
 }
 
 // App 是公开 CLI 边界，具体实现隐藏 Cobra 和 Bubble Tea。
@@ -92,6 +100,14 @@ type CommandSpec struct {
 	HomeOrder int
 	// HomeHidden 表示该命令不出现在交互首页中，但仍可直接调用。
 	HomeHidden bool
+	// GroupID 引用 Config.CommandGroups 中的稳定分组。
+	GroupID string
+	// Mode 声明命令执行所需的装配模式。
+	Mode CommandMode
+	// SideEffect 声明命令允许产生的最大副作用类别。
+	SideEffect SideEffect
+	// Positional 声明位置参数策略。
+	Positional PositionalPolicy
 
 	// Flags 声明命令支持的 flag。
 	Flags []FlagSpec
@@ -102,6 +118,36 @@ type CommandSpec struct {
 	// Commands 声明子命令。
 	Commands []CommandSpec
 }
+
+// CommandMode 声明命令的装配边界。
+type CommandMode uint8
+
+const (
+	CommandModeUnspecified CommandMode = iota
+	CommandModeBootstrap
+	CommandModeApplication
+)
+
+// SideEffect 声明命令执行可能产生的副作用类别。
+type SideEffect uint8
+
+const (
+	SideEffectUnspecified SideEffect = iota
+	SideEffectNone
+	SideEffectFileCreate
+	SideEffectFileReplace
+	SideEffectExternalWrite
+)
+
+// PositionalPolicy 声明位置参数的接受策略。
+type PositionalPolicy uint8
+
+const (
+	PositionalUnspecified PositionalPolicy = iota
+	PositionalNone
+	PositionalAny
+	PositionalCustom
+)
 
 // FlagType 标识支持的 flag 值类型。
 type FlagType int

@@ -1,0 +1,38 @@
+schema_version: 1
+id: R017
+title: "go-scaffold2 进程、CLI 与 Config 契约清点"
+question: "当前进程入口、CLI、默认配置、Config、Plan、Capability 与生命周期中已经存在什么显式或隐式契约？"
+research_type: current-project
+topics: ["bootstrap", "CLI", "configuration", "defaults", "composition", "capability", "lifecycle"]
+keywords: ["runMain", "CommandSpec", "DefaultManager", "Snapshot", "DecodeSection", "FrozenPlan", "Supervisor"]
+languages: ["Go"]
+frameworks: ["Cobra", "mapstructure"]
+technologies: ["YAML", "JSON", "fsnotify", "net/http"]
+applicable_scenarios: ["012 底层契约清单", "CLI 与 Config 方案", "实施前兼容基线"]
+non_applicable_scenarios: ["证明目标契约已实现", "运行期产品验收"]
+status: superseded
+summary: "当前显式 Plan、资源租约、默认文件写入和 Kernel 候选事务可保留；CLI 模式、严格配置绑定、单候选应用协调、Supervisor/HTTP/诊断仍不完整。"
+evidence:
+  types: ["source-code", "tests", "local-static-analysis"]
+  primary_sources:
+    - title: "进程、CLI 与默认配置"
+      locator: "cmd/app; pkg/cli; internal/kernel/cli; internal/kernel/config"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "Plan、Composition 与 RuntimeComponent"
+      locator: "internal/kernel/app; internal/kernel/composition; internal/kernel/kernel.go"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+    - title: "Host、Supervisor、HTTP、Health 与 Adapter"
+      locator: "internal/kernel/host.go; pkg/supervisor; pkg/httpx; pkg/health; pkg/database; pkg/cache; pkg/storage"
+      snapshot: "2daf47ad111141b27a1d8e100bb3d6e4cc1ea743"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2026-11-14"
+  refresh_triggers: ["进程入口或 CLI 变化", "Config strict binding 实施", "Application coordinator 实施"]
+relations:
+  extends: ["R011"]
+  related: ["R018", "R019", "R020"]
+  supersedes: []
+  superseded_by: ["R021"]
+report: report.md

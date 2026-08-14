@@ -22,6 +22,9 @@ if err != nil {
 err = app.AddCommand(cli.CommandSpec{
     Name:        "generate",
     Description: "生成代码",
+    Mode:        cli.CommandModeBootstrap,
+    SideEffect:  cli.SideEffectFileReplace,
+    Positional:  cli.PositionalNone,
     Flags: []cli.FlagSpec{
         {
             Name:        "model",
@@ -116,6 +119,7 @@ cli.FlagTypeStringSlice
 | 错误类型 | 退出码 |
 | --- | --- |
 | `UsageError` | `2` |
+| `ConfigError` | `3` |
 | `CommandError` | `1` |
 | `CancelledError` | `130` |
 
@@ -125,6 +129,6 @@ cli.FlagTypeStringSlice
 
 ## Kernel 启动前 CLI
 
-`internal/kernel/cli` 复用本包的 `CommandSpec`、`FlagSpec`、`App`、`CommandError` 和退出码语义，聚合由 composition 显式提供的启动前命令契约。它不会把 Cobra 类型泄漏到 Kernel，也不把 CLI App 纳入 Kernel 生命周期。
+`internal/kernel/cli` 复用本包的 `CommandSpec`、`FlagSpec`、`App`、错误分类和退出码语义，聚合 Bootstrap composition 显式提供的启动前命令契约。它不会把 Cobra 类型泄漏到 Kernel，也不把 CLI App 纳入 Kernel 生命周期。
 
-当前 composition 只有在 `composition.Options.CLI` 非 nil 时构造 App，并注册 `config init`。该命令调用 DefaultManager 生成配置文件；默认输出 `config.yaml`，支持 `-o/--output` 和 `-f/--force`，且不接受位置参数。CLI 未启用时普通服务启动不构造 App，也不执行命令契约。
+当前 `composition.ComposeBootstrap` 构造 App 并注册 `config init`。该命令调用 DefaultManager 生成配置文件；默认输出 `config.yaml`，支持 `-o/--output` 和 `-f/--force`，且不接受位置参数。命令 registry 在第一次 Run 时冻结，并在执行前检查完整树的 name/alias/group/flag/shorthand 冲突、mode、副作用分类和位置参数策略。无参数 Service mode 不构造 App，也不执行命令契约。

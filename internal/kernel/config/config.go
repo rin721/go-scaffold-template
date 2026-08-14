@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strconv"
 	"strings"
 
 	"github.com/go-viper/mapstructure/v2"
@@ -43,16 +45,34 @@ func (l *Loader) Load(ctx context.Context) (Snapshot, error) {
 	}
 	merged := map[string]any{}
 	var provenance []string
-	for _, source := range l.sources {
+	seenSources := make(map[string]struct{}, len(l.sources))
+	for index, source := range l.sources {
 		if source == nil {
-			continue
+			return Snapshot{}, fmt.Errorf("config source %d is nil", index)
+		}
+		name := strings.TrimSpace(source.Name())
+		if name == "" {
+			return Snapshot{}, fmt.Errorf("config source %d name is required", index)
+		}
+		if _, exists := seenSources[name]; exists {
+			return Snapshot{}, fmt.Errorf("config source name %q is duplicated", name)
+		}
+		seenSources[name] = struct{}{}
+		if err := ctx.Err(); err != nil {
+			return Snapshot{}, fmt.Errorf("load config source %s: %w", name, err)
 		}
 		values, err := source.Load(ctx)
 		if err != nil {
-			return Snapshot{}, fmt.Errorf("load config source %s: %w", source.Name(), err)
+			return Snapshot{}, fmt.Errorf("load config source %s: %w", name, err)
 		}
-		mergeMap(merged, normalizeMap(values))
-		provenance = append(provenance, source.Name())
+		normalized, err := canonicalMap(values)
+		if err != nil {
+			return Snapshot{}, fmt.Errorf("normalize config source %s: %w", name, err)
+		}
+		if err := mergeMap(merged, normalized, ""); err != nil {
+			return Snapshot{}, fmt.Errorf("merge config source %s: %w", name, err)
+		}
+		provenance = append(provenance, name)
 	}
 	return newSnapshot(merged, provenance)
 }
@@ -88,7 +108,10 @@ type Snapshot struct {
 }
 
 func newSnapshot(values map[string]any, provenance []string) (Snapshot, error) {
-	copied := copyMap(values)
+	copied, err := canonicalMap(values)
+	if err != nil {
+		return Snapshot{}, fmt.Errorf("normalize config snapshot: %w", err)
+	}
 	payload, err := json.Marshal(copied)
 	if err != nil {
 		return Snapshot{}, fmt.Errorf("digest config snapshot: %w", err)
@@ -176,8 +199,12 @@ func (s Snapshot) Decode(target any) error {
 	decoder, err := mapstructure.NewDecoder(&mapstructure.DecoderConfig{
 		TagName:          "mapstructure",
 		Result:           target,
-		WeaklyTypedInput: true,
-		DecodeHook:       mapstructure.StringToTimeDurationHookFunc(),
+		ErrorUnused:      true,
+		WeaklyTypedInput: false,
+		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			mapstructure.StringToTimeDurationHookFunc(),
+			strictStringScalarHook,
+		),
 	})
 	if err != nil {
 		return fmt.Errorf("create config decoder: %w", err)
@@ -211,9 +238,6 @@ type mapSource struct {
 }
 
 func (s mapSource) Name() string {
-	if s.name == "" {
-		return "map"
-	}
 	return s.name
 }
 
@@ -234,7 +258,13 @@ func (s fileSource) Name() string {
 	return "file:" + s.path
 }
 
-func (s fileSource) Load(context.Context) (map[string]any, error) {
+func (s fileSource) Load(ctx context.Context) (map[string]any, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("file config source context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		return nil, err
@@ -242,7 +272,7 @@ func (s fileSource) Load(context.Context) (map[string]any, error) {
 	var values map[string]any
 	switch strings.ToLower(filepath.Ext(s.path)) {
 	case ".json":
-		err = json.Unmarshal(data, &values)
+		values, err = decodeJSONObject(data)
 	case ".yaml", ".yml", "":
 		err = yaml.Unmarshal(data, &values)
 	default:
@@ -251,7 +281,79 @@ func (s fileSource) Load(context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return normalizeMap(values), nil
+	return values, nil
+}
+
+func decodeJSONObject(data []byte) (map[string]any, error) {
+	decoder := json.NewDecoder(strings.NewReader(string(data)))
+	decoder.UseNumber()
+	value, err := decodeJSONValue(decoder)
+	if err != nil {
+		return nil, err
+	}
+	if decoder.More() {
+		return nil, fmt.Errorf("multiple JSON root values")
+	}
+	if token, err := decoder.Token(); err == nil || token != nil {
+		return nil, fmt.Errorf("unexpected data after JSON root")
+	}
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("JSON configuration root must be an object")
+	}
+	return object, nil
+}
+
+func decodeJSONValue(decoder *json.Decoder) (any, error) {
+	token, err := decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	delimiter, composite := token.(json.Delim)
+	if !composite {
+		return token, nil
+	}
+	switch delimiter {
+	case '{':
+		object := make(map[string]any)
+		for decoder.More() {
+			keyToken, err := decoder.Token()
+			if err != nil {
+				return nil, err
+			}
+			key, ok := keyToken.(string)
+			if !ok {
+				return nil, fmt.Errorf("JSON object key is not a string")
+			}
+			if _, exists := object[key]; exists {
+				return nil, fmt.Errorf("duplicate JSON configuration key %q", key)
+			}
+			value, err := decodeJSONValue(decoder)
+			if err != nil {
+				return nil, fmt.Errorf("JSON key %s: %w", key, err)
+			}
+			object[key] = value
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return object, nil
+	case '[':
+		var values []any
+		for decoder.More() {
+			value, err := decodeJSONValue(decoder)
+			if err != nil {
+				return nil, err
+			}
+			values = append(values, value)
+		}
+		if _, err := decoder.Token(); err != nil {
+			return nil, err
+		}
+		return values, nil
+	default:
+		return nil, fmt.Errorf("unsupported JSON delimiter %q", delimiter)
+	}
 }
 
 // EnvSource 从环境变量读取配置，双下划线表示嵌套路径。
@@ -267,9 +369,15 @@ func (s envSource) Name() string {
 	return "env:" + s.prefix
 }
 
-func (s envSource) Load(context.Context) (map[string]any, error) {
+func (s envSource) Load(ctx context.Context) (map[string]any, error) {
+	if ctx == nil {
+		return nil, fmt.Errorf("environment config source context is nil")
+	}
 	out := map[string]any{}
 	for _, item := range os.Environ() {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		key, value, ok := strings.Cut(item, "=")
 		if !ok || !strings.HasPrefix(key, s.prefix) {
 			continue
@@ -284,17 +392,31 @@ func (s envSource) Load(context.Context) (map[string]any, error) {
 	return out, nil
 }
 
-func mergeMap(dst map[string]any, src map[string]any) {
+func mergeMap(dst map[string]any, src map[string]any, parent string) error {
 	for key, value := range src {
 		key = matchingKey(dst, key)
+		path := key
+		if parent != "" {
+			path = parent + "." + key
+		}
 		if nested, ok := value.(map[string]any); ok {
 			if existing, ok := dst[key].(map[string]any); ok {
-				mergeMap(existing, nested)
+				if err := mergeMap(existing, nested, path); err != nil {
+					return err
+				}
 				continue
+			}
+			if existing, exists := dst[key]; exists && existing != nil {
+				return fmt.Errorf("config path %s changes from scalar or array to object", path)
+			}
+		} else if existing, exists := dst[key]; exists {
+			if _, object := existing.(map[string]any); object && value != nil {
+				return fmt.Errorf("config path %s changes from object to scalar or array", path)
 			}
 		}
 		dst[key] = copyValue(value)
 	}
+	return nil
 }
 
 func matchingKey(values map[string]any, candidate string) string {
@@ -322,32 +444,92 @@ func setNested(values map[string]any, parts []string, value any) {
 	setNested(next, parts[1:], value)
 }
 
-func normalizeMap(values map[string]any) map[string]any {
+func canonicalMap(values map[string]any) (map[string]any, error) {
+	if values == nil {
+		return map[string]any{}, nil
+	}
 	out := make(map[string]any, len(values))
 	for key, value := range values {
-		out[key] = normalizeValue(value)
+		if strings.TrimSpace(key) == "" {
+			return nil, fmt.Errorf("configuration key is empty")
+		}
+		normalized, err := canonicalValue(value)
+		if err != nil {
+			return nil, fmt.Errorf("config key %s: %w", key, err)
+		}
+		out[key] = normalized
 	}
-	return out
+	return out, nil
 }
 
-func normalizeValue(value any) any {
+func canonicalValue(value any) (any, error) {
 	switch typed := value.(type) {
 	case map[string]any:
-		return normalizeMap(typed)
+		return canonicalMap(typed)
 	case map[any]any:
 		out := make(map[string]any, len(typed))
 		for key, nestedValue := range typed {
-			out[fmt.Sprint(key)] = normalizeValue(nestedValue)
+			name, ok := key.(string)
+			if !ok || strings.TrimSpace(name) == "" {
+				return nil, fmt.Errorf("configuration object key must be a non-empty string")
+			}
+			normalized, err := canonicalValue(nestedValue)
+			if err != nil {
+				return nil, fmt.Errorf("config key %s: %w", name, err)
+			}
+			out[name] = normalized
 		}
-		return out
+		return out, nil
 	case []any:
 		out := make([]any, len(typed))
 		for index, nestedValue := range typed {
-			out[index] = normalizeValue(nestedValue)
+			normalized, err := canonicalValue(nestedValue)
+			if err != nil {
+				return nil, fmt.Errorf("config list element %d: %w", index, err)
+			}
+			out[index] = normalized
 		}
-		return out
+		return out, nil
+	case nil, string, bool, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
+		return typed, nil
 	default:
-		return value
+		return nil, fmt.Errorf("unsupported configuration value type %T", value)
+	}
+}
+
+func strictStringScalarHook(from reflect.Type, to reflect.Type, data any) (any, error) {
+	if from.Kind() != reflect.String {
+		return data, nil
+	}
+	value := data.(string)
+	switch to.Kind() {
+	case reflect.Bool:
+		parsed, err := strconv.ParseBool(value)
+		if err != nil {
+			return nil, fmt.Errorf("parse %q as bool: %w", value, err)
+		}
+		return parsed, nil
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		parsed, err := strconv.ParseInt(value, 10, to.Bits())
+		if err != nil {
+			return nil, fmt.Errorf("parse %q as signed integer: %w", value, err)
+		}
+		return reflect.ValueOf(parsed).Convert(to).Interface(), nil
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		parsed, err := strconv.ParseUint(value, 10, to.Bits())
+		if err != nil {
+			return nil, fmt.Errorf("parse %q as unsigned integer: %w", value, err)
+		}
+		return reflect.ValueOf(parsed).Convert(to).Interface(), nil
+	case reflect.Float32, reflect.Float64:
+		parsed, err := strconv.ParseFloat(value, to.Bits())
+		if err != nil {
+			return nil, fmt.Errorf("parse %q as decimal: %w", value, err)
+		}
+		return reflect.ValueOf(parsed).Convert(to).Interface(), nil
+	default:
+		return data, nil
 	}
 }
 

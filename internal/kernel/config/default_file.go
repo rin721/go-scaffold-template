@@ -47,6 +47,13 @@ func (osDefaultFileOperations) Replace(source, target string) error {
 }
 
 func writeDefaultFile(target string, payload []byte, force bool) error {
+	if info, err := os.Lstat(target); err == nil {
+		if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return fmt.Errorf("default configuration target is not a regular file: %s", target)
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("inspect default configuration target: %w", err)
+	}
 	return writeDefaultFileWithOperations(target, payload, force, osDefaultFileOperations{})
 }
 
