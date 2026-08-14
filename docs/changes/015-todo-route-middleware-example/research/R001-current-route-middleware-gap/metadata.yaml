@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前 Todo 路由中间件缺口"
+question: "014 是否已有可运行的 middleware 链路，为什么仍缺少业务模块级示例，最小真实补充是什么？"
+research_type: current-project
+topics: ["HTTP", "middleware", "route binding", "Todo", "error contract"]
+keywords: ["Route.Middlewares", "Router.Handle", "RequireJSONContentType", "Content-Type", "415"]
+languages: ["Go"]
+frameworks: ["chi"]
+technologies: ["net/http", "MIME"]
+applicable_scenarios: ["015 实施计划", "Todo route middleware", "新业务模块学习"]
+non_applicable_scenarios: ["认证授权", "限流配置", "CORS 策略", "数据库事务"]
+status: active
+summary: "全局 middleware 与 route 安装契约已实现，但 Todo route 未绑定模块 middleware；POST JSON Content-Type 校验是最小真实示例。"
+evidence:
+  types: ["source-code", "tests", "existing-research"]
+  primary_sources:
+    - title: "当前全局 middleware 与 application Router"
+      locator: "internal/composition/service.go"
+      snapshot: "2239f4c"
+    - title: "Route contribution 与 Todo HTTP binding"
+      locator: "internal/business/contracts.go; internal/business/todo/binding/http/routes.go"
+      snapshot: "2239f4c"
+    - title: "httpx middleware 链与顺序测试"
+      locator: "pkg/httpx/middleware.go; pkg/httpx/router.go; pkg/httpx/router_test.go"
+      snapshot: "2239f4c"
+    - title: "012 CloudWeGo Hertz HTTP 组织研究"
+      locator: "docs/changes/012-business-module-architecture/research/R005-cloudwego-hertz"
+      snapshot: "verified 2026-08-14"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-11-15"
+  refresh_triggers: ["Route 或 Router middleware API 变化", "Todo create HTTP 契约变化", "引入认证或全局请求策略"]
+relations:
+  extends: []
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

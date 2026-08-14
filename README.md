@@ -87,6 +87,8 @@ PATCH /api/v1/todos/{id}/complete
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/v1/todos -ContentType application/json -Body '{"title":"学习 Go"}'
 ```
 
+创建路由绑定了 Todo 模块级 `RequireJSONContentType` middleware：必须显式发送 `Content-Type: application/json`，允许 `charset` 等合法参数；缺失、格式非法或非 JSON media type 返回 `415 todo_unsupported_media_type`。全局 middleware 仍按 `Recovery -> RequestID -> AccessLog -> SecureHeaders` 执行，并包裹该 route middleware。
+
 同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 会按 `Coordinator -> Todo migration -> operation -> reverse Stop` 完整管理资源，但不会启动 HTTP listener 或配置 watcher：
 
 ```powershell
@@ -96,7 +98,7 @@ go run ./cmd/app todo get --id <todo-id>
 go run ./cmd/app todo complete --id <todo-id>
 ```
 
-目录职责、依赖方向和扩展方式见 [Todo 模块说明](internal/business/todo/README.md)，实施契约与验收证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。
+目录职责、依赖方向和扩展方式见 [Todo 模块说明](internal/business/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
 
 无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，要求重启恢复。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
 

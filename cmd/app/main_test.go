@@ -127,6 +127,38 @@ http:
 			t.Fatalf("service exited before readiness: %v", err)
 		case <-ticker.C:
 			if fileExists(databasePath) && directoryExists(storagePath) {
+				missingTypeRequest, requestErr := http.NewRequest(
+					http.MethodPost,
+					"http://"+httpAddress+"/api/v1/todos",
+					strings.NewReader(`{"title":"缺少 Content-Type"}`),
+				)
+				if requestErr != nil {
+					t.Fatalf("NewRequest(missing Content-Type) error = %v", requestErr)
+				}
+				missingTypeResponse, requestErr := httpClient.Do(missingTypeRequest)
+				if requestErr != nil {
+					continue
+				}
+				var missingTypePayload struct {
+					Error   string `json:"error"`
+					Message string `json:"message"`
+				}
+				decodeErr := json.NewDecoder(missingTypeResponse.Body).Decode(&missingTypePayload)
+				missingTypeResponse.Body.Close()
+				if missingTypeResponse.StatusCode != http.StatusUnsupportedMediaType || decodeErr != nil ||
+					missingTypePayload.Error != "todo_unsupported_media_type" ||
+					missingTypePayload.Message != "Todo 创建请求必须使用 application/json" {
+					cancel()
+					<-done
+					t.Fatalf("missing Content-Type response = %d %#v, decodeErr=%v", missingTypeResponse.StatusCode, missingTypePayload, decodeErr)
+				}
+				if missingTypeResponse.Header.Get("X-Request-ID") == "" ||
+					missingTypeResponse.Header.Get("X-Content-Type-Options") != "nosniff" {
+					cancel()
+					<-done
+					t.Fatalf("global middleware headers = %#v", missingTypeResponse.Header)
+				}
+
 				request, requestErr := http.NewRequest(http.MethodPost, "http://"+httpAddress+"/api/v1/todos", strings.NewReader(`{"title":"学习 Go"}`))
 				if requestErr != nil {
 					t.Fatalf("NewRequest() error = %v", requestErr)
