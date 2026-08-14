@@ -22,7 +22,7 @@
 
 | 候选 ID | 优先级 | 前置 | 目标 | 当前状态 |
 | --- | --- | --- | --- | --- |
-| `FORM-001` | P0 | 无 | 决定脚手架产品形态与升级模型 | [020 已选择完整源码复制，调整后验证计划待确认](../020-scaffold-product-form/README.md) |
+| `FORM-001` | P0 | 无 | 决定脚手架产品形态与升级模型 | [020 已完成：copy-owned 单轨决策与隔离复制验证](../020-scaffold-product-form/README.md) |
 | `API-AUTHORITY-001` | P0 | `FORM-001` | 原型比较 spec-first 与 typed code-first，冻结单一 API authority | 未纳入实施 |
 | `API-CONTRACT-001` | P0 | `API-AUTHORITY-001` | Operation、schema、route、OpenAPI、compatibility diff 单轨闭环 | 未纳入实施 |
 | `PROBLEM-001` | P0 | `API-CONTRACT-001` | 统一 problem/validation/404/405/panic 协议并迁移 Todo | 未纳入实施 |
@@ -34,7 +34,7 @@
 | `OUTBOUND-001` | P1 | 首个真实外部 API | 命名 client、budget、retry/breaker、telemetry、资源 owner | 未纳入实施 |
 | `QUALITY-001` | P1 | `API-CONTRACT-001` | contract/fuzz/performance/leak/vulnerability 门禁 | 未纳入实施 |
 | `DELIVERY-001` | P1 | `FORM-001`、`MANAGEMENT-001` | build metadata、容器、部署样例、SBOM、发布/回滚 | 未纳入实施 |
-| `SCAFFOLD-DX-001` | P1 | `FORM-001`、主要 P0 | 创建/重命名/模块生成、golden、升级和移除示例 | 未纳入实施 |
+| `SCAFFOLD-DX-001` | P1 | `FORM-001`、主要 P0 | 正式复制清单、身份迁移、示例移除、baseline release 与人工升级说明 | 未纳入实施 |
 | `ASYNC-001` | P2 | 真实异步用例 | 消息/任务/调度的交付、幂等、背压、排空 | 未纳入实施 |
 | `TENANT-001` | P2 | 真实租户模型 | 身份、隔离、迁移、限额与审计 | 未纳入实施 |
 
@@ -42,8 +42,8 @@
 
 第一批只启动两个研究型变更，不改生产运行链：
 
-1. `FORM-001`：已进入 [020](../020-scaffold-product-form/README.md)，用户已选择完整源码复制；等待确认后验证复制范围、身份迁移、Todo 保留/移除和人工升级政策；
-2. `API-AUTHORITY-001`：在 020 完成复制基线验证后，再用 Todo 四个 operation 做 spec-first 与 typed code-first 最小原型比较。
+1. `FORM-001`：已由 [020](../020-scaffold-product-form/README.md) 完成，产品形态固定为完整源码复制；正式复制指南和 release 能力另立变更；
+2. `API-AUTHORITY-001`：后续用 Todo 四个 operation 做 spec-first 与 typed code-first 最小原型比较。
 
 两个决定会影响后续错误、认证、OpenAPI、观测、复制基线和兼容测试。它们完成前不应先新增 Swagger 注解、JWT middleware 或另一套路由 Registry。
 

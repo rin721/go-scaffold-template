@@ -12,3 +12,4 @@
 
 - [R001 当前分发边界](R001-current-distribution-boundary/report.md)：核验当前仓库能否作为外部 library、可复制 template 或 generator 输入。
 - [R002 Go 分发和版本语义](R002-go-distribution-versioning/report.md)：建立 module、`internal`、模板实例化和版本兼容的约束。
+- [R003 隔离复制与示例移除验证](R003-isolated-copy-validation/report.md)：记录固定快照的两个独立副本、身份迁移、Todo 保留/移除、Go 门禁和平台限制。

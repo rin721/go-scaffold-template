@@ -2,13 +2,13 @@
 
 ## 1. 已确认目标
 
-用户已决定将 `go-scaffold2` 设计为完整源码脚手架：开发者复制一个版本化源码快照，在本地一次性迁移项目身份，然后由新项目独立拥有和演进全部代码。研究依据见 [R001](research/R001-current-distribution-boundary/report.md) 与 [R002](research/R002-go-distribution-versioning/report.md)。
+用户已决定将当前仓库设计为完整源码脚手架：开发者复制一个版本化源码快照，在本地一次性迁移项目身份，然后由新项目独立拥有和演进全部代码。GitHub canonical 仓库已改名为 `go-scaffold-template`；本地源身份同步属于后续 021。产品形态研究依据见 [R001](research/R001-current-distribution-boundary/report.md) 与 [R002](research/R002-go-distribution-versioning/report.md)。
 
 这不是 library，也不是 generator。脚手架只承诺“复制时的基线质量和迁移说明”，不承诺复制后自动同步上游。
 
 ## 2. 使用场景
 
-1. 开发者选择一个明确版本的 `go-scaffold2` 源码快照。
+1. 开发者选择一个明确版本的 `go-scaffold-template` 源码快照。
 2. 将源码复制到目标目录，不携带源仓库 Git 身份、运行数据、凭据或临时文件。
 3. 一次性修改 module path、应用名、描述、可执行名、配置文件名和环境变量前缀。
 4. 选择保留 Todo 作为参考，或按受验证清单删除 Todo。
@@ -57,3 +57,9 @@
 5. Todo 保留路径通过；Todo 移除路径要么通过，要么准确形成后续最小改造任务，不用占位代码伪装成功。
 6. 文档明确复制后全量归新项目以及无自动上游升级承诺。
 7. ADR/设计记录确定 baseline、provenance、安全修复和人工迁移政策；正式复制指南与发布能力由后续独立任务实施。
+
+## 7. 验收结果
+
+- `BASELINE-001`、`COPY-001`、`OWNERSHIP-001`、`IDENTITY-001/002`、`ASSEMBLY-001`、`EXAMPLE-001`、`VERIFY-001`、`PROVENANCE-001`、`UPGRADE-001` 与 `SECURITY-001` 已由 [R003](research/R003-isolated-copy-validation/report.md) 和 [ADR-001](decision.md) 验证或固化。
+- `PORTABLE-001` 的 Windows 路径已通过；当前环境没有可运行 WSL 发行版，Linux 路径未验证并转为正式指南/CI 的后续门禁。
+- 验证没有修改生产源码或交付正式复制工具；021 完成后仍需基于新 canonical identity 刷新正式 baseline 值。

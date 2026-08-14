@@ -1,0 +1,34 @@
+schema_version: 1
+id: R003
+title: "固定快照的隔离复制与示例移除验证"
+question: "完整 tracked baseline 在迁移身份后能否独立构建，并能否在不破坏底座的情况下完整移除 Todo 示例？"
+research_type: local-isolated-validation
+topics: ["source copy", "identity migration", "application ownership", "example removal"]
+keywords: ["git archive", "provenance", "module path", "Todo", "composition root"]
+languages: ["Go"]
+technologies: ["Go modules", "Git", "PowerShell"]
+applicable_scenarios: ["020 copy-owned 产品形态", "复制范围与身份迁移清单", "Todo 示例保留或移除"]
+non_applicable_scenarios: ["正式发布流程", "Linux 已通过声明", "021 仓库身份迁移", "生产源码改造"]
+status: active
+summary: "main@bba1802 的 tracked baseline 可在两个无 remote 的独立 module 中通过验证；Todo 可完整移除，底座仍通过 build、test、vet 和 config init。"
+evidence:
+  types: ["git-archive", "isolated-copy", "go-tool-output", "git-boundary-check"]
+  primary_sources:
+    - title: "Source baseline"
+      locator: "main@bba180266cba99ec84e2da0296df7fca373764b4"
+      snapshot: "verified 2026-08-15"
+    - title: "Ignored validation copies"
+      locator: "tmp/scaffold-copy-validation/"
+      snapshot: "verified 2026-08-15; intentionally untracked"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: exact-commit-validation
+  review_after: "2026-11-15"
+  refresh_triggers: ["tracked baseline changes", "021 identity migration completes", "copy scope changes", "Todo example changes", "supported platform policy changes"]
+relations:
+  extends: ["020-R001", "020-R002"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

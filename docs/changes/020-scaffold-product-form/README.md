@@ -2,19 +2,21 @@
 
 ## 当前状态
 
-- 任务类型：用户决策后的方案调整与待确认隔离验证。
-- 研究门禁：已通过，证据为 [R001 当前分发边界](research/R001-current-distribution-boundary/report.md) 与 [R002 Go 分发和版本语义](research/R002-go-distribution-versioning/report.md)。
+- 任务类型：用户决策后的产品形态固化与隔离复制验证。
+- 研究门禁：已通过，证据为 [R001 当前分发边界](research/R001-current-distribution-boundary/report.md)、[R002 Go 分发和版本语义](research/R002-go-distribution-versioning/report.md) 与 [R003 隔离复制验证](research/R003-isolated-copy-validation/report.md)。
 - 产品形态决策：用户于 2026-08-15 明确选择“复制脚手架源码”，不由脚手架创建项目，不采用 generator、library-only 或 Runtime + generator 形态。
-- 计划状态：已按该决策重写，等待后续明确确认；本轮只修改文档。
-- 代码快照：`main@1b60d16b6807313ee33d60b9a3d1659bf16abac1`。
+- 源仓库变化：GitHub canonical 仓库已改名为 `go-scaffold-template`；本地 remote/module/产品身份迁移属于后续 021，不在 020 实施。
+- 计划状态：已确认并完成隔离复制验证；[ADR-001](decision.md) 已接受 copy-owned 单轨产品形态。
+- 验证快照：`main@bba180266cba99ec84e2da0296df7fca373764b4`。
+- 平台范围：Windows 已通过；当前机器没有可运行 WSL 发行版，Linux 未验证。
 - 来源：[019 的 `FORM-001`](../019-http-api-maturity-gap-assessment/tasks.md)。
 
 ## 一句话结论
 
-`go-scaffold2` 本身就是一份版本化、可运行、可复制的完整服务源码基线。使用者复制某个发布快照后，一次性替换项目身份并建立自己的 Git 历史；`pkg`、`internal/kernel/app`、底层 composition、业务模块和交付文件全部归新项目所有，不再依赖源脚手架，也不接受后续 generator 覆盖。
+当前仓库本身就是一份版本化、可运行、可复制的完整服务源码基线。使用者复制某个发布快照后，一次性替换项目身份并建立自己的 Git 历史；`pkg`、`internal/kernel/app`、底层 composition、业务模块和交付文件全部归新项目所有，不再依赖源脚手架，也不接受后续 generator 覆盖。
 
 ```text
-go-scaffold2 release/tag
+go-scaffold-template release/tag
           │ 复制源码快照，不运行 scaffold create
           ▼
 新项目工作区
@@ -43,9 +45,10 @@ go-scaffold2 release/tag
 
 1. [需求与验收标准](requirements.md)
 2. [复制、身份迁移与版本设计](design.md)
-3. [待确认验证任务](tasks.md)
-4. [研究档案](research/README.md)
+3. [ADR-001 决策结果](decision.md)
+4. [验证任务与证据](tasks.md)
+5. [研究档案](research/README.md)
 
 ## 当前行为边界
 
-020 尚未改变项目的复制、重命名或发布方式。任何临时副本、身份替换、Todo 移除、构建、测试或 ADR 结果更新，都必须在本计划报告之后获得用户明确确认。
+020 只在忽略目录验证了改名前固定 baseline，没有修改当前仓库的 `cmd`、`internal`、`pkg`、配置、依赖、脚本或 CI。正式复制指南、release baseline、安全公告模板、Linux CI 和 canonical identity 迁移仍需独立任务实施。

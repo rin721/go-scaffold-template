@@ -2,7 +2,7 @@
 
 ## 1. 决策
 
-用户已选择 **copy-owned source scaffold**：`go-scaffold2` 发布完整源码基线，开发者复制源码后一次性迁移身份，所有代码从此归新项目。
+用户已选择 **copy-owned source scaffold**：canonical 源仓库 `go-scaffold-template` 发布完整源码基线，开发者复制源码后一次性迁移身份，所有代码从此归新项目。当前 checkout 的 remote/module/产品名迁移由 021 先完成。
 
 此前研究比较过 template、generator、library 和组合模式。比较结论仍作为历史依据，但 generator/library/组合模式已被用户决策排除，不再进入验证或后续实现。
 
@@ -50,17 +50,17 @@ pkg/<capability>
 
 ## 4. 标准复制流程
 
-020 的隔离验证使用以下目标流程，但不在未确认前实际执行：
+020 的隔离验证已执行以下流程：
 
 ```text
 1. 固定 source commit
-2. 复制 tracked baseline 到 tmp/scaffold-copy-validation/service
+2. 复制 tracked baseline 到 tmp/scaffold-copy-validation 下的两个独立副本
 3. 排除 .git、tmp、.data、config.yaml 和其他本机/运行态文件
 4. 迁移目标 identity
 5. 保留 Todo 验证完整基线
 6. 在另一副本验证 Todo 完整移除
 7. 执行 build/test/vet/config init 与残留扫描
-8. 记录 baseline provenance 和验证结果
+8. 记录 baseline provenance、独立 Git 边界和验证结果
 ```
 
 复制的是已跟踪、被发布策略允许的内容，而不是当前工作目录的所有文件。这样不会把用户本地配置、SQLite 文件、缓存或本任务验证目录带入新项目。
@@ -120,21 +120,20 @@ README/架构文档引用
 
 ## 8. 隔离验证设计
 
-确认后仅在 Git 忽略的 `tmp/scaffold-copy-validation/` 建立：
+验证仅在 Git 忽略的 `tmp/scaffold-copy-validation/` 建立：
 
 ```text
 tmp/scaffold-copy-validation/
-├── source-manifest/       # source commit 与包含/排除清单
+├── baseline-bba1802.tar   # 固定 tracked baseline 归档
 ├── todo-service/          # 新 identity，保留 Todo
-├── minimal-service/       # 新 identity，尝试完整移除 Todo
-└── evidence/              # 命令与结果摘要，不保存凭据
+└── minimal-service/       # 新 identity，完整移除 Todo
 ```
 
-验证副本不得通过 `replace`、Go workspace 或相对链接返回源工作区。验证结束后临时目录保持忽略，不提交。
+两个副本都没有 `replace`、Go workspace、相对链接、Git remote 或源 module 依赖。验证结束后临时目录保持忽略，不提交；结构化结果见 [R003](research/R003-isolated-copy-validation/report.md)。
 
 ## 9. 决策记录输出
 
-验证完成后在 020 内形成 `ADR-001` 结果，记录：
+验证完成后已在 [ADR-001](decision.md) 固化：
 
 - copy-owned 是唯一产品形态；
 - 全部源码归新项目；
@@ -144,4 +143,4 @@ tmp/scaffold-copy-validation/
 - Todo 默认保留与移除边界；
 - 正式复制指南、release 和迁移公告需要哪些后续变更。
 
-019 的 `API-AUTHORITY-001` 随后直接设计在复制后的完整应用源码中，不需要再判断 contract 属于外部 Runtime 还是 generator 模板。
+019 的 `API-AUTHORITY-001` 随后直接设计在完整应用源码中，不需要再判断 contract 属于外部 Runtime 还是 generator 模板。正式复制指南、release、安全公告模板与 Linux CI 仍需独立变更。
