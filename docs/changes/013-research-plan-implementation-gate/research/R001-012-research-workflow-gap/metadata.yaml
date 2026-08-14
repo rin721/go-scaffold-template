@@ -1,0 +1,35 @@
+schema_version: 1
+id: R001
+title: "012 研究模式与当前任务门禁差距"
+question: "012 的哪些结构化研究机制应成为所有仓库任务的前置门禁，当前流程缺少什么？"
+research_type: governance
+topics: ["research", "planning", "confirmation", "implementation"]
+keywords: ["metadata.yaml", "report.md", "research gate", "docs/changes", "012"]
+applicable_scenarios: ["仓库任务流程", "非文档实现确认", "纯文档治理任务"]
+non_applicable_scenarios: ["Go 运行能力证明", "具体业务架构选择", "外部部署审批"]
+status: active
+summary: "当前流程缺少独立研究产物和通过条件；012 的检索、快照、适用性、时效与替代机制可推广为计划前置门禁。"
+evidence:
+  types: ["official-docs", "local-static-analysis"]
+  primary_sources:
+    - title: "当前 AI Agent 协作规则"
+      locator: "AGENTS.md"
+      snapshot: "fff6484 before 013 documentation change"
+    - title: "003 变更确认流程"
+      locator: "docs/changes/003-change-confirmation-workflow"
+      snapshot: "verified 2026-08-14"
+    - title: "012 结构化研究档案"
+      locator: "docs/changes/012-business-module-architecture/research"
+      snapshot: "R001-R021 verified 2026-08-14"
+researched_at: "2026-08-14"
+verified_at: "2026-08-14"
+validity:
+  mode: snapshot
+  review_after: "2027-02-14"
+  refresh_triggers: ["AGENTS.md 任务状态机变化", "研究档案 schema 变化", "确认门禁被新流程取代"]
+relations:
+  extends: []
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

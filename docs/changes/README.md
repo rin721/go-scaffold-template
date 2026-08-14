@@ -1,6 +1,6 @@
 # 任务级变更记录
 
-每项需要确认的变更使用递增三位序号和语义名称，固定包含 `README.md`、`requirements.md`、`design.md` 和 `tasks.md`。完整确认与实施规则以根 [AGENTS.md](../../AGENTS.md) 为准。
+每项新变更使用递增三位序号和语义名称，固定包含 `README.md`、`research/`、`requirements.md`、`design.md` 和 `tasks.md`。所有任务先通过研究门禁，再形成计划；非纯文档实现必须在计划报告后的独立消息中获得确认。完整规则以根 [AGENTS.md](../../AGENTS.md) 为准。
 
 ## 记录
 
@@ -15,5 +15,6 @@
 - [010 数据库单轨 GORM 与稳定访问边界](010-database-gorm-boundary/README.md)：已完成。
 - [011 Cache、I18n 与 Storage 装配](011-cache-i18n-storage-composition/README.md)：已完成。
 - [012 业务模块架构](012-business-module-architecture/README.md)：底层 CLI/Config/单候选/Supervisor/HTTP/诊断与治理闭环已实施；业务详细设计等待真实用例确认。
+- [013 研究优先任务门禁](013-research-plan-implementation-gate/README.md)：已完成；将 012 的结构化研究方法提升为“研究 -> 计划 -> 实现”的仓库级前置门禁。
 
-下一个任务序号为 `013`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `014`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
