@@ -1,0 +1,14 @@
+* text=auto eol=lf
+
+# Windows 原生命令脚本保留 CRLF；其余源码、配置和文档统一使用 LF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资产不参与行尾规范化。
+*.ico -text
+*.jpg -text
+*.jpeg -text
+*.png -text
+*.webp -text
+*.woff -text
+*.woff2 -text
