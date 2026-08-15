@@ -12,6 +12,8 @@ import (
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
+	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
+	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
@@ -35,6 +37,7 @@ func (a *Application) runService(ctx context.Context) error {
 type serviceRuntime struct {
 	supervisor  *supervisor.Supervisor
 	coordinator *kernel.GenerationCoordinator
+	factory     *applicationGenerationFactory
 }
 
 func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
@@ -42,7 +45,9 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 		config.FileSource(a.config.ConfigPath),
 		config.EnvSource(a.config.EnvironmentPrefix),
 	)
-	bindings, err := kernelcomposition.ConfigurationBindings(authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding())
+	bindingsInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
+	bindingsInput = append(bindingsInput, opsconfig.Bindings()...)
+	bindings, err := kernelcomposition.ConfigurationBindings(bindingsInput...)
 	if err != nil {
 		return nil, fmt.Errorf("compose service configuration bindings: %w", err)
 	}
@@ -50,6 +55,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create application generation factory: %w", err)
 	}
+	factory.build = a.config.Build
 	coordinator, err := kernel.NewGenerationCoordinator(loader, bindings, factory, kernel.Options{Logging: a.config.Logging})
 	if err != nil {
 		return nil, fmt.Errorf("create application generation coordinator: %w", err)
@@ -60,6 +66,9 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create application supervisor: %w", err)
+	}
+	if err := factory.opsRuntime.connect(coordinator, process); err != nil {
+		return nil, fmt.Errorf("connect ops runtime source: %w", err)
 	}
 	if err := process.AddTask("application-generation.monitor", coordinator.Monitor); err != nil {
 		return nil, fmt.Errorf("register application generation monitor: %w", err)
@@ -73,7 +82,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	}); err != nil {
 		return nil, fmt.Errorf("register application config watcher: %w", err)
 	}
-	return &serviceRuntime{supervisor: process, coordinator: coordinator}, nil
+	return &serviceRuntime{supervisor: process, coordinator: coordinator, factory: factory}, nil
 }
 
 func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig httpx.ServerConfig, todoService service.UseCases, authModule auth.Module) (httpx.Router, error) {
@@ -123,6 +132,10 @@ func operationPolicies() ([]authmodel.Policy, error) {
 	if len(policies) == 0 {
 		return nil, fmt.Errorf("OpenAPI operation policy inventory is empty")
 	}
+	policies = append(policies,
+		authmodel.Policy{Operation: opsmodel.OperationDiagnostics, Mode: authmodel.PolicyProtected, Scope: "management:read", Action: "ops.diagnostics.read"},
+		authmodel.Policy{Operation: opsmodel.OperationMetrics, Mode: authmodel.PolicyProtected, Scope: "management:read", Action: "ops.metrics.read"},
+	)
 	return policies, nil
 }
 

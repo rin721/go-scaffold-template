@@ -4,7 +4,7 @@
 
 新增模块必须先按 [应用模块开发指南](../../docs/development/application-module-development.md) 完成真实用例、现有能力、新 Capability、资源 owner、生命周期和当前契约适配性评估，再进入目录与接口设计。
 
-当前已有 Auth、Migration 与 [Todo](todo/README.md) 模块。Auth 拥有认证/授权/审计，Migration 编排显式 status/up，Todo 拥有业务实体、对象授权 port 与 SQL migration set；composition 只连接完成品：
+当前已有 Auth、[Ops](ops/README.md)、Migration 与 [Todo](todo/README.md) 模块。Auth 拥有认证/授权/审计，Ops 拥有 management/observability，Migration 编排显式 status/up，Todo 拥有业务实体、对象授权 port 与 SQL migration set；composition 只连接完成品：
 
 ```text
 model <- service <- repo/binding <- module.go <- internal/composition

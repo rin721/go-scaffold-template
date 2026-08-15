@@ -23,6 +23,7 @@ import (
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
+	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	todoservice "github.com/rin721/go-scaffold-template/internal/module/todo/service"
@@ -62,7 +63,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "todo", "auth", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "todo", "auth", "ops", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
@@ -90,7 +91,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
 	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage"}) ||
-		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"todo", "auth", "http"}) {
+		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"todo", "auth", "ops", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
 	if status := createTodo(t, after.BoundAddress, strings.Repeat("x", 100)); status != http.StatusBadRequest {
@@ -124,12 +125,15 @@ func TestAllConfigurationSectionsCommitOneGeneration(t *testing.T) {
 	updated = strings.Replace(updated, filepath.ToSlash(filepath.Join(directory, "storage")), filepath.ToSlash(filepath.Join(directory, "storage-next")), 1)
 	updated = strings.Replace(updated, "maxHeaderBytes: 1048576", "maxHeaderBytes: 2097152", 1)
 	updated = strings.Replace(updated, "titleMaxRunes: 120", "titleMaxRunes: 80", 1)
+	updated = strings.Replace(updated, "anonymousSubject: generation-a", "anonymousSubject: generation-b", 1)
+	updated = strings.Replace(updated, "maxInFlight: 16", "maxInFlight: 8", 1)
+	updated = strings.Replace(updated, "serviceName: generation-a", "serviceName: generation-b", 1)
 	writeGenerationConfig(t, configPath, updated)
 	result, err := coordinator.Reload(t.Context())
 	if err != nil {
 		t.Fatalf("Reload() error = %v", err)
 	}
-	wantSections := []string{"logger", "database", "cache", "i18n", "storage", "http", "todo"}
+	wantSections := []string{"logger", "database", "cache", "i18n", "storage", "http", "auth", "todo", "management", "observability"}
 	if !result.Applied || result.PreviousGeneration != 1 || result.CurrentGeneration != 2 || fmt.Sprint(result.ChangedSections) != fmt.Sprint(wantSections) {
 		t.Fatalf("Reload() result = %#v", result)
 	}
@@ -505,6 +509,92 @@ func TestServiceRuntimeReloadsInSameProcessAndStopsGracefully(t *testing.T) {
 	}
 }
 
+func TestServiceRuntimeSeparatesBusinessAndManagementSurfaces(t *testing.T) {
+	directory := t.TempDir()
+	configPath := filepath.Join(directory, "config.yaml")
+	databasePath := filepath.Join(directory, "todo.db")
+	writeGenerationConfig(t, configPath, generationConfig(directory, 120, 1<<20, databasePath))
+	prepareTodoSchema(t, databasePath)
+	manager, err := kernellogging.New(logger.Noop())
+	if err != nil {
+		t.Fatal(err)
+	}
+	application, err := New(Config{Name: "go-scaffold-template", Description: "management acceptance", ConfigPath: configPath, EnvironmentPrefix: "GO_SCAFFOLD_OPS_ACCEPTANCE_", Logging: manager})
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := application.newServiceRuntime()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- runtime.supervisor.Run(runCtx) }()
+	select {
+	case <-runtime.supervisor.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("service runtime did not become ready")
+	}
+	current := runtime.factory.currentGeneration()
+	if current == nil {
+		t.Fatal("current generation is nil")
+	}
+	businessAddress := current.BoundAddress()
+	managementAddress := current.managementRoute.BoundAddress().String()
+	if status := listTodos(t, businessAddress); status != http.StatusOK {
+		t.Fatalf("business list status = %d", status)
+	}
+	for _, test := range []struct {
+		address, path string
+		want          int
+	}{
+		{businessAddress, "/readyz", http.StatusNotFound},
+		{managementAddress, "/startupz", http.StatusOK},
+		{managementAddress, "/livez", http.StatusOK},
+		{managementAddress, "/readyz", http.StatusOK},
+		{managementAddress, "/diagnostics", http.StatusOK},
+		{managementAddress, "/build", http.StatusOK},
+		{managementAddress, "/metrics", http.StatusOK},
+		{managementAddress, "/debug/pprof/", http.StatusNotFound},
+	} {
+		response, requestErr := http.Get("http://" + test.address + test.path)
+		if requestErr != nil {
+			t.Fatalf("GET %s error = %v", test.path, requestErr)
+		}
+		response.Body.Close()
+		if response.StatusCode != test.want {
+			t.Fatalf("GET %s status = %d, want %d", test.path, response.StatusCode, test.want)
+		}
+	}
+	diagnosticsResponse, err := http.Get("http://" + managementAddress + "/diagnostics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnosticsPayload, _ := io.ReadAll(diagnosticsResponse.Body)
+	diagnosticsResponse.Body.Close()
+	if strings.Contains(string(diagnosticsPayload), databasePath) || strings.Contains(string(diagnosticsPayload), configPath) {
+		t.Fatalf("diagnostics leaked local paths: %s", diagnosticsPayload)
+	}
+	metricsResponse, err := http.Get("http://" + managementAddress + "/metrics")
+	if err != nil {
+		t.Fatal(err)
+	}
+	metricsPayload, _ := io.ReadAll(metricsResponse.Body)
+	metricsResponse.Body.Close()
+	if !bytes.Contains(metricsPayload, []byte(`operation="listTodos"`)) {
+		t.Fatalf("metrics missing stable operation: %s", metricsPayload)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("service stop error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("service did not stop")
+	}
+}
+
 func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.GenerationCoordinator, *applicationGenerationFactory) {
 	t.Helper()
 	snapshot, err := config.New(config.FileSource(configPath)).Load(t.Context())
@@ -524,7 +614,9 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
-	bindings, err := kernelcomposition.ConfigurationBindings(authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding())
+	bindingInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
+	bindingInput = append(bindingInput, opsconfig.Bindings()...)
+	bindings, err := kernelcomposition.ConfigurationBindings(bindingInput...)
 	if err != nil {
 		t.Fatalf("ConfigurationBindings() error = %v", err)
 	}
@@ -561,9 +653,18 @@ todo:
   titleMaxRunes: %d
   defaultListLimit: 20
   maxListLimit: 100
+auth:
+  mode: development-anonymous
+  anonymousSubject: generation-a
+  anonymousScopes: [management:read, todos:read, todos:write]
 http:
   addr: 127.0.0.1:0
   maxHeaderBytes: %d
+management:
+  addr: 127.0.0.1:0
+  maxInFlight: 16
+observability:
+  serviceName: generation-a
 `, filepath.ToSlash(databasePath), filepath.ToSlash(filepath.Join(directory, "storage")), titleMax, maxHeaderBytes)
 }
 

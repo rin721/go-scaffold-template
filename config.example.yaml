@@ -187,3 +187,30 @@ http:
     allowedOrigins: []
     allowedMethods: [GET, POST, PATCH, OPTIONS]
     allowedHeaders: [Authorization, Content-Type, X-Request-ID]
+
+# management 使用独立 listener；业务 Router 不挂载这些路径。
+management:
+  addr: 127.0.0.1:9090
+  readHeaderTimeout: 2s
+  readTimeout: 3s
+  writeTimeout: 3s
+  idleTimeout: 15s
+  requestTimeout: 2s
+  maxHeaderBytes: 16384
+  maxRequestBodyBytes: 4096
+  maxInFlight: 16
+  # disabled、public 或 protected；diagnostics 始终要求 management:read。
+  metricsAccess: public
+
+observability:
+  serviceName: go-scaffold-template
+  tracing:
+    enabled: false
+    endpoint: ""
+    insecure: false
+    sampleRatio: 0.1
+    queueSize: 2048
+    batchSize: 256
+    batchTimeout: 5s
+    exportTimeout: 3s
+    shutdownTimeout: 5s

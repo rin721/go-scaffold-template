@@ -51,6 +51,8 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		"auth:", "mode: development-anonymous", "migration:", "lockTimeout: 15s",
 		"todo:", "titleMaxRunes: 120", "defaultListLimit: 20", "maxListLimit: 100",
 		"http:", "addr: 127.0.0.1:8080",
+		"management:", "addr: 127.0.0.1:9090", "metricsAccess: public",
+		"observability:", "serviceName: go-scaffold-template", "sampleRatio: 0.1",
 	} {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)

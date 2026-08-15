@@ -6,9 +6,12 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
+	"strings"
 
 	applicationcomposition "github.com/rin721/go-scaffold-template/internal/composition"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	"github.com/rin721/go-scaffold-template/pkg/cli"
 	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
@@ -19,6 +22,13 @@ const (
 	applicationDescription = "Go 后端服务与 CLI 工具基础设施脚手架"
 	defaultConfigPath      = "config.yaml"
 	environmentPrefix      = "APP_"
+)
+
+var (
+	buildVersion = "dev"
+	buildCommit  = "unknown"
+	buildTime    = "unknown"
+	buildDirty   = "true"
 )
 
 func main() {
@@ -85,6 +95,7 @@ func (p process) run(ctx context.Context, args []string) error {
 		Name: applicationName, Description: applicationDescription,
 		ConfigPath: p.configPath, EnvironmentPrefix: p.environmentPrefix,
 		Stdin: p.stdin, Stdout: p.stdout, Stderr: p.stderr, Logging: p.logging,
+		Build: opsmodel.BuildInfo{Version: buildVersion, Commit: buildCommit, BuildTime: buildTime, GoVersion: runtime.Version(), Dirty: strings.EqualFold(buildDirty, "true")},
 	})
 	if err != nil {
 		return fmt.Errorf("compose application: %w", err)

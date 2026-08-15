@@ -460,6 +460,9 @@ func (c *GenerationCoordinator) Watch(ctx context.Context, onReloadError func(er
 			cancel()
 			return <-watchDone
 		case err := <-watchDone:
+			if ctx.Err() != nil {
+				return nil
+			}
 			if err == nil {
 				return fmt.Errorf("application generation watcher stopped unexpectedly")
 			}

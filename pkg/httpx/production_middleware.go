@@ -19,6 +19,7 @@ const headerRequestID = "X-Request-ID"
 
 type requestIDContextKey struct{}
 type operationIDContextKey struct{}
+type traceIDContextKey struct{}
 
 var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
@@ -45,6 +46,26 @@ func OperationIDFromContext(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	value, ok := ctx.Value(operationIDContextKey{}).(string)
+	return value, ok && value != ""
+}
+
+// WithTraceID 允许观测 Adapter 把已经校验的 trace id 注入项目 HTTP 上下文。
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if traceID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, traceIDContextKey{}, traceID)
+}
+
+// TraceIDFromContext 返回用于结构日志关联的 trace id。
+func TraceIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	value, ok := ctx.Value(traceIDContextKey{}).(string)
 	return value, ok && value != ""
 }
 
@@ -103,6 +124,9 @@ func AccessLog(log logger.Logger) Middleware {
 				}
 				if requestID, ok := RequestIDFromContext(ctx.Request.Context()); ok {
 					fields = append(fields, logger.String("request_id", requestID))
+				}
+				if traceID, ok := TraceIDFromContext(ctx.Request.Context()); ok {
+					fields = append(fields, logger.String("trace_id", traceID))
 				}
 				if err != nil {
 					fields = append(fields, logger.Error(err))

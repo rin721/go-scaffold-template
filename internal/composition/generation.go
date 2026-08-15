@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -18,6 +19,10 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/module"
 	"github.com/rin721/go-scaffold-template/internal/module/auth"
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
+	"github.com/rin721/go-scaffold-template/internal/module/ops"
+	prometheusadapter "github.com/rin721/go-scaffold-template/internal/module/ops/adapter/prometheus"
+	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
+	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
@@ -31,8 +36,11 @@ import (
 )
 
 type applicationGenerationFactory struct {
-	logging *kernellogging.Manager
-	hub     *httpx.ListenerHub
+	logging       *kernellogging.Manager
+	hub           *httpx.ListenerHub
+	managementHub *httpx.ListenerHub
+	metrics       *prometheusadapter.Registry
+	opsRuntime    *opsRuntimeSource
 
 	loggerPool   *resourcePool[logger.Logger]
 	databasePool *resourcePool[databaseapp.Access]
@@ -40,8 +48,11 @@ type applicationGenerationFactory struct {
 	i18nPool     *resourcePool[i18n.Translator]
 	storagePool  *resourcePool[storageapp.Access]
 
-	nextID   atomic.Uint64
-	failures chan error
+	nextID    atomic.Uint64
+	failures  chan error
+	currentMu sync.RWMutex
+	current   *applicationGeneration
+	build     opsmodel.BuildInfo
 }
 
 type applicationGeneration struct {
@@ -55,13 +66,18 @@ type applicationGeneration struct {
 	i18n     *resourceHandle[i18n.Translator]
 	storage  *resourceHandle[storageapp.Access]
 
-	module       todo.Module
-	authModule   auth.Module
-	participants []supervisor.Participant
-	route        *httpx.PreparedRoute
-	server       *httpx.Server
-	runDone      chan struct{}
-	runErr       error
+	module            todo.Module
+	authModule        auth.Module
+	opsModule         ops.Module
+	participants      []supervisor.Participant
+	route             *httpx.PreparedRoute
+	server            *httpx.Server
+	runDone           chan struct{}
+	runErr            error
+	managementRoute   *httpx.PreparedRoute
+	managementServer  *httpx.Server
+	managementRunDone chan struct{}
+	managementRunErr  error
 
 	activeRequests      atomic.Int64
 	resourceStats       kernel.GenerationResourceStats
@@ -84,15 +100,26 @@ func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicati
 	if err != nil {
 		return nil, err
 	}
-	return &applicationGenerationFactory{
-		logging: logging, hub: hub,
+	managementHub, err := httpx.NewListenerHub(0)
+	if err != nil {
+		return nil, err
+	}
+	metrics, err := prometheusadapter.New()
+	if err != nil {
+		return nil, err
+	}
+	factory := &applicationGenerationFactory{
+		logging: logging, hub: hub, managementHub: managementHub, metrics: metrics,
+		build:        opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
 		loggerPool:   newResourcePool[logger.Logger]("logger"),
 		databasePool: newResourcePool[databaseapp.Access]("database"),
 		cachePool:    newResourcePool[cacheapp.Access]("cache"),
 		i18nPool:     newResourcePool[i18n.Translator]("i18n"),
 		storagePool:  newResourcePool[storageapp.Access]("storage"),
 		failures:     make(chan error, 8),
-	}, nil
+	}
+	factory.opsRuntime = &opsRuntimeSource{}
+	return factory, nil
 }
 
 func (f *applicationGenerationFactory) Prepare(
@@ -104,7 +131,7 @@ func (f *applicationGenerationFactory) Prepare(
 		return nil, fmt.Errorf("application generation prepare context is nil")
 	}
 	generation := &applicationGeneration{
-		factory: f, id: f.nextID.Add(1), snapshot: snapshot, runDone: make(chan struct{}),
+		factory: f, id: f.nextID.Add(1), snapshot: snapshot, runDone: make(chan struct{}), managementRunDone: make(chan struct{}),
 	}
 	abort := func(cause error) (kernel.PreparedGeneration, error) {
 		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), kernel.DefaultReloadTimeout)
@@ -264,11 +291,28 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.resourceStats.Built = append(generation.resourceStats.Built, "todo")
 
-	if err := module.ValidateContributions(generation.authModule.Contribution, generation.module.Contribution); err != nil {
+	opsConfig, err := opsconfig.Decode(snapshot)
+	if err != nil {
+		return abort(err)
+	}
+	if authConfig.Mode == authconfig.ModeDevelopmentAnonymous && !opsconfig.ManagementIsLoopback(opsConfig.Management.Addr) {
+		return abort(fmt.Errorf("development anonymous auth requires loopback management HTTP"))
+	}
+	generation.opsModule, err = ops.New(ctx, ops.Dependencies{
+		Runtime: generationOpsSource{process: f.opsRuntime, generation: generation}, Build: f.build, Config: opsConfig, Metrics: f.metrics,
+		Access: opsAccessAdapter{auth: generation.authModule}, Operations: opsOperations(),
+	})
+	if err != nil {
+		return abort(err)
+	}
+
+	if err := module.ValidateContributions(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution); err != nil {
 		return abort(fmt.Errorf("validate application module contributions: %w", err))
 	}
 	generation.resourceStats.Built = append(generation.resourceStats.Built, "auth")
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "ops")
 	participants := append(append([]supervisor.Participant(nil), generation.module.Contribution.Participants...), generation.authModule.Contribution.Participants...)
+	participants = append(participants, generation.opsModule.Contribution.Participants...)
 	for _, participant := range participants {
 		if err := participant.Start(ctx); err != nil {
 			return abort(fmt.Errorf("start generation participant %s: %w", participant.Name(), err))
@@ -288,11 +332,12 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	businessHandler := generation.opsModule.HTTPMiddleware(router)
 	generation.route, err = f.hub.Prepare(ctx, httpConfig.Addr)
 	if err != nil {
 		return abort(err)
 	}
-	generation.server, err = httpx.NewServer(&httpConfig, generation.trackRequests(router))
+	generation.server, err = httpx.NewServer(&httpConfig, generation.trackRequests(businessHandler))
 	if err != nil {
 		return abort(err)
 	}
@@ -301,13 +346,34 @@ func (f *applicationGenerationFactory) Prepare(
 		return abort(err)
 	}
 	go generation.runServer()
+	generation.managementRoute, err = f.managementHub.Prepare(ctx, generation.opsModule.Management.Addr)
+	if err != nil {
+		return abort(err)
+	}
+	generation.managementServer, err = httpx.NewServer(&generation.opsModule.Management, generation.opsModule.ManagementHTTP)
+	if err != nil {
+		return abort(err)
+	}
+	if err := generation.managementServer.StartWithListener(ctx, generation.managementRoute.Listener()); err != nil {
+		return abort(err)
+	}
+	go generation.runManagementServer()
 	select {
 	case <-ctx.Done():
 		return abort(ctx.Err())
 	case <-generation.server.Running():
-		return generation, nil
+		select {
+		case <-ctx.Done():
+			return abort(ctx.Err())
+		case <-generation.managementServer.Running():
+			return generation, nil
+		case <-generation.managementRunDone:
+			return abort(fmt.Errorf("candidate management HTTP server exited before ready: %w", generation.managementServerRunError()))
+		}
 	case <-generation.runDone:
 		return abort(fmt.Errorf("candidate HTTP server exited before ready: %w", generation.serverRunError()))
+	case <-generation.managementRunDone:
+		return abort(fmt.Errorf("candidate management HTTP server exited before ready: %w", generation.managementServerRunError()))
 	}
 }
 
@@ -316,6 +382,7 @@ func (f *applicationGenerationFactory) Failures() <-chan error { return f.failur
 func (f *applicationGenerationFactory) Stop(ctx context.Context) error {
 	var joined error
 	joined = errors.Join(joined, f.hub.Stop(ctx))
+	joined = errors.Join(joined, f.managementHub.Stop(ctx))
 	remaining := map[string]int{
 		"logger": f.loggerPool.remaining(), "database": f.databasePool.remaining(),
 		"cache": f.cachePool.remaining(), "i18n": f.i18nPool.remaining(), "storage": f.storagePool.remaining(),
@@ -326,6 +393,26 @@ func (f *applicationGenerationFactory) Stop(ctx context.Context) error {
 		}
 	}
 	return joined
+}
+
+func (f *applicationGenerationFactory) currentGeneration() *applicationGeneration {
+	f.currentMu.RLock()
+	defer f.currentMu.RUnlock()
+	return f.current
+}
+
+func (f *applicationGenerationFactory) setCurrent(generation *applicationGeneration) {
+	f.currentMu.Lock()
+	f.current = generation
+	f.currentMu.Unlock()
+}
+
+func (f *applicationGenerationFactory) clearCurrent(generation *applicationGeneration) {
+	f.currentMu.Lock()
+	if f.current == generation {
+		f.current = nil
+	}
+	f.currentMu.Unlock()
 }
 
 func (g *applicationGeneration) ID() uint64 { return g.id }
@@ -386,10 +473,16 @@ func (g *applicationGeneration) Commit(previous kernel.ActiveGeneration) (kernel
 		}
 	}
 	var previousRoute *httpx.PreparedRoute
+	var previousManagementRoute *httpx.PreparedRoute
 	if previousGeneration != nil {
 		previousRoute = previousGeneration.route
+		previousManagementRoute = previousGeneration.managementRoute
 	}
 	if _, err := g.factory.hub.Commit(g.route, previousRoute); err != nil {
+		g.mu.Unlock()
+		return nil, err
+	}
+	if _, err := g.factory.managementHub.Commit(g.managementRoute, previousManagementRoute); err != nil {
 		g.mu.Unlock()
 		return nil, err
 	}
@@ -401,6 +494,7 @@ func (g *applicationGeneration) Commit(previous kernel.ActiveGeneration) (kernel
 		previousGeneration.current = false
 		previousGeneration.mu.Unlock()
 	}
+	g.factory.setCurrent(g)
 	g.mu.Unlock()
 	return g, nil
 }
@@ -426,12 +520,19 @@ func (g *applicationGeneration) abort(ctx context.Context) error {
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.managementServer != nil {
+		joined = errors.Join(joined, g.managementServer.Stop(ctx))
+		joined = errors.Join(joined, g.waitManagementRun(ctx))
+	}
 	if g.server != nil {
 		joined = errors.Join(joined, g.server.Stop(ctx))
 		joined = errors.Join(joined, g.waitRun(ctx))
 	}
 	if g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Abort(g.route))
+	}
+	if g.managementRoute != nil {
+		joined = errors.Join(joined, g.factory.managementHub.Abort(g.managementRoute))
 	}
 	joined = errors.Join(joined, g.stopParticipants(ctx))
 	joined = errors.Join(joined, releaseGenerationResources(
@@ -474,15 +575,25 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 	var joined error
 	if retireCurrentRoute && wasCurrent {
 		joined = errors.Join(joined, g.factory.hub.Retire(g.route))
+		joined = errors.Join(joined, g.factory.managementHub.Retire(g.managementRoute))
 	}
 	if g.route != nil {
 		joined = errors.Join(joined, g.route.WaitDrained(ctx))
 	}
+	if g.managementRoute != nil {
+		joined = errors.Join(joined, g.managementRoute.WaitDrained(ctx))
+	}
 	if joined == nil && g.server != nil {
 		joined = errors.Join(joined, g.server.Stop(ctx), g.waitRun(ctx))
 	}
+	if joined == nil && g.managementServer != nil {
+		joined = errors.Join(joined, g.managementServer.Stop(ctx), g.waitManagementRun(ctx))
+	}
 	if joined == nil && g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Release(g.route))
+	}
+	if joined == nil && g.managementRoute != nil {
+		joined = errors.Join(joined, g.factory.managementHub.Release(g.managementRoute))
 	}
 	if joined == nil {
 		joined = errors.Join(joined, g.stopParticipants(ctx))
@@ -490,6 +601,7 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 	terminal := false
 	if joined == nil {
 		terminal = true
+		g.factory.clearCurrent(g)
 		if wasCurrent {
 			g.factory.logging.Restore()
 		}
@@ -525,11 +637,18 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 	g.mu.Unlock()
 	var joined error
 	joined = errors.Join(joined, g.factory.hub.Retire(g.route))
+	joined = errors.Join(joined, g.factory.managementHub.Retire(g.managementRoute))
 	if g.server != nil {
 		joined = errors.Join(joined, g.server.ForceStop(ctx), g.waitRun(ctx))
 	}
+	if g.managementServer != nil {
+		joined = errors.Join(joined, g.managementServer.ForceStop(ctx), g.waitManagementRun(ctx))
+	}
 	if joined == nil && g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Release(g.route))
+	}
+	if joined == nil && g.managementRoute != nil {
+		joined = errors.Join(joined, g.factory.managementHub.Release(g.managementRoute))
 	}
 	if joined == nil {
 		joined = errors.Join(joined, g.stopParticipants(ctx))
@@ -537,6 +656,7 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 	terminal := false
 	if joined == nil {
 		terminal = true
+		g.factory.clearCurrent(g)
 		if wasCurrent {
 			g.factory.logging.Restore()
 		}
@@ -565,6 +685,20 @@ func (g *applicationGeneration) runServer() {
 	}
 }
 
+func (g *applicationGeneration) runManagementServer() {
+	err := g.managementServer.Run(context.Background())
+	g.mu.Lock()
+	g.managementRunErr = err
+	close(g.managementRunDone)
+	g.mu.Unlock()
+	if err != nil && !g.stopping.Load() {
+		select {
+		case g.factory.failures <- fmt.Errorf("run management HTTP generation %d: %w", g.id, err):
+		default:
+		}
+	}
+}
+
 func (g *applicationGeneration) waitRun(ctx context.Context) error {
 	select {
 	case <-ctx.Done():
@@ -578,6 +712,21 @@ func (g *applicationGeneration) serverRunError() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.runErr
+}
+
+func (g *applicationGeneration) waitManagementRun(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-g.managementRunDone:
+		return g.managementServerRunError()
+	}
+}
+
+func (g *applicationGeneration) managementServerRunError() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.managementRunErr
 }
 
 func (g *applicationGeneration) stopParticipants(ctx context.Context) error {

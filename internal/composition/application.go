@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"runtime"
 
 	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
@@ -13,6 +14,8 @@ import (
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	migrationcli "github.com/rin721/go-scaffold-template/internal/module/migration/binding/cli"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
+	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
+	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	todocli "github.com/rin721/go-scaffold-template/internal/module/todo/binding/cli"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/pkg/cli"
@@ -28,6 +31,7 @@ type Config struct {
 	Stdout            io.Writer
 	Stderr            io.Writer
 	Logging           *logging.Manager
+	Build             opsmodel.BuildInfo
 }
 
 // Application 按参数选择 Bootstrap/Application CLI 或长期 Service 模式。
@@ -43,6 +47,12 @@ func New(cfg Config) (*Application, error) {
 	}
 	if cfg.Logging == nil {
 		return nil, fmt.Errorf("application logging manager is nil")
+	}
+	if cfg.Build.Version == "" && cfg.Build.Commit == "" && cfg.Build.BuildTime == "" && cfg.Build.GoVersion == "" {
+		cfg.Build = opsmodel.BuildInfo{Version: "dev", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true}
+	}
+	if cfg.Build.Version == "" || cfg.Build.Commit == "" || cfg.Build.BuildTime == "" || cfg.Build.GoVersion == "" {
+		return nil, fmt.Errorf("application build information is incomplete")
 	}
 	return &Application{config: cfg}, nil
 }
@@ -66,6 +76,8 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("compose migration CLI contract: %w", err)
 	}
+	configuration := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
+	configuration = append(configuration, opsconfig.Bindings()...)
 	bootstrap, err := kernelcomposition.ComposeBootstrap(cli.Config{
 		Name:                   a.config.Name,
 		Description:            a.config.Description,
@@ -74,7 +86,7 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		Stderr:                 a.config.Stderr,
 		DisableInteractiveHome: true,
 	}, kernelcomposition.BootstrapOptions{
-		Configuration: []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()},
+		Configuration: configuration,
 		Commands:      []kernelcli.Contract{todoContract, migrationContract},
 	})
 	if err != nil {

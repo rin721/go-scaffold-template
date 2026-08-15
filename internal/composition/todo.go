@@ -12,6 +12,7 @@ import (
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
+	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
@@ -48,6 +49,7 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	// CLI 与 Service 共用正式配置文件，因此两种模式都声明 application-owned 配置节。
 	// 这里只注册 HTTP 配置契约，不会构造 listener、Host 或 watcher。
 	bindings := []config.Binding{kernelcomposition.HTTPConfiguration(), authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
+	bindings = append(bindings, opsconfig.Bindings()...)
 	coordinator, err := kernel.NewCoordinator(runtime, bindings...)
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("create configuration coordinator: %w", err)
