@@ -28,6 +28,7 @@ pkg/httpx/
 ├── defaults.go     # 默认配置和默认值
 ├── errors.go       # StatusError 等错误类型
 ├── middleware.go   # Handler、Middleware、ErrorHandler
+├── metadata.go     # 跨 HTTP 协议边界传递的类型化请求元数据
 ├── request.go      # 客户端 Request
 ├── response.go     # 客户端 Response
 ├── router.go       # Router 和默认错误处理

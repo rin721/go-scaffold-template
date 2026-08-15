@@ -50,17 +50,10 @@ func todoActor(principal authmodel.Principal) todoservice.Actor {
 	return todoservice.Actor{Subject: principal.Subject, Kind: string(principal.Kind), Scopes: scopes}
 }
 
-// todoRequestAccessAdapter 在 Auth request context 与 Todo HTTP port 之间映射。
-type todoRequestAccessAdapter struct{ auth *authservice.Service }
+// todoActorAccessAdapter 只把 Auth request context 映射为 Todo Actor。
+type todoActorAccessAdapter struct{}
 
-func newTodoRequestAccessAdapter(auth *authservice.Service) (httpbinding.RequestAccess, error) {
-	if auth == nil {
-		return nil, fmt.Errorf("auth service for Todo HTTP is nil")
-	}
-	return todoRequestAccessAdapter{auth: auth}, nil
-}
-
-func (a todoRequestAccessAdapter) Actor(ctx context.Context) (todoservice.Actor, bool) {
+func (todoActorAccessAdapter) Actor(ctx context.Context) (todoservice.Actor, bool) {
 	principal, ok := authmodel.PrincipalFromContext(ctx)
 	if !ok {
 		return todoservice.Actor{}, false
@@ -68,19 +61,5 @@ func (a todoRequestAccessAdapter) Actor(ctx context.Context) (todoservice.Actor,
 	return todoActor(principal), true
 }
 
-func (a todoRequestAccessAdapter) EnforceOperation(ctx context.Context, actor todoservice.Actor, operation string) error {
-	principal, ok := authmodel.PrincipalFromContext(ctx)
-	if !ok || principal.Subject != actor.Subject {
-		return todoservice.ErrPermissionDenied
-	}
-	if err := a.auth.EnforceOperation(ctx, principal, operation); err != nil {
-		if errors.Is(err, authmodel.ErrPermissionDenied) || errors.Is(err, authmodel.ErrUnauthenticated) {
-			return todoservice.ErrPermissionDenied
-		}
-		return err
-	}
-	return nil
-}
-
 var _ todoservice.Authorizer = todoAuthorizerAdapter{}
-var _ httpbinding.RequestAccess = todoRequestAccessAdapter{}
+var _ httpbinding.ActorAccess = todoActorAccessAdapter{}

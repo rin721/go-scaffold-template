@@ -3,7 +3,6 @@ package todo
 
 import (
 	"fmt"
-	"net/http"
 
 	"github.com/rin721/go-scaffold-template/internal/module"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
@@ -35,14 +34,14 @@ type Module struct {
 // HTTPDependencies 是 Todo HTTP profile 在 core 依赖之外需要的请求边界能力。
 type HTTPDependencies struct {
 	Dependencies
-	Translator    i18n.Translator
-	RequestAccess httpbinding.RequestAccess
+	Translator i18n.Translator
+	Actors     httpbinding.ActorAccess
 }
 
 // HTTPModule 是 Todo 长期 Service profile 的完整输出。
 type HTTPModule struct {
 	Module
-	Handler http.Handler
+	Operations httpbinding.Operations
 }
 
 // New 纯内存构造 Todo Service、Adapter 与 contribution。
@@ -70,9 +69,9 @@ func NewHTTP(dependencies HTTPDependencies) (HTTPModule, error) {
 	if err != nil {
 		return HTTPModule{}, err
 	}
-	handler, err := httpbinding.New(core.Service, dependencies.Translator, dependencies.RequestAccess)
+	handler, err := httpbinding.NewHandler(core.Service, dependencies.Translator, dependencies.Actors)
 	if err != nil {
 		return HTTPModule{}, fmt.Errorf("compose todo HTTP binding: %w", err)
 	}
-	return HTTPModule{Module: core, Handler: handler}, nil
+	return HTTPModule{Module: core, Operations: handler}, nil
 }

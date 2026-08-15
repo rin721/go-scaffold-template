@@ -103,7 +103,7 @@ PATCH /api/v1/todos/{id}/complete
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/v1/todos -ContentType application/json -Body '{"title":"学习 Go"}'
 ```
 
-[`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成的 strict Chi server interface、DTO 与 route binding 位于 `internal/transport/http/api`；Todo 手写 DTO 映射、错误呈现和请求访问端口收口在 `internal/module/todo/binding/http`。缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、旧 Todo 自建路由 authority 和 route middleware 已删除。
+[`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成的 strict Chi server interface、DTO 与 route binding 位于 `internal/transport/http/api`；Todo 手写 operation Handler、DTO 映射、错误呈现和 Actor 窄端口收口在 `internal/module/todo/binding/http`。模块 Handler 不创建 Router，也不满足整份应用接口；`internal/composition` 静态聚合所有模块 operation，`internal/transport/http` 只绑定一次 OpenAPI validator、strict middleware 与生成路由，最外层 application Router 只安装全局 middleware 并挂载该 API route tree。缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、旧 Todo 自建路由 authority 和 route middleware 已删除。
 
 同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 不解析 bearer token，必须显式传入本机 operator 的 `--subject` 与 `--scopes`，并与 HTTP 共用对象授权和低敏审计：
 
@@ -116,7 +116,7 @@ go run ./cmd/app todo complete --subject <subject> --scopes todos:write --id <to
 
 目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)。业务垂直切片与旧 route middleware 的历史证据仍保存在 [014](docs/changes/014-todo-business-vertical-slice/README.md) 和 [015](docs/changes/015-todo-route-middleware-example/README.md)，当前 HTTP 契约只以 OpenAPI 与生成物为准。
 
-无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/auth/todo/management/observability` 参与代际候选；`migration` 只供显式命令使用。未变化的底层资源按 section digest 引用复用，Todo、Auth、Ops、Handler、Router 和两个 `http.Server` 每代重建。两个 ListenerHub 分别独占业务与 management 物理 listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、migration compatibility 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
+无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/auth/todo/management/observability` 参与代际候选；`migration` 只供显式命令使用。未变化的底层资源按 section digest 引用复用，Todo、Auth、Ops、模块 operation Handler、strict API aggregate、route binding、Router 和两个 `http.Server` 每代重建。两个 ListenerHub 分别独占业务与 management 物理 listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、migration compatibility 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
 
 `internal/module/ops` 在独立 management listener 提供 `/startupz`、`/livez`、`/readyz`、`/metrics`、`/build` 和受 `management:read` 保护的 `/diagnostics`；业务 listener 不暴露这些路径，pprof 不注册。Prometheus registry 由进程稳定持有，OTel provider/exporter 随 generation 构造和有界 flush。GenerationCoordinator 继续提供 attempt、candidate/current/retiring generation、Snapshot digest、changed sections、phase、地址、活动连接/请求、资源 build/reuse、cleanup debt 和脱敏失败类型；当前仍不提供跨进程 retry/force CLI。
 

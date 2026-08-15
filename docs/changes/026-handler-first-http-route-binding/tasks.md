@@ -3,9 +3,9 @@
 ## 1. 门禁状态
 
 - 研究门禁：已通过，证据为 `R001`、`R002`。
-- 当前计划状态：待确认。
-- 当前授权：只完成研究、需求、设计、任务文档和变更索引；未授权源码、配置、生成物或测试实现。
-- 实施前提：用户必须在计划报告之后的后续消息明确确认“确认实施 026 当前方案”。
+- 当前计划状态：已完成。
+- 当前授权：用户已在计划报告后的后续消息中明确要求“实施方案”，授权 `GOV-001` 至 `VER-001` 的本地实施、验证和聚焦提交。
+- 实施前提：已满足；若命中 design 第 14 节触发器则恢复待确认。
 - 外部副作用：不需要服务启动、数据库操作、push、tag、Release 或部署。
 
 ## 2. 任务清单
@@ -15,14 +15,14 @@
 | `RES-001` | M | 无 | 复核当前 Handler、generated binding、Router 与新增模块摩擦 | R001 区分当前正确行为、耦合事实、推断和局限 | 已完成 |
 | `RES-002` | M | `RES-001` | 复核 oapi-codegen v2.8.0 分区能力并比较方案 | R002 使用版本固定的官方主源，说明采用/暂缓/拒绝路径 | 已完成 |
 | `PLAN-001` | M | `RES-001..002` | 冻结 Handler-first 需求、设计、文件影响、风险与验证 | README、requirements、design、tasks 完整且相互引用 | 已完成 |
-| `GOV-001` | M | `PLAN-001`、用户确认 | 建立通用 HTTP binding owner 与完整接口实现门禁 | 正常图通过；模块自建 route binding、transport 导入模块、多个完整实现等反例失败 | 待确认 |
-| `HANDLER-001` | M | `GOV-001` | 把 Todo HTTP 收敛为窄 operation Handler | 不创建 Router/validator，不满足完整应用接口；协议映射测试通过 | 待确认 |
-| `AUTH-001` | M | `HANDLER-001` | 拆分 application operation gate 与 Todo actor access | 401/403、actor、对象授权和未知错误链保持，Auth 类型不泄漏 | 待确认 |
-| `API-001` | M | `HANDLER-001`、`AUTH-001` | 建立 application-owned static strict API aggregate | 唯一满足完整接口；只转发；nil 依赖确定失败 | 待确认 |
-| `ROUTE-001` | L | `API-001` | 建立单一 OpenAPI route binding | 规范、validator、strict middleware、错误边界和 generated routes 只装配一次 | 待确认 |
-| `COMP-001` | M | `ROUTE-001` | 调整 Generation 与 application Router 构造顺序 | 代码可读地呈现 Handler -> aggregate -> routes -> Router -> Server | 待确认 |
-| `DOC-001` | M | `COMP-001` | 同步当前权威文档与 026 证据 | 新模块步骤和职责只保留一套当前说明；025 保持历史事实 | 待确认 |
-| `VER-001` | L | 全部实施任务 | 执行结构、生成、协议、测试、race、vet、build、tidy、文档和 Diff 门禁 | requirements 第 7 节全部有直接证据，无旧轨残留 | 待确认 |
+| `GOV-001` | M | `PLAN-001`、用户确认 | 建立通用 HTTP binding owner 与完整接口实现门禁 | 正常图通过；模块自建 route binding、transport 导入模块、多个完整实现等反例失败 | 已完成 |
+| `HANDLER-001` | M | `GOV-001` | 把 Todo HTTP 收敛为窄 operation Handler | 不创建 Router/validator，不满足完整应用接口；协议映射测试通过 | 已完成 |
+| `AUTH-001` | M | `HANDLER-001` | 拆分 application operation gate 与 Todo actor access | 401/403、actor、对象授权和未知错误链保持，Auth 类型不泄漏 | 已完成 |
+| `API-001` | M | `HANDLER-001`、`AUTH-001` | 建立 application-owned static strict API aggregate | 唯一满足完整接口；只转发；nil 依赖确定失败 | 已完成 |
+| `ROUTE-001` | L | `API-001` | 建立单一 OpenAPI route binding | 规范、validator、strict middleware、错误边界和 generated routes 只装配一次 | 已完成 |
+| `COMP-001` | M | `ROUTE-001` | 调整 Generation 与 application Router 构造顺序 | 代码可读地呈现 Handler -> aggregate -> routes -> Router -> Server | 已完成 |
+| `DOC-001` | M | `COMP-001` | 同步当前权威文档与 026 证据 | 新模块步骤和职责只保留一套当前说明；025 保持历史事实 | 已完成 |
+| `VER-001` | L | 全部实施任务 | 执行结构、生成、协议、测试、race、vet、build、tidy、文档和 Diff 门禁 | requirements 第 7 节全部有直接证据，无旧轨残留 | 已完成 |
 
 ## 3. 实施顺序
 
@@ -40,6 +40,7 @@ GOV-001
 | 轮次 | 日期 | 完成任务 | 证据 | Commit | 剩余风险 |
 | --- | --- | --- | --- | --- | --- |
 | 1 | 2026-08-16 | `RES-001`、`RES-002`、`PLAN-001` | HEAD `a42703f`；初始工作树 clean；当前代码/生成物/025 与 v2.8.0 官方文档复核；定向 Go tests 通过 | 见本轮纯文档提交 | 没有真实第二模块；实施尚未确认；按 tag/spec 分包仅保留为规模触发后的研究路径 |
+| 2 | 2026-08-16 | `GOV-001` 至 `VER-001` | Handler/aggregate/binding/composition 与 401/403/metadata/依赖脱敏测试；真实与 fixture architecture 门禁；生成 clean diff；`gofmt -l .`、`go mod tidy -diff`、`go test ./... -count=1`、`go test -race ./... -count=1`、`go vet ./...`、`go build ./cmd/app`、Markdown 链接和 `git diff --check` 通过 | 见本行所在聚焦提交 | 没有真实第二模块；按 tag/spec 分包仍是规模触发后的研究路径；本任务未授权 push |
 
 ## 5. 确认后的精确验证
 
@@ -66,7 +67,7 @@ git diff --check
 
 ## 6. 提交边界
 
-本轮纯文档计划按仓库例外可以提交。用户确认实施后，源码、测试、权威文档与 026 实施证据应作为一个聚焦 Conventional Commit 提交；不得 push。
+计划阶段已单独形成纯文档提交。用户确认后，源码、测试、权威文档与 026 实施证据作为一个聚焦 Conventional Commit 提交；不得 push。
 
 建议实施提交信息：
 

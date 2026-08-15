@@ -76,7 +76,7 @@ internal/module/<capability>/
 ├── binding/
 │   ├── config/     # 模块配置 owner
 │   ├── model/      # Schema/migration 等完成品
-│   ├── http/       # 模块自有 Handler、DTO 映射与已绑定协议完成品
+│   ├── http/       # 模块自有 operation Handler、DTO 映射与请求窄端口
 │   └── cli/        # 已绑定命令 contract
 └── module.go       # 纯内存局部装配
 ```
@@ -96,9 +96,11 @@ model <- service <- repo
 2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
 3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
 4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换和资源边界。
-5. 实现真实验收需要的 HTTP、CLI 或后台入口；不同入口复用同一 Service，不互相回环。
-6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回完成品 contribution。
-7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、合并 contribution 并建立 Host。
+5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 只返回本模块 operation Handler，不创建 Router 或绑定整份 OpenAPI；不同入口复用同一 Service，不互相回环。
+6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回窄 Handler/Service 与完成品 contribution。
+7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、静态聚合所有 HTTP operation、合并 contribution 并建立 Host；`internal/transport/http` 只把完整 aggregate 绑定一次生成路由。
+
+HTTP 的固定构造顺序是 `module Handler -> application strict aggregate -> generated route binding -> application Router -> Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；新增模块只增加自身 Handler、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router。
 
 ## 5. 资源和运行 owner
 

@@ -2,10 +2,10 @@
 
 ## 状态
 
+- 当前阶段：已完成。
 - 研究门禁：已通过，证据为 `R001`、`R002`。
-- 计划状态：待确认。
-- 实施状态：未开始。
-- 当前授权：仅研究与计划文档；不得修改源码、配置、生成物或测试实现，不得执行 `go generate`。
+- 计划状态：已确认并实施完成。
+- 当前授权：用户已在计划报告后的后续消息中明确要求“实施方案”，授权 `GOV-001` 至 `VER-001` 的本地实施、验证和聚焦提交；不授权 push、tag、Release、部署或外部写入。
 - 外部副作用：本计划不需要启动服务、写数据库、push、tag、Release 或部署。
 
 ## 问题
@@ -28,6 +28,14 @@ Module UseCases
 模块只实现自己拥有的 operation，不创建 Router，不加载 OpenAPI，不返回 `net/http.Handler`。应用 composition 显式聚合各模块 Handler；协议 binding 只执行一次规范校验、strict middleware 和生成 route 安装；最外层 Router 只安装全局 middleware 并挂载一个命名清楚的 API routes Handler。
 
 这次计划不新增第二个虚构业务模块，不改变公开 OpenAPI，也不引入动态注册表、运行时 Resolver 或多份手写路由表。
+
+## 实施结果
+
+- Todo HTTP binding 已收敛为只依赖 UseCases、Translator 与 `ActorAccess` 的窄 operation `Handler`，不再创建 Router、加载 OpenAPI 或满足完整应用接口。
+- `internal/composition` 通过静态 `strictAPIServer` 聚合模块 Operations，并把 operation policy 与 Todo Actor/Object 授权拆成三个边界清楚的职责。
+- `internal/transport/http` 成为 OpenAPI validator、strict middleware 与 generated route binding 的唯一 owner；application Router 只安装全局 middleware 并挂载 `apiRoutes`。
+- architecture test 会拒绝模块 HTTP binding 导入 Chi/validator、调用生成 route binding、多处生产 binding 或模块拥有完整接口断言。
+- OpenAPI、生成代码、依赖和现有 HTTP 行为保持不变；完整验证证据见 [任务账本](tasks.md)。
 
 ## 阅读顺序
 

@@ -87,13 +87,13 @@ func applicationRouter(
 	capabilities kernelcomposition.Capabilities,
 	httpConfig httpx.ServerConfig,
 	authMiddleware func(http.Handler) http.Handler,
-	businessHandler http.Handler,
+	apiRoutes http.Handler,
 ) (httpx.Router, error) {
 	if authMiddleware == nil {
 		return nil, fmt.Errorf("application auth HTTP middleware is nil")
 	}
-	if businessHandler == nil {
-		return nil, fmt.Errorf("application business HTTP handler is nil")
+	if apiRoutes == nil {
+		return nil, fmt.Errorf("application API routes are nil")
 	}
 	trustedProxy, err := httpx.TrustedProxy(httpConfig.TrustedProxyCIDRs)
 	if err != nil {
@@ -120,7 +120,7 @@ func applicationRouter(
 		overload.Middleware(),
 	)
 	router.UseHTTP(authMiddleware)
-	router.Mount("/", businessHandler)
+	router.Mount("/", apiRoutes)
 	return router, nil
 }
 

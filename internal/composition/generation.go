@@ -26,6 +26,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
+	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
 	"github.com/rin721/go-scaffold-template/pkg/clock"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
@@ -255,7 +256,7 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
-	requestAccess, err := newTodoRequestAccessAdapter(generation.authModule.Service)
+	operationGate, err := newOperationGate(generation.authModule.Service)
 	if err != nil {
 		return abort(err)
 	}
@@ -291,7 +292,7 @@ func (f *applicationGenerationFactory) Prepare(
 			Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
 			Config: todoConfig, Authorizer: authorizer,
 		},
-		Translator: generation.i18n.value(), RequestAccess: requestAccess,
+		Translator: generation.i18n.value(), Actors: todoActorAccessAdapter{},
 	})
 	if err != nil {
 		return abort(err)
@@ -331,20 +332,28 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	strictAPI, err := newStrictAPIServer(generation.module.Operations)
+	if err != nil {
+		return abort(err)
+	}
+	apiRoutes, err := httptransport.NewRouteBinding(strictAPI, operationGate)
+	if err != nil {
+		return abort(err)
+	}
 	router, err := applicationRouter(kernelcomposition.Capabilities{
 		Logger: generation.logger.value(), Clock: clock.System(), IDGenerator: idgen.UUID(), Validator: validation.New(),
 		Database: generation.database.value(), Cache: generation.cache.value(),
 		I18n: generation.i18n.value(), Storage: generation.storage.value(),
-	}, httpConfig, generation.authModule.HTTPMiddleware, generation.module.Handler)
+	}, httpConfig, generation.authModule.HTTPMiddleware, apiRoutes)
 	if err != nil {
 		return abort(err)
 	}
-	businessHandler := generation.opsModule.HTTPMiddleware(router)
+	observedAPIRouter := generation.opsModule.HTTPMiddleware(router)
 	generation.route, err = f.hub.Prepare(ctx, httpConfig.Addr)
 	if err != nil {
 		return abort(err)
 	}
-	generation.server, err = httpx.NewServer(&httpConfig, generation.trackRequests(businessHandler))
+	generation.server, err = httpx.NewServer(&httpConfig, generation.trackRequests(observedAPIRouter))
 	if err != nil {
 		return abort(err)
 	}

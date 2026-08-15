@@ -2,21 +2,11 @@
 package httpbinding
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
-	"mime"
 	"net/http"
-	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/openapi3filter"
-	"github.com/go-chi/chi/v5"
-	"github.com/oapi-codegen/nethttp-middleware"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
@@ -25,166 +15,47 @@ import (
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
-const acceptLanguageHeader = "Accept-Language"
-
-type requestLanguageContextKey struct{}
-type requestActorContextKey struct{}
-
-var errUnauthenticated = errors.New("Todo request is unauthenticated")
-
-// RequestAccess 是 Todo HTTP binding 使用的请求身份与 operation 授权窄端口。
-type RequestAccess interface {
+// ActorAccess 是 Todo HTTP Handler 读取当前业务主体的窄端口。
+type ActorAccess interface {
 	Actor(context.Context) (service.Actor, bool)
-	EnforceOperation(context.Context, service.Actor, string) error
 }
 
-// TodoHandler 实现生成的 strict server interface，并只依赖项目 UseCases。
-type TodoHandler struct {
+// Operations 只声明 Todo 模块拥有的 HTTP operation，不扩张为整份应用 API。
+type Operations interface {
+	ListTodos(context.Context, api.ListTodosRequestObject) (api.ListTodosResponseObject, error)
+	CreateTodo(context.Context, api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error)
+	GetTodo(context.Context, api.GetTodoRequestObject) (api.GetTodoResponseObject, error)
+	CompleteTodo(context.Context, api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error)
+}
+
+// Handler 把 Todo 生成 DTO 适配到项目 UseCases，不创建 Router 或绑定路由。
+type Handler struct {
 	service    service.UseCases
 	translator i18n.Translator
+	actors     ActorAccess
 }
 
-// NewTodoHandler 创建无 I/O 副作用的 Todo transport Adapter。
-func NewTodoHandler(todoService service.UseCases, translator i18n.Translator) (*TodoHandler, error) {
+// NewHandler 创建无 I/O 副作用的 Todo operation Handler。
+func NewHandler(todoService service.UseCases, translator i18n.Translator, actors ActorAccess) (*Handler, error) {
 	if todoService == nil {
 		return nil, fmt.Errorf("todo HTTP service is nil")
 	}
 	if translator == nil {
 		return nil, fmt.Errorf("todo HTTP translator is nil")
 	}
-	return &TodoHandler{service: todoService, translator: translator}, nil
-}
-
-// New 组装生成 route、OpenAPI request validator 与统一错误边界。
-func New(todoService service.UseCases, translator i18n.Translator, access RequestAccess) (http.Handler, error) {
-	handler, err := NewTodoHandler(todoService, translator)
-	if err != nil {
-		return nil, err
+	if actors == nil {
+		return nil, fmt.Errorf("Todo HTTP actor access is nil")
 	}
-	if access == nil {
-		return nil, fmt.Errorf("Todo HTTP request access is nil")
-	}
-	specification, err := api.GetSwagger()
-	if err != nil {
-		return nil, fmt.Errorf("load generated OpenAPI authority: %w", err)
-	}
-	specification.Servers = nil
-	router := chi.NewRouter()
-	router.NotFound(func(writer http.ResponseWriter, request *http.Request) {
-		httpx.WriteProblem(writer, request, &httpx.StatusError{
-			StatusCode: http.StatusNotFound, Code: "route_not_found", Message: "route not found",
-		})
-	})
-	router.MethodNotAllowed(func(writer http.ResponseWriter, request *http.Request) {
-		httpx.WriteProblem(writer, request, &httpx.StatusError{
-			StatusCode: http.StatusMethodNotAllowed, Code: "method_not_allowed", Message: "method not allowed",
-		})
-	})
-	router.Use(requireSingleJSONDocument)
-	router.Use(nethttpmiddleware.OapiRequestValidatorWithOptions(specification, &nethttpmiddleware.Options{
-		DoNotValidateServers: true,
-		Options: openapi3filter.Options{
-			AuthenticationFunc: func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
-				if input == nil || input.SecuritySchemeName != "bearerAuth" {
-					return errUnauthenticated
-				}
-				if _, ok := access.Actor(ctx); !ok {
-					return errUnauthenticated
-				}
-				return nil
-			},
-		},
-		ErrorHandlerWithOpts: func(_ context.Context, validationErr error, writer http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
-			status, code, message := requestValidationProblem(specification, request, validationErr, options.StatusCode)
-			httpx.WriteProblem(writer, request, &httpx.StatusError{
-				StatusCode: status, Code: code, Message: message, Err: validationErr,
-			})
-		},
-	}))
-	strict := api.NewStrictHandlerWithOptions(handler, []api.StrictMiddlewareFunc{requestMetadata(access)}, api.StrictHTTPServerOptions{
-		RequestErrorHandlerFunc: func(writer http.ResponseWriter, request *http.Request, err error) {
-			httpx.WriteProblem(writer, request, &httpx.StatusError{
-				StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "invalid JSON request body", Err: err,
-			})
-		},
-		ResponseErrorHandlerFunc: httpx.WriteProblem,
-	})
-	return api.HandlerWithOptions(strict, api.ChiServerOptions{
-		BaseRouter: router,
-		ErrorHandlerFunc: func(writer http.ResponseWriter, request *http.Request, err error) {
-			httpx.WriteProblem(writer, request, &httpx.StatusError{
-				StatusCode: http.StatusBadRequest, Code: "invalid_parameter", Message: "invalid request parameter", Err: err,
-			})
-		},
-	}), nil
-}
-
-func requestValidationProblem(specification *openapi3.T, request *http.Request, err error, suggestedStatus int) (int, string, string) {
-	var maxBytes *http.MaxBytesError
-	if errors.As(err, &maxBytes) {
-		return http.StatusRequestEntityTooLarge, "request_body_too_large", "request body exceeds the configured limit"
-	}
-	var requestErr *openapi3filter.RequestError
-	if errors.As(err, &requestErr) && strings.HasPrefix(requestErr.Reason, "header Content-Type has unexpected value") {
-		return http.StatusUnsupportedMediaType, "unsupported_media_type", "request Content-Type is not supported"
-	}
-	switch suggestedStatus {
-	case http.StatusUnauthorized:
-		return suggestedStatus, "unauthenticated", "valid bearer authentication is required"
-	case http.StatusForbidden:
-		return suggestedStatus, "permission_denied", "the authenticated principal is not authorized"
-	case http.StatusNotFound:
-		if specification != nil && specification.Paths != nil && request != nil {
-			if pathItem := specification.Paths.Find(request.URL.Path); pathItem != nil && pathItem.GetOperation(request.Method) == nil {
-				return http.StatusMethodNotAllowed, "method_not_allowed", "method not allowed"
-			}
-		}
-		return suggestedStatus, "route_not_found", "route not found"
-	case http.StatusMethodNotAllowed:
-		return suggestedStatus, "method_not_allowed", "method not allowed"
-	default:
-		return http.StatusBadRequest, "invalid_request", "request does not match the OpenAPI contract"
-	}
-}
-
-// requireSingleJSONDocument 拒绝首个 JSON 值后的尾随内容，避免生成解码器只消费首值。
-func requireSingleJSONDocument(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		if request.Body == nil || request.Body == http.NoBody {
-			next.ServeHTTP(writer, request)
-			return
-		}
-		mediaType, _, err := mime.ParseMediaType(request.Header.Get("Content-Type"))
-		if err != nil || mediaType != "application/json" {
-			next.ServeHTTP(writer, request)
-			return
-		}
-		payload, err := io.ReadAll(request.Body)
-		if err != nil {
-			httpx.WriteProblem(writer, request, &httpx.StatusError{
-				StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "invalid JSON request body", Err: err,
-			})
-			return
-		}
-		request.Body = io.NopCloser(bytes.NewReader(payload))
-		decoder := json.NewDecoder(bytes.NewReader(payload))
-		var value any
-		if err := decoder.Decode(&value); err == nil {
-			var trailing any
-			if trailingErr := decoder.Decode(&trailing); !errors.Is(trailingErr, io.EOF) {
-				httpx.WriteProblem(writer, request, &httpx.StatusError{
-					StatusCode: http.StatusBadRequest, Code: "invalid_request", Message: "request must contain one JSON document", Err: trailingErr,
-				})
-				return
-			}
-		}
-		next.ServeHTTP(writer, request)
-	})
+	return &Handler{service: todoService, translator: translator, actors: actors}, nil
 }
 
 // ListTodos 把生成 query DTO 转换为稳定用例查询。
-func (h *TodoHandler) ListTodos(ctx context.Context, request api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
-	query := service.ListQuery{Actor: actorFromContext(ctx)}
+func (h *Handler) ListTodos(ctx context.Context, request api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
+	actor, err := h.actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	query := service.ListQuery{Actor: actor}
 	if request.Params.Status != nil {
 		query.Status = string(*request.Params.Status)
 	}
@@ -208,11 +79,15 @@ func (h *TodoHandler) ListTodos(ctx context.Context, request api.ListTodosReques
 }
 
 // CreateTodo 把生成 request body 转换为稳定用例命令。
-func (h *TodoHandler) CreateTodo(ctx context.Context, request api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
+func (h *Handler) CreateTodo(ctx context.Context, request api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
 	if request.Body == nil {
 		return nil, &httpx.StatusError{StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "request body is required"}
 	}
-	created, err := h.service.Create(ctx, service.CreateCommand{Actor: actorFromContext(ctx), Title: request.Body.Title})
+	actor, err := h.actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	created, err := h.service.Create(ctx, service.CreateCommand{Actor: actor, Title: request.Body.Title})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -220,8 +95,12 @@ func (h *TodoHandler) CreateTodo(ctx context.Context, request api.CreateTodoRequ
 }
 
 // GetTodo 把生成 path DTO 转换为稳定用例查询。
-func (h *TodoHandler) GetTodo(ctx context.Context, request api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
-	todo, err := h.service.Get(ctx, service.GetQuery{Actor: actorFromContext(ctx), ID: request.Id})
+func (h *Handler) GetTodo(ctx context.Context, request api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
+	actor, err := h.actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	todo, err := h.service.Get(ctx, service.GetQuery{Actor: actor, ID: request.Id})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -229,8 +108,12 @@ func (h *TodoHandler) GetTodo(ctx context.Context, request api.GetTodoRequestObj
 }
 
 // CompleteTodo 把生成 path DTO 转换为稳定用例命令。
-func (h *TodoHandler) CompleteTodo(ctx context.Context, request api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
-	todo, err := h.service.Complete(ctx, service.CompleteCommand{Actor: actorFromContext(ctx), ID: request.Id})
+func (h *Handler) CompleteTodo(ctx context.Context, request api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
+	actor, err := h.actor(ctx)
+	if err != nil {
+		return nil, err
+	}
+	todo, err := h.service.Complete(ctx, service.CompleteCommand{Actor: actor, ID: request.Id})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -249,17 +132,24 @@ func todoResponse(todo model.Todo) api.Todo {
 	return response
 }
 
-func actorFromContext(ctx context.Context) service.Actor {
-	actor, _ := ctx.Value(requestActorContextKey{}).(service.Actor)
-	return actor
+func (h *Handler) actor(ctx context.Context) (service.Actor, error) {
+	actor, ok := h.actors.Actor(ctx)
+	if !ok {
+		return service.Actor{}, &httpx.StatusError{
+			StatusCode: http.StatusUnauthorized,
+			Code:       "unauthenticated",
+			Message:    "valid bearer authentication is required",
+		}
+	}
+	return actor, nil
 }
 
-func (h *TodoHandler) present(ctx context.Context, err error) error {
+func (h *Handler) present(ctx context.Context, err error) error {
 	status, reason, message := errorContract(fault.CodeOf(err))
 	if status == 0 {
 		return err
 	}
-	language, _ := ctx.Value(requestLanguageContextKey{}).(string)
+	language := httpx.RequestLanguageFromContext(ctx)
 	translated, translateErr := h.translator.Translate(language, i18n.Text(
 		"todo.error."+reason,
 		i18n.WithDefault(message),
@@ -294,34 +184,4 @@ func errorContract(code fault.Code) (int, string, string) {
 	}
 }
 
-func requestMetadata(access RequestAccess) api.StrictMiddlewareFunc {
-	return func(next api.StrictHandlerFunc, strictName string) api.StrictHandlerFunc {
-		return func(ctx context.Context, writer http.ResponseWriter, request *http.Request, input any) (any, error) {
-			operation, ok := api.OperationForStrictName(strictName)
-			if !ok {
-				return nil, fmt.Errorf("strict operation %q is absent from generated inventory", strictName)
-			}
-			ctx = httpx.WithOperationID(ctx, string(operation.ID))
-			ctx = context.WithValue(ctx, requestLanguageContextKey{}, request.Header.Get(acceptLanguageHeader))
-			actor, authenticated := access.Actor(ctx)
-			if !authenticated {
-				return nil, &httpx.StatusError{
-					StatusCode: http.StatusUnauthorized, Code: "unauthenticated", Message: "valid bearer authentication is required", Err: errUnauthenticated,
-				}
-			}
-			if err := access.EnforceOperation(ctx, actor, string(operation.ID)); err != nil {
-				if errors.Is(err, service.ErrPermissionDenied) {
-					return nil, &httpx.StatusError{
-						StatusCode: http.StatusForbidden, Code: "permission_denied", Message: "the authenticated principal is not authorized", Err: err,
-					}
-				}
-				return nil, err
-			}
-			ctx = context.WithValue(ctx, requestActorContextKey{}, actor)
-			request = request.WithContext(ctx)
-			return next(ctx, writer, request, input)
-		}
-	}
-}
-
-var _ api.StrictServerInterface = (*TodoHandler)(nil)
+var _ Operations = (*Handler)(nil)

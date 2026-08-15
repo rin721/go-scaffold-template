@@ -1,190 +1,131 @@
 package httpbinding
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
+	"github.com/rin721/go-scaffold-template/pkg/fault"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
-func TestTodoHTTPContractUsesGeneratedRoutesAndOperationIdentity(t *testing.T) {
+func TestHandlerMapsGeneratedDTOToTodoUseCases(t *testing.T) {
 	useCases := &stubUseCases{}
-	handler := newTodoContractHandler(t, useCases)
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/todos", strings.NewReader(`{"title":"学习 OpenAPI"}`))
-	request.Header.Set("Content-Type", "application/json")
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, request)
-
-	if recorder.Code != http.StatusCreated || recorder.Header().Get("Content-Type") != "application/json" {
-		t.Fatalf("create response = status %d headers %#v body %s", recorder.Code, recorder.Header(), recorder.Body.String())
+	handler := newHandler(t, useCases, actorAccessStub{authenticated: true})
+	ctx := httpx.WithOperationID(t.Context(), "createTodo")
+	response, err := handler.CreateTodo(ctx, api.CreateTodoRequestObject{
+		Body: &api.CreateTodoJSONRequestBody{Title: "学习 OpenAPI"},
+	})
+	if err != nil {
+		t.Fatalf("CreateTodo() error = %v", err)
 	}
-	if useCases.operationID != "createTodo" {
-		t.Fatalf("operation id = %q", useCases.operationID)
+	created, ok := response.(api.CreateTodo201JSONResponse)
+	if !ok {
+		t.Fatalf("CreateTodo() response = %T", response)
 	}
-	var response struct {
-		ID     string `json:"id"`
-		Status string `json:"status"`
+	if created.Id != "00000000-0000-0000-0000-000000000001" || created.Status != api.Pending {
+		t.Fatalf("CreateTodo() response = %#v", created)
 	}
-	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
-		t.Fatalf("decode create response: %v", err)
-	}
-	if response.ID != "00000000-0000-0000-0000-000000000001" || response.Status != "pending" {
-		t.Fatalf("create response = %#v", response)
+	if useCases.operationID != "createTodo" || useCases.actor.Subject != "http-test" {
+		t.Fatalf("use case metadata = operation %q actor %#v", useCases.operationID, useCases.actor)
 	}
 }
 
-func TestTodoHTTPContractRejectsInvalidRequestsAsProblem(t *testing.T) {
-	handler := newTodoContractHandler(t, &stubUseCases{})
-	tests := []struct {
-		name        string
-		method      string
-		path        string
-		contentType string
-		body        string
-		status      int
-		code        string
-	}{
-		{name: "missing content type", method: http.MethodPost, path: "/api/v1/todos", body: `{"title":"x"}`, status: http.StatusUnsupportedMediaType, code: "unsupported_media_type"},
-		{name: "unknown field", method: http.MethodPost, path: "/api/v1/todos", contentType: "application/json", body: `{"title":"x","private":"secret"}`, status: http.StatusBadRequest, code: "invalid_request"},
-		{name: "trailing token", method: http.MethodPost, path: "/api/v1/todos", contentType: "application/json", body: `{"title":"x"}{}`, status: http.StatusBadRequest, code: "invalid_request"},
-		{name: "invalid status", method: http.MethodGet, path: "/api/v1/todos?status=unknown", status: http.StatusBadRequest, code: "invalid_request"},
-		{name: "not found", method: http.MethodGet, path: "/missing", status: http.StatusNotFound, code: "route_not_found"},
-		{name: "method not allowed", method: http.MethodDelete, path: "/api/v1/todos", status: http.StatusMethodNotAllowed, code: "method_not_allowed"},
-		{name: "head not declared", method: http.MethodHead, path: "/api/v1/todos", status: http.StatusMethodNotAllowed, code: "method_not_allowed"},
+func TestHandlerUsesTypedRequestLanguageForProblemPresentation(t *testing.T) {
+	translator := &translatorStub{}
+	handler, err := NewHandler(&stubUseCases{err: fault.New(fault.CodeNotFound, "missing")}, translator, actorAccessStub{authenticated: true})
+	if err != nil {
+		t.Fatalf("NewHandler() error = %v", err)
 	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(test.method, test.path, strings.NewReader(test.body))
-			if test.contentType != "" {
-				request.Header.Set("Content-Type", test.contentType)
-			}
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, request)
-			problem := decodeProblem(t, recorder)
-			if recorder.Code != test.status || problem.Status != test.status || problem.Code != test.code ||
-				recorder.Header().Get("Content-Type") != "application/problem+json" {
-				t.Fatalf("response = status %d problem %#v headers %#v", recorder.Code, problem, recorder.Header())
-			}
-		})
+	ctx := httpx.WithRequestLanguage(t.Context(), "zh-CN")
+	_, err = handler.GetTodo(ctx, api.GetTodoRequestObject{Id: "missing"})
+	var statusError *httpx.StatusError
+	if !errors.As(err, &statusError) {
+		t.Fatalf("GetTodo() error = %T %v", err, err)
+	}
+	if statusError.StatusCode != http.StatusNotFound || statusError.Code != "todo_not_found" || translator.language != "zh-CN" {
+		t.Fatalf("problem = %#v language = %q", statusError, translator.language)
 	}
 }
 
-func TestTodoHTTPContractRedactsUnexpectedUseCaseError(t *testing.T) {
-	handler := newTodoContractHandler(t, &stubUseCases{err: errors.New("dsn=password private SQL")})
-	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/todos", nil))
-	problem := decodeProblem(t, recorder)
-	if recorder.Code != http.StatusInternalServerError || problem.Code != "internal_server_error" || problem.Detail != "" {
-		t.Fatalf("problem = %#v", problem)
-	}
-	if bytes.Contains(recorder.Body.Bytes(), []byte("password")) || bytes.Contains(recorder.Body.Bytes(), []byte("SQL")) {
-		t.Fatalf("private error leaked: %s", recorder.Body.String())
+func TestHandlerFailsClosedWithoutActor(t *testing.T) {
+	handler := newHandler(t, &stubUseCases{}, actorAccessStub{})
+	_, err := handler.ListTodos(t.Context(), api.ListTodosRequestObject{})
+	var statusError *httpx.StatusError
+	if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusUnauthorized || statusError.Code != "unauthenticated" {
+		t.Fatalf("ListTodos() error = %T %v", err, err)
 	}
 }
 
-func TestTodoHTTPContractEnforcesRequestAccess(t *testing.T) {
-	tests := []struct {
-		name   string
-		access RequestAccess
-		status int
-		code   string
-	}{
-		{name: "unauthenticated", access: requestAccessStub{}, status: http.StatusUnauthorized, code: "unauthenticated"},
-		{name: "permission denied", access: requestAccessStub{authenticated: true, err: service.ErrPermissionDenied}, status: http.StatusForbidden, code: "permission_denied"},
-		{name: "dependency failure", access: requestAccessStub{authenticated: true, err: errors.New("private auth dependency")}, status: http.StatusInternalServerError, code: "internal_server_error"},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			handler := newTodoContractHandlerWithAccess(t, &stubUseCases{}, test.access)
-			recorder := httptest.NewRecorder()
-			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/todos", nil))
-			problem := decodeProblem(t, recorder)
-			if recorder.Code != test.status || problem.Code != test.code {
-				t.Fatalf("response = status %d problem %#v", recorder.Code, problem)
-			}
-			if strings.Contains(recorder.Body.String(), "private auth dependency") {
-				t.Fatalf("private access error leaked: %s", recorder.Body.String())
-			}
-		})
-	}
-}
-
-func TestTodoHTTPContractRejectsNilRequestAccess(t *testing.T) {
+func TestNewHandlerRejectsIncompleteDependencies(t *testing.T) {
 	translator, err := i18n.New(nil)
 	if err != nil {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
-	if _, err := New(&stubUseCases{}, translator, nil); err == nil {
-		t.Fatal("New() error = nil")
+	for _, test := range []struct {
+		name       string
+		useCases   service.UseCases
+		translator i18n.Translator
+		actors     ActorAccess
+	}{
+		{name: "service", translator: translator, actors: actorAccessStub{authenticated: true}},
+		{name: "translator", useCases: &stubUseCases{}, actors: actorAccessStub{authenticated: true}},
+		{name: "actors", useCases: &stubUseCases{}, translator: translator},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := NewHandler(test.useCases, test.translator, test.actors); err == nil {
+				t.Fatal("NewHandler() error = nil")
+			}
+		})
 	}
 }
 
-func newTodoContractHandler(t *testing.T, useCases service.UseCases) http.Handler {
-	return newTodoContractHandlerWithAccess(t, useCases, allowRequestAccess{})
-}
-
-func newTodoContractHandlerWithAccess(t *testing.T, useCases service.UseCases, access RequestAccess) http.Handler {
+func newHandler(t *testing.T, useCases service.UseCases, actors ActorAccess) *Handler {
 	t.Helper()
 	translator, err := i18n.New(nil)
 	if err != nil {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
-	handler, err := New(useCases, translator, access)
+	handler, err := NewHandler(useCases, translator, actors)
 	if err != nil {
-		t.Fatalf("New() error = %v", err)
+		t.Fatalf("NewHandler() error = %v", err)
 	}
 	return handler
 }
 
-type allowRequestAccess struct{}
+type actorAccessStub struct{ authenticated bool }
 
-func (allowRequestAccess) Actor(context.Context) (service.Actor, bool) {
-	return service.Actor{Subject: "http-test", Kind: "service", Scopes: []string{"todos:read", "todos:write"}}, true
+func (s actorAccessStub) Actor(context.Context) (service.Actor, bool) {
+	return service.Actor{Subject: "http-test", Kind: "service", Scopes: []string{"todos:read", "todos:write"}}, s.authenticated
 }
 
-func (allowRequestAccess) EnforceOperation(context.Context, service.Actor, string) error {
-	return nil
+type translatorStub struct{ language string }
+
+func (s *translatorStub) Translate(language string, message i18n.Message) (string, error) {
+	s.language = language
+	return message.DefaultMessage, nil
 }
 
-type requestAccessStub struct {
-	authenticated bool
-	err           error
-}
-
-func (s requestAccessStub) Actor(context.Context) (service.Actor, bool) {
-	return service.Actor{Subject: "http-test", Kind: "service", Scopes: []string{"todos:read"}}, s.authenticated
-}
-
-func (s requestAccessStub) EnforceOperation(context.Context, service.Actor, string) error {
-	return s.err
-}
-
-func decodeProblem(t *testing.T, recorder *httptest.ResponseRecorder) httpx.Problem {
-	t.Helper()
-	var problem httpx.Problem
-	if err := json.Unmarshal(recorder.Body.Bytes(), &problem); err != nil {
-		t.Fatalf("decode Problem from %q: %v", recorder.Body.String(), err)
-	}
-	return problem
+func (s *translatorStub) MustTranslate(language string, message i18n.Message) string {
+	translated, _ := s.Translate(language, message)
+	return translated
 }
 
 type stubUseCases struct {
 	err         error
 	operationID string
+	actor       service.Actor
 }
 
 func (s *stubUseCases) Create(ctx context.Context, command service.CreateCommand) (model.Todo, error) {
 	s.operationID, _ = httpx.OperationIDFromContext(ctx)
+	s.actor = command.Actor
 	if s.err != nil {
 		return model.Todo{}, s.err
 	}
@@ -210,4 +151,5 @@ func (s *stubUseCases) Complete(context.Context, service.CompleteCommand) (model
 	return model.Todo{}, s.err
 }
 
+var _ Operations = (*Handler)(nil)
 var _ service.UseCases = (*stubUseCases)(nil)
