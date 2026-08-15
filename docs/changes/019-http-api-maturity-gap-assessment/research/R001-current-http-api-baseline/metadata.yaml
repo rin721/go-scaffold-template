@@ -10,7 +10,7 @@ frameworks: ["net/http", "chi"]
 technologies: ["Kernel", "Supervisor", "GORM", "GitHub Actions"]
 applicable_scenarios: ["019 HTTP API 成熟度评估", "后续能力路线排序", "新 HTTP 服务基线设计"]
 non_applicable_scenarios: ["证明缺失能力已经实现", "直接选择认证或观测厂商", "授权源码实施"]
-status: active
+status: superseded
 summary: "项目已有可靠进程与资源底座，但 Route/API 契约、身份策略、管理面、遥测、生产迁移、交付和脚手架升级仍未形成统一设计。"
 evidence:
   types: ["source-code", "tests", "current-documentation", "repository-layout", "local-validation"]
@@ -37,5 +37,5 @@ relations:
   extends: ["012-R021", "014-R001", "015-R001", "017-R001"]
   related: ["019-R002"]
   supersedes: ["018-R001"]
-  superseded_by: []
+  superseded_by: ["022-R001"]
 report: report.md
