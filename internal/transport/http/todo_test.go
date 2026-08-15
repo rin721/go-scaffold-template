@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
@@ -98,11 +99,26 @@ func newTodoContractHandler(t *testing.T, useCases service.UseCases) http.Handle
 	if err != nil {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
-	handler, err := NewTodoHTTPHandler(useCases, translator)
+	handler, err := NewTodoHTTPHandler(useCases, translator, allowOperationAuthorizer{})
 	if err != nil {
 		t.Fatalf("NewTodoHTTPHandler() error = %v", err)
 	}
-	return handler
+	now := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
+	principal, err := authmodel.NewPrincipal(
+		"http-test", authmodel.ActorService, []authmodel.Scope{"todos:read", "todos:write"}, now, now,
+	)
+	if err != nil {
+		t.Fatalf("NewPrincipal() error = %v", err)
+	}
+	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		handler.ServeHTTP(writer, request.WithContext(authmodel.WithPrincipal(request.Context(), principal)))
+	})
+}
+
+type allowOperationAuthorizer struct{}
+
+func (allowOperationAuthorizer) EnforceOperation(context.Context, authmodel.Principal, string) error {
+	return nil
 }
 
 func decodeProblem(t *testing.T, recorder *httptest.ResponseRecorder) httpx.Problem {

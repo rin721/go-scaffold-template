@@ -48,9 +48,9 @@ func (c *Contract) createCommand() cli.CommandSpec {
 	return cli.CommandSpec{
 		Name: "create", Description: "创建 Todo", Mode: cli.CommandModeApplication,
 		SideEffect: cli.SideEffectExternalWrite, Positional: cli.PositionalNone,
-		Flags: []cli.FlagSpec{{Name: "title", Shorthand: "t", Type: cli.FlagTypeString, Required: true, Description: "Todo 标题"}},
+		Flags: append(actorFlags(), cli.FlagSpec{Name: "title", Shorthand: "t", Type: cli.FlagTypeString, Required: true, Description: "Todo 标题"}),
 		Run: func(ctx *cli.Context) error {
-			created, err := c.executor.Create(ctx.Context, service.CreateCommand{Title: ctx.GetString("title")})
+			created, err := c.executor.Create(ctx.Context, service.CreateCommand{Actor: actorFromCLI(ctx), Title: ctx.GetString("title")})
 			return writeTodo(ctx, created, err)
 		},
 	}
@@ -59,10 +59,10 @@ func (c *Contract) createCommand() cli.CommandSpec {
 func (c *Contract) getCommand() cli.CommandSpec {
 	return cli.CommandSpec{
 		Name: "get", Description: "查询 Todo", Mode: cli.CommandModeApplication,
-		SideEffect: cli.SideEffectExternalWrite, Positional: cli.PositionalNone,
-		Flags: []cli.FlagSpec{{Name: "id", Type: cli.FlagTypeString, Required: true, Description: "Todo ID"}},
+		SideEffect: cli.SideEffectNone, Positional: cli.PositionalNone,
+		Flags: append(actorFlags(), cli.FlagSpec{Name: "id", Type: cli.FlagTypeString, Required: true, Description: "Todo ID"}),
 		Run: func(ctx *cli.Context) error {
-			found, err := c.executor.Get(ctx.Context, service.GetQuery{ID: ctx.GetString("id")})
+			found, err := c.executor.Get(ctx.Context, service.GetQuery{Actor: actorFromCLI(ctx), ID: ctx.GetString("id")})
 			return writeTodo(ctx, found, err)
 		},
 	}
@@ -71,15 +71,15 @@ func (c *Contract) getCommand() cli.CommandSpec {
 func (c *Contract) listCommand() cli.CommandSpec {
 	return cli.CommandSpec{
 		Name: "list", Description: "列出 Todo", Mode: cli.CommandModeApplication,
-		SideEffect: cli.SideEffectExternalWrite, Positional: cli.PositionalNone,
-		Flags: []cli.FlagSpec{
+		SideEffect: cli.SideEffectNone, Positional: cli.PositionalNone,
+		Flags: append(actorFlags(), []cli.FlagSpec{
 			{Name: "status", Type: cli.FlagTypeString, Description: "pending 或 completed"},
 			{Name: "offset", Type: cli.FlagTypeInt, Default: 0, Description: "分页偏移"},
 			{Name: "limit", Type: cli.FlagTypeInt, Default: 0, Description: "分页数量；0 使用配置默认值"},
-		},
+		}...),
 		Run: func(ctx *cli.Context) error {
 			result, err := c.executor.List(ctx.Context, service.ListQuery{
-				Status: ctx.GetString("status"), Offset: ctx.GetInt("offset"), Limit: ctx.GetInt("limit"),
+				Actor: actorFromCLI(ctx), Status: ctx.GetString("status"), Offset: ctx.GetInt("offset"), Limit: ctx.GetInt("limit"),
 			})
 			if err != nil {
 				return commandError(ctx, err)
@@ -93,12 +93,23 @@ func (c *Contract) completeCommand() cli.CommandSpec {
 	return cli.CommandSpec{
 		Name: "complete", Description: "完成 Todo", Mode: cli.CommandModeApplication,
 		SideEffect: cli.SideEffectExternalWrite, Positional: cli.PositionalNone,
-		Flags: []cli.FlagSpec{{Name: "id", Type: cli.FlagTypeString, Required: true, Description: "Todo ID"}},
+		Flags: append(actorFlags(), cli.FlagSpec{Name: "id", Type: cli.FlagTypeString, Required: true, Description: "Todo ID"}),
 		Run: func(ctx *cli.Context) error {
-			completed, err := c.executor.Complete(ctx.Context, service.CompleteCommand{ID: ctx.GetString("id")})
+			completed, err := c.executor.Complete(ctx.Context, service.CompleteCommand{Actor: actorFromCLI(ctx), ID: ctx.GetString("id")})
 			return writeTodo(ctx, completed, err)
 		},
 	}
+}
+
+func actorFlags() []cli.FlagSpec {
+	return []cli.FlagSpec{
+		{Name: "subject", Type: cli.FlagTypeString, Required: true, Description: "本机 operator subject"},
+		{Name: "scopes", Type: cli.FlagTypeStringSlice, Required: true, Description: "本机 operator scopes"},
+	}
+}
+
+func actorFromCLI(ctx *cli.Context) service.Actor {
+	return service.Actor{Subject: ctx.GetString("subject"), Kind: "cli", Scopes: ctx.GetStringSlice("scopes")}
 }
 
 type todoView struct {

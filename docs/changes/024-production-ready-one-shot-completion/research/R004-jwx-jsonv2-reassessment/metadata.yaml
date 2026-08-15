@@ -1,0 +1,44 @@
+schema_version: 1
+id: R004
+title: "jwx v4 与 jsonv2 生产基线复核"
+question: "jwx v4 强制 GOEXPERIMENT=jsonv2 后，024 应继续采用实验工具链还是改用无实验要求的稳定主版本？"
+research_type: external-primary-and-current-fit
+topics: ["JWT/JWKS", "Go experiment", "production dependency", "build portability"]
+keywords: ["jwx v4.2.0", "jwx v3.2.0", "GOEXPERIMENT=jsonv2", "Go 1.26.5"]
+languages: ["Go"]
+frameworks: []
+technologies: ["JWT", "JWKS", "encoding/json/v2"]
+applicable_scenarios: ["024 C4 security adapter", "024 CI/container/release", "copy-owned template"]
+non_applicable_scenarios: ["browser session", "opaque token", "mTLS"]
+status: active
+summary: "jwx v4.2.0 官方源码除 Go 1.26 外还强制每次构建设置实验性 GOEXPERIMENT=jsonv2，当前安全策略把 v4 标为 preview、v3 标为受支持；用户已确认使用 jwx v3.2.0，保留 JWT/JWKS 语义并避免把实验开关传播到所有消费者。"
+evidence:
+  types: ["official-source", "official-module-metadata", "local-toolchain-verification"]
+  primary_sources:
+    - title: "lestrrat-go jwx v4 official requirements"
+      locator: "https://github.com/lestrrat-go/jwx/blob/v4.2.0/jwx.go"
+      snapshot: "v4.2.0 requires Go 1.26+ and GOEXPERIMENT=jsonv2 for build, test, run and generate, verified 2026-08-15"
+    - title: "lestrrat-go jwx v4 official repository"
+      locator: "https://github.com/lestrrat-go/jwx"
+      snapshot: "v4 README lists Go 1.26 and GOEXPERIMENT=jsonv2 requirements, verified 2026-08-15"
+    - title: "jwx v3.2.0 module metadata"
+      locator: "https://proxy.golang.org/github.com/lestrrat-go/jwx/v3/@v/v3.2.0.mod"
+      snapshot: "v3.2.0 requires Go 1.25 and has no GOEXPERIMENT/jsonv2 requirement, verified 2026-08-15"
+    - title: "lestrrat-go jwx current security policy"
+      locator: "https://raw.githubusercontent.com/lestrrat-go/jwx/develop/v4/SECURITY.md"
+      snapshot: "v4 is marked preview and v3 is marked supported, verified 2026-08-15"
+    - title: "jwx v3 JWKS cache API"
+      locator: "https://pkg.go.dev/github.com/lestrrat-go/jwx/v3/jwk"
+      snapshot: "v3 provides lifecycle-owned Cache Register/Ready/Refresh/Shutdown, fetch size and HTTP client controls, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: reviewed-primary-sources-and-local-module
+  review_after: "2026-09-15"
+  refresh_triggers: ["jsonv2 becomes non-experimental", "jwx v4 removes GOEXPERIMENT requirement", "jwx v3 security/support status changes"]
+relations:
+  extends: ["024-R002"]
+  related: ["024-R003"]
+  supersedes: ["024-R002 section 5 dependency version only"]
+  superseded_by: []
+report: report.md

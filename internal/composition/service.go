@@ -8,9 +8,14 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/module/auth"
+	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
+	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
+	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
+	httpapi "github.com/rin721/go-scaffold-template/internal/transport/http/api"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
@@ -37,7 +42,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 		config.FileSource(a.config.ConfigPath),
 		config.EnvSource(a.config.EnvironmentPrefix),
 	)
-	bindings, err := kernelcomposition.ConfigurationBindings(configbinding.Binding())
+	bindings, err := kernelcomposition.ConfigurationBindings(authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding())
 	if err != nil {
 		return nil, fmt.Errorf("compose service configuration bindings: %w", err)
 	}
@@ -71,8 +76,8 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	return &serviceRuntime{supervisor: process, coordinator: coordinator}, nil
 }
 
-func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig httpx.ServerConfig, todoService service.UseCases) (httpx.Router, error) {
-	todoHandler, err := httptransport.NewTodoHTTPHandler(todoService, capabilities.I18n)
+func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig httpx.ServerConfig, todoService service.UseCases, authModule auth.Module) (httpx.Router, error) {
+	todoHandler, err := httptransport.NewTodoHTTPHandler(todoService, capabilities.I18n, authModule.Service)
 	if err != nil {
 		return nil, fmt.Errorf("compose generated Todo HTTP transport: %w", err)
 	}
@@ -100,8 +105,25 @@ func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig h
 		rateLimiter.Middleware(),
 		overload.Middleware(),
 	)
+	router.UseHTTP(authModule.HTTPMiddleware)
 	router.Mount("/", todoHandler)
 	return router, nil
+}
+
+func operationPolicies() ([]authmodel.Policy, error) {
+	operations := httpapi.Operations()
+	policies := make([]authmodel.Policy, len(operations))
+	for index, operation := range operations {
+		mode := authmodel.PolicyMode(operation.Policy)
+		policies[index] = authmodel.Policy{
+			Operation: string(operation.ID), Mode: mode,
+			Scope: authmodel.Scope(operation.Scope), Action: authmodel.Action(operation.Action),
+		}
+	}
+	if len(policies) == 0 {
+		return nil, fmt.Errorf("OpenAPI operation policy inventory is empty")
+	}
+	return policies, nil
 }
 
 func reloadErrorReporter(logging logger.Logger) func(error) {

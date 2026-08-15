@@ -6,7 +6,7 @@
 
 ## 2. Go 与平台基线
 
-[Go 官方下载页](https://go.dev/dl/) 在本次研究时列出 `go1.26.5` 为稳定版本；[Go 1.26 release notes](https://go.dev/doc/go1.26) 延续 Go 1 compatibility。024 选择 Go 1.26.5，以满足当前 jwx v4、Prometheus、OTel 与 GoReleaser toolchain 的受支持范围。
+[Go 官方下载页](https://go.dev/dl/) 在本次研究时列出 `go1.26.5` 为稳定版本；[Go 1.26 release notes](https://go.dev/doc/go1.26) 延续 Go 1 compatibility。024 选择 Go 1.26.5，以满足当前 Prometheus、OTel、GoReleaser 与候选 jwx 的受支持范围；jwx v4 额外的实验开关问题由 [R004](../R004-jwx-jsonv2-reassessment/report.md) 重新仲裁。
 
 正式支持矩阵：
 

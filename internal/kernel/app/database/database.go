@@ -26,7 +26,6 @@ type Access interface {
 	Ping(context.Context) error
 	Use(context.Context, func(Client) error) error
 	WithinTx(context.Context, func(context.Context, Client, pkgdatabase.Tx) error) error
-	CheckSchemas(context.Context, ...pkgdatabase.Schema) error
 }
 
 // Config 是 Database App 的 typed 配置契约。
@@ -115,11 +114,6 @@ func (a *access) WithinTx(ctx context.Context, use func(context.Context, Client,
 	})
 }
 
-// CheckSchemas 在当前资源租约内执行只读 Schema readiness，不执行 DDL。
-func (a *access) CheckSchemas(ctx context.Context, schemas ...pkgdatabase.Schema) error {
-	return a.Use(ctx, func(client Client) error { return client.CheckSchemas(ctx, schemas...) })
-}
-
 func build(ctx context.Context, cfg Config, _ struct{}) (pkgdatabase.Resource, error) {
 	packageConfig := cfg.packageConfig()
 	return pkgdatabase.NewGORM(ctx, &packageConfig)
@@ -134,7 +128,10 @@ func ready(ctx context.Context, client pkgdatabase.Resource) error {
 
 func stop(_ context.Context, client pkgdatabase.Resource) error { return client.Close() }
 
-func decode(snapshot config.Snapshot) (Config, error) {
+func decode(snapshot config.Snapshot) (Config, error) { return Decode(snapshot) }
+
+// Decode 从完整配置快照读取 Database App 的项目自有配置。
+func Decode(snapshot config.Snapshot) (Config, error) {
 	cfg := defaultConfig()
 	if err := snapshot.DecodeSection(ConfigPath, &cfg); err != nil {
 		return Config{}, err
@@ -185,7 +182,10 @@ func defaultConfig() Config {
 	}, PingTimeout: values.PingTimeout}
 }
 
-func (c Config) packageConfig() pkgdatabase.Config {
+func (c Config) packageConfig() pkgdatabase.Config { return c.PackageConfig() }
+
+// PackageConfig 返回跨模块 Adapter 可使用的稳定数据库配置副本。
+func (c Config) PackageConfig() pkgdatabase.Config {
 	return pkgdatabase.Config{
 		Driver: c.Driver, DSN: c.DSN,
 		Pool: pkgdatabase.PoolConfig{

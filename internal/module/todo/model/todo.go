@@ -15,6 +15,8 @@ var (
 	ErrInvalidTitle = errors.New("todo title is invalid")
 	// ErrInvalidStatus 表示持久化或调用方提供了未知状态。
 	ErrInvalidStatus = errors.New("todo status is invalid")
+	// ErrInvalidOwner 表示 Todo 缺失可授权的 owner subject。
+	ErrInvalidOwner = errors.New("todo owner subject is invalid")
 	// ErrInvalidTime 表示 Todo 时间字段不满足状态不变量。
 	ErrInvalidTime = errors.New("todo time is invalid")
 )
@@ -31,13 +33,14 @@ const (
 
 // Todo 是不携带 HTTP、CLI 或 ORM 标签的业务实体。
 type Todo struct {
-	ID          string
-	Title       string
-	Status      Status
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
-	Version     uint64
+	ID           string
+	Title        string
+	Status       Status
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	CompletedAt  *time.Time
+	Version      uint64
+	OwnerSubject string
 }
 
 // NormalizeTitle 按当前策略规范化并验证标题。
@@ -59,18 +62,22 @@ func ParseStatus(value string) (Status, error) {
 }
 
 // New 创建一个待完成 Todo。
-func New(id, title string, now time.Time) (Todo, error) {
+func New(id, title, ownerSubject string, now time.Time) (Todo, error) {
 	if strings.TrimSpace(id) == "" {
 		return Todo{}, ErrInvalidID
 	}
 	if title == "" {
 		return Todo{}, ErrInvalidTitle
 	}
+	ownerSubject = strings.TrimSpace(ownerSubject)
+	if ownerSubject == "" {
+		return Todo{}, ErrInvalidOwner
+	}
 	now = now.UTC()
 	if now.IsZero() {
 		return Todo{}, ErrInvalidTime
 	}
-	return Todo{ID: id, Title: title, Status: StatusPending, CreatedAt: now, UpdatedAt: now}, nil
+	return Todo{ID: id, Title: title, Status: StatusPending, CreatedAt: now, UpdatedAt: now, OwnerSubject: ownerSubject}, nil
 }
 
 // Restore 从持久化字段恢复并校验 Todo。
@@ -80,6 +87,9 @@ func Restore(todo Todo) (Todo, error) {
 	}
 	if todo.Title == "" {
 		return Todo{}, ErrInvalidTitle
+	}
+	if strings.TrimSpace(todo.OwnerSubject) == "" {
+		return Todo{}, ErrInvalidOwner
 	}
 	if _, err := ParseStatus(string(todo.Status)); err != nil {
 		return Todo{}, err

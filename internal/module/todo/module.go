@@ -6,12 +6,10 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/module"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
-	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/clock"
 	"github.com/rin721/go-scaffold-template/pkg/idgen"
-	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 const moduleID module.ID = "todo"
@@ -22,6 +20,7 @@ type Dependencies struct {
 	Clock       clock.Clock
 	IDGenerator idgen.Generator
 	Config      configbinding.Config
+	Authorizer  service.Authorizer
 }
 
 // Module 是 Todo 局部装配的完成结果。
@@ -32,23 +31,17 @@ type Module struct {
 
 // New 纯内存构造 Todo Service、Adapter 与 contribution。
 func New(dependencies Dependencies) (Module, error) {
-	repository, err := repo.New(dependencies.Database, modelbinding.Schema())
+	repository, err := repo.New(dependencies.Database, repo.Schema())
 	if err != nil {
 		return Module{}, fmt.Errorf("compose todo repository: %w", err)
 	}
 	todoService, err := service.New(
-		repository, dependencies.Clock, dependencies.IDGenerator, dependencies.Config.Policy(),
+		repository, dependencies.Clock, dependencies.IDGenerator, dependencies.Config.Policy(), dependencies.Authorizer,
 	)
 	if err != nil {
 		return Module{}, fmt.Errorf("compose todo service: %w", err)
 	}
-	migrator, err := modelbinding.NewMigrator(dependencies.Database)
-	if err != nil {
-		return Module{}, fmt.Errorf("compose todo schema migrator: %w", err)
-	}
-	contribution := module.Contribution{
-		ID: moduleID, Participants: []supervisor.Participant{migrator},
-	}
+	contribution := module.Contribution{ID: moduleID}
 	if err := module.ValidateContributions(contribution); err != nil {
 		return Module{}, fmt.Errorf("validate todo contribution: %w", err)
 	}

@@ -70,6 +70,11 @@ database:
   # 构造和就绪检查的超时时间；0 使用 database 包默认值，负数非法。
   pingTimeout: 5s
 
+# Migration 只由 `go run ./cmd/app db migrate status|up` 使用；修改后需显式重新执行命令。
+migration:
+  lockTimeout: 15s
+  operationTimeout: 2m0s
+
 cache:
   # 默认显式禁用，因此本地启动不依赖 Redis。启用后只允许 redis。
   # 长期 Service 在完整 Application Generation 中重建 typed Client、L1 与 tag index；
@@ -142,9 +147,26 @@ todo:
   # list 单次查询允许的最大数量。
   maxListLimit: 100
 
+# development-anonymous 只允许 development + loopback HTTP；production 必须改用 jwt。
+auth:
+  mode: development-anonymous
+  anonymousSubject: development-loopback
+  anonymousScopes: [management:read, todos:read, todos:write]
+  jwt:
+    issuer: ""
+    audience: ""
+    jwksURL: ""
+    algorithms: [RS256]
+    scopesClaim: scope
+    requestTimeout: 5s
+    refreshInterval: 15m0s
+    refreshTimeout: 5s
+    leeway: 30s
+    maxResponseBodyBytes: 1048576
+
 http:
   # HTTP listener 在进程 ready 前同步绑定；端口占用会使启动失败。
-  addr: :8080
+  addr: 127.0.0.1:8080
   readHeaderTimeout: 5s
   readTimeout: 15s
   writeTimeout: 30s

@@ -7,7 +7,7 @@ const (
 	contentTypeJSON = "application/json"
 	contentTypeText = "text/plain; charset=utf-8"
 
-	defaultServerAddr = ":8080"
+	defaultServerAddr = "127.0.0.1:8080"
 )
 
 const (

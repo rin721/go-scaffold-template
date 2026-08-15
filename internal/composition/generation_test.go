@@ -16,13 +16,18 @@ import (
 	"time"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
+	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
+	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
-	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
+	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	todoservice "github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	pkgdatabase "github.com/rin721/go-scaffold-template/pkg/database"
+	dbmigrate "github.com/rin721/go-scaffold-template/pkg/database/migrate"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
@@ -57,7 +62,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "todo", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "todo", "auth", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
@@ -85,7 +90,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
 	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage"}) ||
-		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"todo", "http"}) {
+		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"todo", "auth", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
 	if status := createTodo(t, after.BoundAddress, strings.Repeat("x", 100)); status != http.StatusBadRequest {
@@ -149,7 +154,7 @@ func TestApplicationGenerationRejectsDatabaseWithoutSchemaAndKeepsCurrent(t *tes
 	before := coordinator.Diagnostics()
 	writeGenerationConfig(t, configPath, generationConfig(directory, 120, 1<<20, filepath.Join(directory, "empty.db")))
 	result, err := coordinator.Reload(t.Context())
-	if err == nil || !strings.Contains(err.Error(), "schema table") || result.Applied {
+	if err == nil || !strings.Contains(err.Error(), "migration is empty") || result.Applied {
 		t.Fatalf("Reload(empty schema) = %#v, %v", result, err)
 	}
 	after := coordinator.Diagnostics()
@@ -167,6 +172,7 @@ func TestApplicationGenerationPinsOldDatabaseUntilRetire(t *testing.T) {
 	secondDatabase := filepath.Join(directory, "second.db")
 	configPath := filepath.Join(directory, "config.yaml")
 	writeGenerationConfig(t, configPath, generationConfig(directory, 120, 1<<20, firstDatabase))
+	prepareTodoSchema(t, firstDatabase)
 	manager, err := kernellogging.New(logger.Noop())
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
@@ -189,7 +195,8 @@ func TestApplicationGenerationPinsOldDatabaseUntilRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Commit(first) error = %v", err)
 	}
-	if _, err := first.module.Service.Create(t.Context(), todoservice.CreateCommand{Title: "old database"}); err != nil {
+	firstCtx, firstActor := generationTestActor(t, first)
+	if _, err := first.module.Service.Create(firstCtx, todoservice.CreateCommand{Actor: firstActor, Title: "old database"}); err != nil {
 		t.Fatalf("Create(first) error = %v", err)
 	}
 
@@ -208,17 +215,18 @@ func TestApplicationGenerationPinsOldDatabaseUntilRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Commit(second) error = %v", err)
 	}
-	if _, err := first.module.Service.Create(t.Context(), todoservice.CreateCommand{Title: "1234567890"}); err != nil {
+	secondCtx, secondActor := generationTestActor(t, second)
+	if _, err := first.module.Service.Create(firstCtx, todoservice.CreateCommand{Actor: firstActor, Title: "1234567890"}); err != nil {
 		t.Fatalf("old policy rejected old-generation request: %v", err)
 	}
-	if _, err := second.module.Service.Create(t.Context(), todoservice.CreateCommand{Title: "1234567890"}); err == nil {
+	if _, err := second.module.Service.Create(secondCtx, todoservice.CreateCommand{Actor: secondActor, Title: "1234567890"}); err == nil {
 		t.Fatal("new policy accepted over-limit new-generation request")
 	}
-	oldItems, err := first.module.Service.List(t.Context(), todoservice.ListQuery{})
+	oldItems, err := first.module.Service.List(firstCtx, todoservice.ListQuery{Actor: firstActor})
 	if err != nil {
 		t.Fatalf("List(first) error = %v", err)
 	}
-	newItems, err := second.module.Service.List(t.Context(), todoservice.ListQuery{})
+	newItems, err := second.module.Service.List(secondCtx, todoservice.ListQuery{Actor: secondActor})
 	if err != nil {
 		t.Fatalf("List(second) error = %v", err)
 	}
@@ -242,6 +250,7 @@ func TestApplicationGenerationReusesUnchangedTypedResources(t *testing.T) {
 	directory := t.TempDir()
 	configPath := filepath.Join(directory, "config.yaml")
 	writeGenerationConfig(t, configPath, generationConfig(directory, 120, 1<<20, filepath.Join(directory, "todo.db")))
+	prepareTodoSchema(t, filepath.Join(directory, "todo.db"))
 	manager, err := kernellogging.New(logger.Noop())
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
@@ -445,6 +454,7 @@ func TestServiceRuntimeReloadsInSameProcessAndStopsGracefully(t *testing.T) {
 	configPath := filepath.Join(directory, "config.yaml")
 	payload := generationConfig(directory, 120, 1<<20, filepath.Join(directory, "todo.db"))
 	writeGenerationConfig(t, configPath, payload)
+	prepareTodoSchema(t, filepath.Join(directory, "todo.db"))
 	manager, err := kernellogging.New(logger.Noop())
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
@@ -497,6 +507,15 @@ func TestServiceRuntimeReloadsInSameProcessAndStopsGracefully(t *testing.T) {
 
 func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.GenerationCoordinator, *applicationGenerationFactory) {
 	t.Helper()
+	snapshot, err := config.New(config.FileSource(configPath)).Load(t.Context())
+	if err != nil {
+		t.Fatalf("load generation test config: %v", err)
+	}
+	databaseConfig, err := databaseapp.Decode(snapshot)
+	if err != nil {
+		t.Fatalf("decode generation test database config: %v", err)
+	}
+	prepareTodoSchema(t, databaseConfig.DSN)
 	manager, err := kernellogging.New(logger.Noop())
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
@@ -505,7 +524,7 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
-	bindings, err := kernelcomposition.ConfigurationBindings(configbinding.Binding())
+	bindings, err := kernelcomposition.ConfigurationBindings(authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding())
 	if err != nil {
 		t.Fatalf("ConfigurationBindings() error = %v", err)
 	}
@@ -564,17 +583,28 @@ func prepareTodoSchema(t *testing.T, path string) {
 	cfg := pkgdatabase.DefaultConfig()
 	cfg.Driver = pkgdatabase.DriverSQLite
 	cfg.DSN = filepath.ToSlash(path)
-	resource, err := pkgdatabase.NewGORM(t.Context(), &cfg)
+	runner, err := dbmigrate.New(t.Context(), dbmigrate.Config{
+		Database: cfg, LockTimeout: 5 * time.Second,
+	}, migrationbinding.Set())
 	if err != nil {
-		t.Fatalf("NewGORM(%s) error = %v", path, err)
+		t.Fatalf("New migration runner(%s) error = %v", path, err)
 	}
-	if err := resource.Client().Migrate(t.Context(), modelbinding.Schema()); err != nil {
-		_ = resource.Close()
-		t.Fatalf("Migrate(%s) error = %v", path, err)
+	if err := runner.Up(t.Context()); err != nil {
+		_ = runner.Close()
+		t.Fatalf("Migration up(%s) error = %v", path, err)
 	}
-	if err := resource.Close(); err != nil {
-		t.Fatalf("Close(%s) error = %v", path, err)
+	if err := runner.Close(); err != nil {
+		t.Fatalf("Close migration runner(%s) error = %v", path, err)
 	}
+}
+
+func generationTestActor(t *testing.T, generation *applicationGeneration) (context.Context, todoservice.Actor) {
+	t.Helper()
+	principal, err := generation.authModule.Service.DevelopmentPrincipal(t.Context())
+	if err != nil {
+		t.Fatalf("DevelopmentPrincipal() error = %v", err)
+	}
+	return authmodel.WithPrincipal(t.Context(), principal), todoActor(principal)
 }
 
 func writeGenerationConfig(t *testing.T, path, payload string) {

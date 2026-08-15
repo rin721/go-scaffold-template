@@ -148,7 +148,24 @@ trusted proxy 使用显式 CIDR；未匹配时忽略 forwarded headers。CORS �
 
 ## 6. Security 与 Todo actor
 
-### 6.1 项目契约
+### 6.1 Auth application module
+
+认证授权按 [R005](research/R005-security-module-ownership/report.md) 收口为 `internal/module/auth`，而不是顶层 `internal/security`、顶层 `internal/adapter/security` 或 Kernel App：
+
+```text
+internal/module/auth/
+├── model/
+├── service/
+├── adapter/jwt/
+├── adapter/audit/
+├── middleware/
+├── binding/config/
+└── module.go
+```
+
+`module.New` 只构造内存对象；JWT/JWKS Adapter 以未启动 participant 进入 module contribution，由 Application Generation 在 Router 构造和 admission 前 Start/Ready，在旧代 drain 后 Stop。OpenAPI inventory 由 composition 转成 module 构造输入，composition 不实现 claims、policy 或 audit。
+
+### 6.2 项目契约
 
 建议由稳定应用边界定义：
 
@@ -173,13 +190,15 @@ type AuditSink interface {
 
 实际字段在实现前可保持私有/收敛，但必须保留 subject、scope/action、真实 resource facts、decision reason class 与 audit outcome；第三方 claims/JWK 不得泄漏。
 
-### 6.2 JWT/JWKS Adapter
+Todo `service` 定义自己需要的 actor、对象授权和审计窄 port；composition 使用小 Adapter 连接 Auth module 完成品。HTTP/CLI 边界显式传递 actor，不通过全局变量、万能 Context 值或 runtime locator 隐藏依赖。
 
-Adapter 使用 `jwx/v4`，只接受 Bearer，显式固定 issuer、audience 与允许算法。JWKS cache/refresh 有 deadline、single-flight、last-success 和 Ready；未知 key 可触发一次有界 refresh，失败不回退未验证 claims。时钟由项目 Clock 注入以测试 exp/nbf/iat/leeway。
+### 6.3 JWT/JWKS Adapter
+
+Adapter 使用内部封装的 `jwx v3.2.0`，只接受 Bearer，显式固定 issuer、audience 与允许算法。JWKS cache/refresh 有 deadline、single-flight、last-success 和 Ready；未知 key 可触发一次有界 refresh，失败不回退未验证 claims。时钟由项目 Clock 注入以测试 exp/nbf/iat/leeway。`jwx v4` 的 `GOEXPERIMENT=jsonv2` 不进入当前构建契约。
 
 开发 anonymous actor 同时满足 development 与 loopback 才可构造；production config validation 直接拒绝。CLI 不解析 bearer token，要求显式 `--subject`/scopes，由本机 operator 边界负责输入，但 use case 仍走相同 authorization/audit。
 
-### 6.3 Todo ownership migration
+### 6.4 Todo ownership migration
 
 1. expand：添加 nullable `owner_subject` 与新索引，新代码兼容旧行；
 2. backfill：由显式参数/映射完成，不依据创建时间或默认用户猜测；
@@ -188,6 +207,22 @@ Adapter 使用 `jwx/v4`，只接受 Bearer，显式固定 issuer、audience 与�
 5. HTTP/CLI contract：验证跨 subject 拒绝与审计，错误不泄露对象是否存在的敏感差异。
 
 ## 7. Management 与 observability
+
+按 [R006](research/R006-remaining-module-ownership/report.md)，C5 收口为单一 `internal/module/ops`：
+
+```text
+internal/module/ops/
+├── model/
+├── service/
+├── adapter/otel/
+├── adapter/prometheus/
+├── middleware/
+├── binding/config/
+├── binding/http/
+└── module.go
+```
+
+Ops module 拥有 probe/diagnostic/build use cases、management HTTP、OTel/Prometheus Adapter、标签策略与 generation contribution。Application composition 只持有/连接 business 与 management listener、稳定 registry identity、Auth/diagnostics/logger 等完成品，不实现 Ops 规则。
 
 ### 7.1 Management listener
 
@@ -205,15 +240,16 @@ Readiness 在 candidate 未 Ready、generation degraded、required auth/database
 
 ## 8. Versioned migration
 
-建议布局：
+按 [R006](research/R006-remaining-module-ownership/report.md) 固定布局：
 
 ```text
-migrations/sqlite/*.sql
-migrations/postgres/*.sql
-migrations/mysql/*.sql
-internal/migration/                  project contracts and compatibility
-internal/adapter/migration/          golang-migrate adapter
-cmd/app db migrate ...               explicit owner command
+pkg/database/migrate/                       generic golang-migrate adapter
+internal/module/migration/                  status/version/up use cases and CLI binding
+internal/module/todo/binding/migration/
+├── sqlite/*.sql
+├── postgres/*.sql
+└── mysql/*.sql
+cmd/app db migrate ...                      explicit invocation owner
 ```
 
 命令至少支持只读 `version/status` 与受控 `up`；dirty repair 需要显式版本、确认参数和 Runbook，不提供启动时自动 repair/down。锁和 step 有 deadline。service 启动调用 schema compatibility probe：版本过旧、过新或 dirty 时 not ready 并返回分类错误，不修改 schema。
@@ -258,8 +294,8 @@ GoReleaser 生成 Windows/Linux archives、checksums 与 source-linked metadata�
 - runtime：`internal/kernel`、`internal/bootstrap`、`internal/composition`、`pkg/httpx`、配置 schema/example；
 - API：`api/`、`internal/transport/http/`、Todo HTTP binding、旧 `module.Route` 调用方与测试；
 - security：项目自有 security contract、JWT Adapter、Todo service/repository/model/CLI/HTTP；
-- management/observability：Host/diagnostics/health、management transport、OTel/Prom Adapter 与 tests；
-- migration：`migrations/`、migration contract/Adapter、`cmd/app db`、数据库 startup gate；
+- management/observability：`internal/module/ops`、process listener/registry wiring 与 tests；
+- migration：`pkg/database/migrate`、`internal/module/migration`、Todo migration binding、`cmd/app db` 与数据库 startup gate；
 - delivery：`Dockerfile`、`.dockerignore`、`.goreleaser.yaml`、`.github/workflows/`、copy/release Runbook；
 - docs：根入口、配置/API/运行/部署/复制/迁移/安全/运维权威主题与 024 evidence。
 

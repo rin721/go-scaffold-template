@@ -4,17 +4,17 @@
 
 新增模块必须先按 [应用模块开发指南](../../docs/development/application-module-development.md) 完成真实用例、现有能力、新 Capability、资源 owner、生命周期和当前契约适配性评估，再进入目录与接口设计。
 
-当前首个模块是 [Todo](todo/README.md)。它是代码与验证示例；只复制依赖方向和验证方式，不复制业务字段或无关入口：
+当前已有 Auth、Migration 与 [Todo](todo/README.md) 模块。Auth 拥有认证/授权/审计，Migration 编排显式 status/up，Todo 拥有业务实体、对象授权 port 与 SQL migration set；composition 只连接完成品：
 
 ```text
-model <- service <- repo/handler <- binding <- module.go <- internal/composition
-                         middleware ─┘
+model <- service <- repo/binding <- module.go <- internal/composition
+                    middleware ───────────────┘
 ```
 
 - `model` 只表达业务状态与不变量。
 - `service` 定义用例以及调用方拥有的窄 port。
 - `repo`、`handler` 和各 binding 负责技术/协议转换。
-- `middleware` 只实现模块拥有的 HTTP 横切策略；不能放入业务不变量、Service、Repository 或事务。
+- `middleware` 只实现所属模块拥有的 HTTP 横切策略；不能放入其他模块的业务不变量、Service、Repository 或事务。
 - `module.go` 只做纯内存局部装配。
 - `internal/composition` 是唯一可以同时知道 Kernel Capability 与应用模块的位置。
 

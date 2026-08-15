@@ -18,6 +18,13 @@ type Stats struct {
 	MaxLifetimeClosed  int64
 }
 
+// MigrationStatus 是独立 migration command 写入的版本表快照。
+type MigrationStatus struct {
+	Version uint
+	Dirty   bool
+	Empty   bool
+}
+
 // Tx 是事务作用域令牌，只能传给 Repository.WithTx 使用。
 //
 // 事务不暴露 Commit、Rollback 或第三方 session，提交责任始终属于 WithinTx。
@@ -28,8 +35,7 @@ type Tx interface {
 // Client 是业务和仓储层可使用的稳定数据库能力，不包含共享资源关闭权。
 type Client interface {
 	WithinTx(context.Context, func(context.Context, Tx) error) error
-	Migrate(context.Context, ...Schema) error
-	CheckSchemas(context.Context, ...Schema) error
+	MigrationStatus(context.Context, string) (MigrationStatus, error)
 }
 
 // Resource 是数据库资源所有者使用的完整能力。

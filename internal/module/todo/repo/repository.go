@@ -15,13 +15,14 @@ import (
 
 // Record 是 Todo 的持久化模型；它不向 Service 或协议边界传播。
 type Record struct {
-	ID          string
-	Title       string
-	Status      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
-	CompletedAt *time.Time
-	Version     uint64
+	ID           string
+	Title        string
+	Status       string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	CompletedAt  *time.Time
+	Version      uint64
+	OwnerSubject string
 }
 
 // Access 是 Todo Database Adapter 使用方拥有的稳定租约契约。
@@ -92,7 +93,7 @@ func (r *Repository) List(ctx context.Context, filter service.ListFilter) ([]mod
 		if err != nil {
 			return err
 		}
-		filters := make([]database.Filter, 0, 1)
+		filters := []database.Filter{{Field: "OwnerSubject", Operator: database.OpEqual, Value: filter.OwnerSubject}}
 		if filter.Status != nil {
 			filters = append(filters, database.Filter{Field: "Status", Operator: database.OpEqual, Value: string(*filter.Status)})
 		}
@@ -156,6 +157,7 @@ func recordFromModel(todo model.Todo) Record {
 	return Record{
 		ID: todo.ID, Title: todo.Title, Status: string(todo.Status), CreatedAt: todo.CreatedAt,
 		UpdatedAt: todo.UpdatedAt, CompletedAt: todo.CompletedAt, Version: todo.Version,
+		OwnerSubject: todo.OwnerSubject,
 	}
 }
 
@@ -167,6 +169,7 @@ func modelFromRecord(record Record) (model.Todo, error) {
 	result, err := model.Restore(model.Todo{
 		ID: record.ID, Title: record.Title, Status: status, CreatedAt: record.CreatedAt,
 		UpdatedAt: record.UpdatedAt, CompletedAt: record.CompletedAt, Version: record.Version,
+		OwnerSubject: record.OwnerSubject,
 	})
 	if err != nil {
 		return model.Todo{}, fault.Wrap(err, fault.CodeInternal, "todo.repo.record", false)

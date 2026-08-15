@@ -52,11 +52,10 @@ func TestApplicationLifecycleUsesInjectedLogger(t *testing.T) {
 	}
 }
 
-func TestTodoOperationSupervisorPreservesCompositionOrderAndTerminalState(t *testing.T) {
-	events := make([]string, 0, 5)
+func TestTodoOperationSupervisorOwnsOnlyRuntimeParticipants(t *testing.T) {
+	events := make([]string, 0, 3)
 	owner, err := newTodoOperationSupervisor([]supervisor.Participant{
 		&compositionParticipant{name: "kernel", events: &events},
-		&compositionParticipant{name: "todo-migration", events: &events},
 	})
 	if err != nil {
 		t.Fatalf("newTodoOperationSupervisor() error = %v", err)
@@ -67,12 +66,12 @@ func TestTodoOperationSupervisorPreservesCompositionOrderAndTerminalState(t *tes
 	}); err != nil {
 		t.Fatalf("RunOperation() error = %v", err)
 	}
-	want := []string{"start:kernel", "start:todo-migration", "operation", "stop:todo-migration", "stop:kernel"}
+	want := []string{"start:kernel", "operation", "stop:kernel"}
 	if fmt.Sprint(events) != fmt.Sprint(want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
 	}
 	snapshot := owner.Snapshot()
-	if snapshot.State != supervisor.StateStopped || len(snapshot.Units) != 2 || snapshot.Units[0].Owner != "kernel" || snapshot.Units[1].Owner != "todo-migration" {
+	if snapshot.State != supervisor.StateStopped || len(snapshot.Units) != 1 || snapshot.Units[0].Owner != "kernel" {
 		t.Fatalf("Snapshot() = %#v", snapshot)
 	}
 	for _, unit := range snapshot.Units {

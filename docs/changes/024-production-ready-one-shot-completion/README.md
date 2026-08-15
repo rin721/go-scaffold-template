@@ -4,10 +4,10 @@
 
 - 任务类型：研究与非文档实施计划。
 - 代码基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
-- 研究门禁：已通过，见 [R001](research/R001-current-one-shot-baseline/report.md)、[R002](research/R002-api-security-stack-selection/report.md) 与 [R003](research/R003-delivery-release-stack-selection/report.md)。
-- 计划状态：**已确认，实施中**。用户于 2026-08-15 明确确认连续实施 `ONE-001..025`、本地与 CI 验证和检查点提交，并允许临时本地容器与测试数据库。
+- 研究门禁：C1-C3 已通过并完成；C4-C6 模块归属复核已通过，见 [R005](research/R005-security-module-ownership/report.md) 与 [R006](research/R006-remaining-module-ownership/report.md)。
+- 计划状态：**已确认，实施中**。用户于 2026-08-15 确认 R005/R006 修订后的 module-owned 方案，并继续实施 C4-C8；R004 的 `jwx v3.2.0` 选择继续有效。
 - 外部授权边界：不允许 push、tag、GitHub Release、GHCR 或外部 attestation。
-- Authority：023 的研究与实现目标已由本变更吸收；024 是当前唯一施工 authority。C1 工具链检查点已提交，C2 Application Generation/ListenerHub 正在收口。
+- Authority：023 的研究与实现目标已由本变更吸收；024 是当前唯一施工 authority。C1-C3 已提交，错误的 C4 未提交骨架已撤回。
 
 ## 一句话结论
 
@@ -30,10 +30,9 @@
 - 完整 watched runtime configuration 的不可变 Application Generation 与 listener handoff；
 - spec-first OpenAPI authority、生成的 strict Chi server、统一 operation identity 与 breaking diff；
 - RFC 9457 Problem Details、严格请求/响应协议和 edge policy；
-- 项目自有 Principal/Policy/Decision/Audit 契约与 JWT/JWKS Adapter；
-- 独立 management listener、startup/live/ready、metrics、build info 与脱敏 diagnostics；
-- OpenTelemetry trace、Prometheus metrics 与日志关联；
-- `golang-migrate` 版本化 SQL、独立 migration command 和启动 schema readiness；
+- `internal/module/auth` 收口 Principal/Policy/Decision/Audit、JWT/JWKS Adapter、配置、middleware 与 generation contribution；
+- `internal/module/ops` 收口 management、startup/live/ready、metrics、build info、脱敏 diagnostics、OpenTelemetry trace 与 Prometheus Adapter；
+- `internal/module/migration` 收口命令用例，跨模块 engine 进入 `pkg/database/migrate`，Todo SQL/readiness 留在 Todo；
 - Go 1.26.5、Windows/Linux 同义门禁、非 root OCI image、CI 安全门禁；
 - GoReleaser、Syft、Cosign、checksum、provenance、复制指南和最终验收。
 

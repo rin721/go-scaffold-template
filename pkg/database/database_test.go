@@ -19,6 +19,14 @@ type account struct {
 	DeletedAt *time.Time
 }
 
+func migrateForTest(ctx context.Context, client Client, schemas ...Schema) error {
+	concrete, ok := client.(*gormClient)
+	if !ok {
+		return ErrClientUnavailable
+	}
+	return concrete.migrateForTest(ctx, schemas...)
+}
+
 func TestSQLiteResourceRepositoryAndMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "app.db")
 	resource, err := NewGORM(context.Background(), &Config{Driver: DriverSQLite, DSN: path})
@@ -37,7 +45,7 @@ func TestSQLiteResourceRepositoryAndMigration(t *testing.T) {
 	}
 
 	schema := accountSchema()
-	if err := client.Migrate(context.Background(), schema); err != nil {
+	if err := migrateForTest(context.Background(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, err := NewRepository[account](client, schema)
@@ -132,7 +140,7 @@ func TestSQLiteUniqueAndForeignKeyErrors(t *testing.T) {
 		},
 		References: []Reference{{Field: "OrganizationID", Table: "organizations", ReferenceField: "ID", OnUpdate: ReferenceCascade, OnDelete: ReferenceRestrict}},
 	}
-	if err := client.Migrate(context.Background(), organizationSchema, membershipSchema); err != nil {
+	if err := migrateForTest(context.Background(), client, organizationSchema, membershipSchema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	organizations, _ := NewRepository[organization](client, organizationSchema)
@@ -149,50 +157,6 @@ func TestSQLiteUniqueAndForeignKeyErrors(t *testing.T) {
 	}
 }
 
-func TestMigrationOnlyAddsMissingStructure(t *testing.T) {
-	resource, err := NewGORM(context.Background(), &Config{Driver: DriverSQLite, DSN: filepath.Join(t.TempDir(), "app.db")})
-	if err != nil {
-		t.Fatalf("NewGORM() error = %v", err)
-	}
-	defer resource.Close()
-	client := resource.Client()
-	schema := accountSchema()
-	schema.Fields[1].Length = 20
-	if err := client.Migrate(t.Context(), schema); err != nil {
-		t.Fatalf("first Migrate() error = %v", err)
-	}
-	schema.Fields[1].Length = 200
-	schema.Fields = append(schema.Fields, Field{Name: "Note", Column: "note", Type: FieldString, Nullable: true})
-	if err := client.Migrate(t.Context(), schema); err != nil {
-		t.Fatalf("second Migrate() error = %v", err)
-	}
-	columns, err := resource.(*gormResource).client.db.Migrator().ColumnTypes("accounts")
-	if err != nil {
-		t.Fatalf("ColumnTypes() error = %v", err)
-	}
-	nameChecked := false
-	noteFound := false
-	for _, column := range columns {
-		if column.Name() == "note" {
-			noteFound = true
-		}
-		if column.Name() != "name" {
-			continue
-		}
-		length, ok := column.Length()
-		if ok && length != 20 {
-			t.Fatalf("name length = %d, want unchanged 20", length)
-		}
-		nameChecked = true
-	}
-	if !nameChecked {
-		t.Fatal("name column is missing")
-	}
-	if !noteFound {
-		t.Fatal("additive note column is missing")
-	}
-}
-
 func TestWithinTxCommitsAndRollsBack(t *testing.T) {
 	resource, err := NewGORM(context.Background(), &Config{Driver: DriverSQLite, DSN: ":memory:", Pool: PoolConfig{MaxOpenConns: 1, MaxIdleConns: 1}})
 	if err != nil {
@@ -201,7 +165,7 @@ func TestWithinTxCommitsAndRollsBack(t *testing.T) {
 	defer resource.Close()
 	client := resource.Client()
 	schema := accountSchema()
-	if err := client.Migrate(context.Background(), schema); err != nil {
+	if err := migrateForTest(context.Background(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, _ := NewRepository[account](client, schema)
@@ -243,7 +207,7 @@ func TestResourceCloseInvalidatesClientAndIsIdempotent(t *testing.T) {
 	if err := resource.Close(); err != nil {
 		t.Fatalf("second Close() error = %v", err)
 	}
-	if err := client.Migrate(t.Context(), accountSchema()); !errors.Is(err, ErrClientUnavailable) {
+	if err := migrateForTest(t.Context(), client, accountSchema()); !errors.Is(err, ErrClientUnavailable) {
 		t.Fatalf("closed Client error = %v, want ErrClientUnavailable", err)
 	}
 	if err := resource.Ping(t.Context()); !errors.Is(err, ErrClientUnavailable) {
@@ -269,7 +233,7 @@ func TestDirectTransactionInvalidatesEscapedTx(t *testing.T) {
 	}
 	defer resource.Close()
 	client := resource.Client()
-	if err := client.Migrate(t.Context(), accountSchema()); err != nil {
+	if err := migrateForTest(t.Context(), client, accountSchema()); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, _ := NewRepository[account](client, accountSchema())
@@ -294,7 +258,7 @@ func TestTransactionPanicRollsBackAndPreservesPanic(t *testing.T) {
 	defer resource.Close()
 	client := resource.Client()
 	schema := accountSchema()
-	if err := client.Migrate(t.Context(), schema); err != nil {
+	if err := migrateForTest(t.Context(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, err := NewRepository[account](client, schema)
@@ -333,7 +297,7 @@ func TestTransactionOperationCannotBypassRootCancellation(t *testing.T) {
 	defer resource.Close()
 	client := resource.Client()
 	schema := accountSchema()
-	if err := client.Migrate(t.Context(), schema); err != nil {
+	if err := migrateForTest(t.Context(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, _ := NewRepository[account](client, schema)
@@ -363,7 +327,7 @@ func TestBorrowInvalidatesEscapedRepositoryAndTransaction(t *testing.T) {
 	defer resource.Close()
 	client := resource.Client()
 	schema := accountSchema()
-	if err := client.Migrate(t.Context(), schema); err != nil {
+	if err := migrateForTest(t.Context(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	var escapedRepository *BaseRepository[account]
@@ -515,7 +479,7 @@ func TestRepositoryRejectsInvalidValuesBeforeDriver(t *testing.T) {
 	defer resource.Close()
 	client := resource.Client()
 	schema := accountSchema()
-	if err := client.Migrate(t.Context(), schema); err != nil {
+	if err := migrateForTest(t.Context(), client, schema); err != nil {
 		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, _ := NewRepository[account](client, schema)
@@ -541,31 +505,6 @@ func TestRepositoryRejectsInvalidValuesBeforeDriver(t *testing.T) {
 	}
 	if _, err := repository.First(t.Context(), Query{Page: &Page{Limit: 1}}); !errors.Is(err, ErrInvalidQuery) {
 		t.Fatalf("First(page) error = %v, want ErrInvalidQuery", err)
-	}
-}
-
-func TestSQLiteMissingConstraintFailsBeforeAddingColumns(t *testing.T) {
-	resource, err := NewGORM(t.Context(), &Config{Driver: DriverSQLite, DSN: filepath.Join(t.TempDir(), "app.db")})
-	if err != nil {
-		t.Fatalf("NewGORM() error = %v", err)
-	}
-	defer resource.Close()
-	client := resource.Client()
-	organizations := Schema{Table: "organizations", Fields: []Field{{Name: "ID", Column: "id", Type: FieldUint64, PrimaryKey: true}}}
-	memberships := Schema{Table: "memberships", Fields: []Field{
-		{Name: "ID", Column: "id", Type: FieldUint64, PrimaryKey: true},
-		{Name: "OrganizationID", Column: "organization_id", Type: FieldUint64},
-	}}
-	if err := client.Migrate(t.Context(), organizations, memberships); err != nil {
-		t.Fatalf("initial Migrate() error = %v", err)
-	}
-	memberships.Fields = append(memberships.Fields, Field{Name: "Note", Column: "note", Type: FieldString, Nullable: true})
-	memberships.References = []Reference{{Field: "OrganizationID", Table: "organizations", ReferenceField: "ID"}}
-	if err := client.Migrate(t.Context(), organizations, memberships); !errors.Is(err, ErrInvalidSchema) {
-		t.Fatalf("Migrate(missing constraint) error = %v, want ErrInvalidSchema", err)
-	}
-	if resource.(*gormResource).client.db.Migrator().HasColumn("memberships", "note") {
-		t.Fatal("Migrate added column before rejecting missing SQLite constraint")
 	}
 }
 
@@ -623,7 +562,7 @@ func runServerRepositoryContract(t *testing.T, resource Resource, prefix string)
 		},
 		References: []Reference{{Field: "OrganizationID", Table: organizationsTable, ReferenceField: "ID", OnUpdate: ReferenceCascade, OnDelete: ReferenceRestrict}},
 	}
-	if err := client.Migrate(t.Context(), organizationSchema, membershipSchema); err != nil {
+	if err := migrateForTest(t.Context(), client, organizationSchema, membershipSchema); err != nil {
 		t.Fatalf("Migrate(server contract) error = %v", err)
 	}
 	organizations, err := NewRepository[organization](client, organizationSchema)

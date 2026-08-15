@@ -10,7 +10,10 @@ import (
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	"github.com/rin721/go-scaffold-template/internal/kernel/logging"
-	clibinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/cli"
+	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
+	migrationcli "github.com/rin721/go-scaffold-template/internal/module/migration/binding/cli"
+	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
+	todocli "github.com/rin721/go-scaffold-template/internal/module/todo/binding/cli"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/pkg/cli"
 )
@@ -55,9 +58,13 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		}
 		return nil
 	}
-	contract, err := clibinding.New(todoExecutor{application: a})
+	todoContract, err := todocli.New(todoExecutor{application: a})
 	if err != nil {
 		return fmt.Errorf("compose todo CLI contract: %w", err)
+	}
+	migrationContract, err := migrationcli.New(migrationExecutor{application: a})
+	if err != nil {
+		return fmt.Errorf("compose migration CLI contract: %w", err)
 	}
 	bootstrap, err := kernelcomposition.ComposeBootstrap(cli.Config{
 		Name:                   a.config.Name,
@@ -67,8 +74,8 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		Stderr:                 a.config.Stderr,
 		DisableInteractiveHome: true,
 	}, kernelcomposition.BootstrapOptions{
-		Configuration: []config.Binding{configbinding.Binding()},
-		Commands:      []kernelcli.Contract{contract},
+		Configuration: []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()},
+		Commands:      []kernelcli.Contract{todoContract, migrationContract},
 	})
 	if err != nil {
 		return fmt.Errorf("compose application bootstrap: %w", err)

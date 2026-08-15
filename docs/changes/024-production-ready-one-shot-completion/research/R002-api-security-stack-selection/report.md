@@ -53,6 +53,8 @@
 
 ## 5. 身份与授权选择
 
+> 2026-08-15 复核：本节的安全契约继续有效；`jwx v4` 版本选择因其强制 `GOEXPERIMENT=jsonv2` 已由 [R004](../R004-jwx-jsonv2-reassessment/report.md) 取代，用户已确认方案 A `jwx v3.2.0`。
+
 项目不能只放一个解析 token 的 middleware。024 冻结以下项目自有语义：
 
 ```text
@@ -66,7 +68,7 @@ Decision + Outcome -> AuditSink
 - `Authorizer` 由业务使用方需求驱动；Todo Service 读取资源后以 owner subject 做对象级决定。
 - `AuditSink` 记录 operation、actor subject 的受控标识、resource type/id 的策略化表达、decision 和 outcome；不得记录 token 或任意 claims。
 
-[`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx) v4 提供 JWT/JWK/JWS 与 JWKS cache 能力，并要求 Go 1.26。024 同时升级 toolchain 到 Go 1.26.5，因此选择 v4；第三方类型只在 `internal/adapter/security/jwt` 内出现。
+[`lestrrat-go/jwx`](https://github.com/lestrrat-go/jwx) 提供 JWT/JWK/JWS 与 JWKS cache 能力；第三方类型只在 `internal/module/auth/adapter/jwt` 内出现。原报告只识别到 v4 要求 Go 1.26，遗漏其强制实验性 `GOEXPERIMENT=jsonv2` 的条件，因此不得继续使用本段作为 v4 已确认依据。具体 module owner 由 [R005](../R005-security-module-ownership/report.md) 修订。
 
 production 必须配置 issuer、audience、JWKS URL 和算法 allowlist。development anonymous actor 只是显式本地 profile：只允许 development 环境与 loopback listener，production 配置在 Build 前拒绝。
 

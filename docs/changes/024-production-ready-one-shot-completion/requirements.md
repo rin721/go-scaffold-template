@@ -4,7 +4,7 @@
 
 本变更把 022 中尚未启动的 portability、API、协议、edge、安全、management、observability、migration、delivery、release 与 acceptance 工作，以及工作区 023 的完整配置代际目标，合并成一个依赖有序、一次确认后连续实施的单轨计划。
 
-当前事实由 [R001](research/R001-current-one-shot-baseline/report.md) 支撑，API/安全选型由 [R002](research/R002-api-security-stack-selection/report.md) 支撑，交付/发布选型由 [R003](research/R003-delivery-release-stack-selection/report.md) 支撑。施工级决策以 [ADR-003](decision.md) 为准。
+当前事实由 [R001](research/R001-current-one-shot-baseline/report.md) 支撑，API/安全选型由 [R002](research/R002-api-security-stack-selection/report.md) 支撑，交付/发布选型由 [R003](research/R003-delivery-release-stack-selection/report.md) 支撑；JWT/JWKS 依赖版本复核见 [R004](research/R004-jwx-jsonv2-reassessment/report.md)，C4-C6 模块归属复核见 [R005](research/R005-security-module-ownership/report.md) 与 [R006](research/R006-remaining-module-ownership/report.md)。施工级决策以 [ADR-003](decision.md) 为准。
 
 本计划形成不等于非文档实施已经获准。只有用户在计划报告之后明确确认 `ONE-001..025`，才能修改源码、配置、测试、依赖、CI 或运行环境。
 
@@ -15,6 +15,7 @@
 - `ONE-REQ-003`：“一次性”表示一次计划确认、连续施工、检查点提交和一次最终总验收；不表示单一巨大 commit，也不允许检查点降低最终完成定义。
 - `ONE-REQ-004`：任何未执行的平台、数据库、容器、签名或外部发布验证都必须明确列为未通过，不得用 cross-build、mock 或本地文件生成替代真实验收。
 - `ONE-REQ-005`：最终工作树只允许保留用户既有的范围外修改；024 自身不得留下过渡入口、旧 authority、兼容分支、TODO 或未归属生成物。
+- `ONE-REQ-006`：新增业务能力必须先按 `internal/module/<name>` 收口 model、service、Adapter、binding 与 contribution；只有经能力评估证明是跨业务复用且由进程统一选择的底层资源，才进入 `pkg/<name> -> internal/kernel/app/<name> -> internal/kernel/composition`。拥有第三方 SDK、Client、cache 或 goroutine 本身不是升级为 Kernel Capability 的理由。
 
 ## 3. Application Generation 与无感切换
 
@@ -44,9 +45,9 @@
 
 ## 5. 认证、授权与审计
 
-- `SEC-REQ-001`：项目定义 `Principal`、`CredentialVerifier`、`Authorizer`、`Decision` 与 `AuditSink` 窄契约；module core 不导入 JWT/JWK、OpenAPI 或 Chi 类型。
+- `SEC-REQ-001`：`internal/module/auth` 是认证授权唯一业务 owner，收口 `Principal`、`CredentialVerifier`、`Authorizer`、`Decision`、`AuditSink`、配置、JWT Adapter、middleware 与 generation contribution；Todo 定义调用方拥有的窄跨模块 port，两个 module core 都不导入 JWT/JWK、OpenAPI 或 Chi 类型。
 - `SEC-REQ-002`：每个 operation 明确 public 或 protected，并声明 scope/action；遗漏策略必须在生成、构建或启动前 fail closed。
-- `SEC-REQ-003`：production HTTP 使用 `jwx v4` JWT/JWKS Adapter，强制 issuer、audience、允许算法、时间窗口、key refresh budget 与敏感诊断脱敏；verifier 未 Ready 时 protected operation fail closed。
+- `SEC-REQ-003`：production HTTP 使用内部 `jwx v3.2.0` JWT/JWKS Adapter，强制 issuer、audience、允许算法、时间窗口、key refresh budget 与敏感诊断脱敏；verifier 未 Ready 时 protected operation fail closed。`GOEXPERIMENT=jsonv2` 不得成为隐式构建条件。
 - `SEC-REQ-004`：Todo 保存 `owner_subject`，在读取真实资源事实后执行对象级授权；list/get/update/delete 不得只依赖请求路径中的 ID 或调用方输入。
 - `SEC-REQ-005`：现有 Todo 数据通过显式 expand/backfill/contract migration 获得 owner；无法确定 owner 时停在 migration gate，不猜测 production subject。
 - `SEC-REQ-006`：development anonymous actor 只允许 `environment=development` 且业务 listener 为 loopback；production 禁止。Application CLI 必须显式 `--subject`，把本机 operator 作为信任边界，但仍执行同一 Authorizer 与 AuditSink。
@@ -55,6 +56,7 @@
 ## 6. Management 与可观测性
 
 - `OPS-REQ-001`：独立 management listener 提供 `/startupz`、`/livez`、`/readyz`、`/metrics`、`/build` 与脱敏 `/diagnostics`；业务 listener 不暴露这些入口。
+- `OPS-REQ-008`：management 与 observability 以 `internal/module/ops` 为唯一应用 owner，收口 use cases、HTTP binding、OTel/Prometheus Adapter、配置、middleware 与 contribution；物理 listener、稳定 registry identity 与 build ldflags 仍由进程 owner 持有。
 - `OPS-REQ-002`：startup/liveness/readiness 语义分离；readiness 汇总 generation、认证 verifier、数据库及必要 exporter 状态，停止 admission 前先变为 not ready。
 - `OPS-REQ-003`：完整 diagnostics 只对 management scope 开放；pprof 默认禁用，启用时必须有独立配置、认证、预算与审计。
 - `OPS-REQ-004`：使用 OpenTelemetry Go `1.44.x` stable trace 与 OTLP/HTTP exporter；不引入仍为 Beta 的 OTel logs。日志通过 request ID/trace ID 关联。
@@ -65,6 +67,7 @@
 ## 7. 数据迁移
 
 - `DATA-REQ-001`：使用 `golang-migrate v4.19.x` 与按 SQLite/PostgreSQL/MySQL 分离、嵌入二进制的 versioned SQL；版本、checksum、dirty state 与 lock timeout 可诊断。
+- `DATA-REQ-006`：migration command 归 `internal/module/migration`，通用 engine 归 `pkg/database/migrate`，Todo 三 driver SQL、owner expand/backfill/contract 与 compatibility 归 `internal/module/todo/binding/migration`；不得建立顶层无归属 `internal/adapter/migration` 或根级 Todo SQL authority。
 - `DATA-REQ-002`：独立 `db migrate` command/job 是 migration owner；service 启动只校验 schema compatibility/readiness，不再执行 `database.Client.Migrate` 或 AutoMigrate 风格 schema 变更。
 - `DATA-REQ-003`：每个 driver 均验证 fresh up、incremental up、重复执行、dirty/lock/too-new/too-old 和兼容窗口；down 只用于测试和明确 Runbook，不自动用于生产回滚。
 - `DATA-REQ-004`：Todo `owner_subject` 采用 expand/backfill/contract，旧应用与新 schema 的兼容窗口、失败前滚和回滚边界必须写入 migration Runbook。

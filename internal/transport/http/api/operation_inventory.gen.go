@@ -11,6 +11,8 @@ type Operation struct {
 	Method string
 	Path   string
 	Policy string
+	Scope  string
+	Action string
 }
 
 const (
@@ -21,10 +23,10 @@ const (
 )
 
 var operationInventory = [...]Operation{
-	{ID: OperationCompleteTodo, Method: "PATCH", Path: "/api/v1/todos/{id}/complete", Policy: "public"},
-	{ID: OperationCreateTodo, Method: "POST", Path: "/api/v1/todos", Policy: "public"},
-	{ID: OperationGetTodo, Method: "GET", Path: "/api/v1/todos/{id}", Policy: "public"},
-	{ID: OperationListTodos, Method: "GET", Path: "/api/v1/todos", Policy: "public"},
+	{ID: OperationCompleteTodo, Method: "PATCH", Path: "/api/v1/todos/{id}/complete", Policy: "protected", Scope: "todos:write", Action: "todo.complete"},
+	{ID: OperationCreateTodo, Method: "POST", Path: "/api/v1/todos", Policy: "protected", Scope: "todos:write", Action: "todo.create"},
+	{ID: OperationGetTodo, Method: "GET", Path: "/api/v1/todos/{id}", Policy: "protected", Scope: "todos:read", Action: "todo.read"},
+	{ID: OperationListTodos, Method: "GET", Path: "/api/v1/todos", Policy: "protected", Scope: "todos:read", Action: "todo.list"},
 }
 
 // Operations 返回与生成代码解耦的 inventory 副本。
@@ -36,13 +38,13 @@ func Operations() []Operation {
 func OperationForStrictName(name string) (Operation, bool) {
 	switch name {
 	case "CompleteTodo":
-		return Operation{ID: OperationCompleteTodo, Method: "PATCH", Path: "/api/v1/todos/{id}/complete", Policy: "public"}, true
+		return Operation{ID: OperationCompleteTodo, Method: "PATCH", Path: "/api/v1/todos/{id}/complete", Policy: "protected", Scope: "todos:write", Action: "todo.complete"}, true
 	case "CreateTodo":
-		return Operation{ID: OperationCreateTodo, Method: "POST", Path: "/api/v1/todos", Policy: "public"}, true
+		return Operation{ID: OperationCreateTodo, Method: "POST", Path: "/api/v1/todos", Policy: "protected", Scope: "todos:write", Action: "todo.create"}, true
 	case "GetTodo":
-		return Operation{ID: OperationGetTodo, Method: "GET", Path: "/api/v1/todos/{id}", Policy: "public"}, true
+		return Operation{ID: OperationGetTodo, Method: "GET", Path: "/api/v1/todos/{id}", Policy: "protected", Scope: "todos:read", Action: "todo.read"}, true
 	case "ListTodos":
-		return Operation{ID: OperationListTodos, Method: "GET", Path: "/api/v1/todos", Policy: "public"}, true
+		return Operation{ID: OperationListTodos, Method: "GET", Path: "/api/v1/todos", Policy: "protected", Scope: "todos:read", Action: "todo.list"}, true
 	default:
 		return Operation{}, false
 	}

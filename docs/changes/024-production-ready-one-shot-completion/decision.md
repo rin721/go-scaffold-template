@@ -1,8 +1,8 @@
 # ADR-003：采用单轨生产就绪竣工方案
 
-- 状态：已接受
+- 状态：已接受并实施；C4-C6 package ownership 修订已确认
 - 日期：2026-08-15
-- 依据：[R001](research/R001-current-one-shot-baseline/report.md)、[R002](research/R002-api-security-stack-selection/report.md)、[R003](research/R003-delivery-release-stack-selection/report.md)
+- 依据：[R001](research/R001-current-one-shot-baseline/report.md)、[R002](research/R002-api-security-stack-selection/report.md)、[R003](research/R003-delivery-release-stack-selection/report.md)、[R004](research/R004-jwx-jsonv2-reassessment/report.md)、[R005](research/R005-security-module-ownership/report.md)、[R006](research/R006-remaining-module-ownership/report.md)
 - 取代范围：022 中尚未启动的 `PORTABILITY/API/MANAGEMENT/OBSERVABILITY/SECURITY/MIGRATION/DELIVERY/RELEASE/ACCEPTANCE` Program；023 若尚未形成已确认 commit，其施工 authority 同样由 024 单轨吸收。
 
 ## 决策
@@ -33,13 +33,14 @@
 ### 4. 协议与安全
 
 - 所有公开错误使用 RFC 9457 `application/problem+json`；panic、404、405、validation、认证、授权、rate/overload 与未知错误同轨。
-- project-owned `Principal`、`CredentialVerifier`、`Authorizer`、`Decision` 与 `AuditSink` 位于稳定应用边界；业务层不导入 JWT/JWK/OpenAPI/Chi 类型。
-- production Adapter 使用 `github.com/lestrrat-go/jwx/v4` 校验 JWT/JWKS bearer token，强制 issuer、audience、允许算法、时间窗口与 key refresh；凭据缺失或 Adapter 未 Ready 时 protected operation fail closed。
+- Auth 是 `internal/module/auth` 纵向应用模块；其中收口 project-owned `Principal`、`CredentialVerifier`、`Authorizer`、`Decision`、`AuditSink`、JWT Adapter、配置、middleware 与 generation contribution。Todo 只定义调用方拥有的窄跨模块 port，composition 负责连接，业务层不导入 JWT/JWK/OpenAPI/Chi 类型。
+- production Adapter 使用 `github.com/lestrrat-go/jwx/v3 v3.2.0` 校验 JWT/JWKS bearer token，强制 issuer、audience、允许算法、时间窗口与 key refresh；凭据缺失或 Adapter 未 Ready 时 protected operation fail closed。`jwx v4.2.0 + GOEXPERIMENT=jsonv2` 不进入当前生产基线，见 R004。
 - Todo 作为真实 actor 验收：记录 `owner_subject`，Service 在读取资源事实后执行对象级授权。现有数据通过显式 expand/backfill/contract migration，不猜测 production owner。
 - development anonymous actor 只允许 `environment=development` 且业务 listener 为 loopback；production 配置禁止该模式。
 
 ### 5. 管理与观测
 
+- Management 与 observability 合并为 `internal/module/ops`；其中收口 management use cases/HTTP binding、OTel/Prometheus Adapter、配置、middleware 与 generation contribution。物理 listener、稳定 registry identity 和 build ldflags 仍属于进程 owner。
 - 业务与 management listener 分离。management 提供 startup/live/ready、Prometheus metrics、build info 与脱敏 diagnostics；pprof 默认禁用，完整 diagnostics 受 management scope 保护。
 - 使用 OpenTelemetry Go `1.44.x` 的稳定 trace API/SDK 与 OTLP/HTTP exporter；不引入仍为 Beta 的 OTel logs。
 - 使用 `prometheus/client_golang v1.24.x` 暴露稳定 metrics。标签只允许 operation、method、status class、error class 与命名 dependency，不记录 raw path、subject、Todo ID 或异常文本。
@@ -47,6 +48,7 @@
 
 ### 6. 数据演进
 
+- migration command 收口在 `internal/module/migration`；跨模块通用 engine 位于 `pkg/database/migrate`，Todo 三 driver SQL、owner migration 与 compatibility 归 `internal/module/todo/binding/migration`。
 - 使用 `github.com/golang-migrate/migrate/v4 v4.19.x` 与按 driver 分离、嵌入二进制的 versioned SQL。
 - migration 由独立 `db migrate` command/job 拥有；Service 启动只检查 schema version/readiness，不再执行 GORM AutoMigrate 风格变更。
 - SQLite、PostgreSQL、MySQL 各有 contract test；down migration 只用于测试和明确回滚 Runbook，不作为生产默认自动回退。

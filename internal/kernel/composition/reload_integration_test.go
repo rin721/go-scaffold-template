@@ -2,11 +2,11 @@ package composition
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
@@ -30,6 +30,8 @@ func TestHostReloadsRealSQLiteAndKeepsCrossComponentTransactionAtomic(t *testing
 	logV1 := filepath.Join(directory, "logger-v1.log")
 	logRejected := filepath.Join(directory, "logger-rejected.log")
 	logV2 := filepath.Join(directory, "logger-v2.log")
+	seedMigrationMarkers(t, databaseV1, "generation_v1", "still_generation_v1")
+	seedMigrationMarkers(t, databaseV2, "generation_v2")
 	writeReloadConfig(t, configPath, "info", logV1, "sqlite", databaseV1)
 
 	logging, err := kernellogging.New(pkglogger.Noop())
@@ -236,36 +238,37 @@ func waitForDatabaseUse(t *testing.T, access databaseapp.Access, done <-chan err
 	}
 }
 
-// useDatabaseMarker 使用反射只调用当前 Database Client 已公开的 Migrate 契约。
-// 这样 009 不导入 008 正在演进的 Schema 类型，任务提交仍与其文件归属隔离。
+// useDatabaseMarker 通过只读 migration status 验证稳定 Database Access 已切换目标。
 func useDatabaseMarker(ctx context.Context, access databaseapp.Access, table string) error {
 	return access.Use(ctx, func(client databaseapp.Client) error {
-		method := reflect.ValueOf(client).MethodByName("Migrate")
-		if !method.IsValid() {
-			return fmt.Errorf("database client does not expose Migrate")
+		status, err := client.MigrationStatus(ctx, table)
+		if err != nil {
+			return err
 		}
-		methodType := method.Type()
-		if !methodType.IsVariadic() || methodType.NumIn() != 2 {
-			return fmt.Errorf("database Migrate signature is incompatible")
+		if status.Empty || status.Version != 1 || status.Dirty {
+			return fmt.Errorf("database marker %s is unavailable", table)
 		}
-		schemaType := methodType.In(1).Elem()
-		schema := reflect.New(schemaType).Elem()
-		schema.FieldByName("Table").SetString(table)
-		fields := reflect.MakeSlice(schema.FieldByName("Fields").Type(), 1, 1)
-		field := fields.Index(0)
-		field.FieldByName("Name").SetString("ID")
-		field.FieldByName("Column").SetString("id")
-		field.FieldByName("Type").SetString("int64")
-		field.FieldByName("PrimaryKey").SetBool(true)
-		schema.FieldByName("Fields").Set(fields)
-		schemas := reflect.MakeSlice(methodType.In(1), 1, 1)
-		schemas.Index(0).Set(schema)
-		results := method.CallSlice([]reflect.Value{reflect.ValueOf(ctx), schemas})
-		if len(results) != 1 || results[0].IsNil() {
-			return nil
-		}
-		return results[0].Interface().(error)
+		return nil
 	})
+}
+
+func seedMigrationMarkers(t *testing.T, path string, tables ...string) {
+	t.Helper()
+	connection, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open marker database: %v", err)
+	}
+	for _, table := range tables {
+		statement := "CREATE TABLE " + table + " (version INTEGER NOT NULL, dirty BOOLEAN NOT NULL); " +
+			"INSERT INTO " + table + " (version, dirty) VALUES (1, FALSE)"
+		if _, err := connection.ExecContext(t.Context(), statement); err != nil {
+			_ = connection.Close()
+			t.Fatalf("seed marker %s: %v", table, err)
+		}
+	}
+	if err := connection.Close(); err != nil {
+		t.Fatalf("close marker database: %v", err)
+	}
 }
 
 func waitForFileText(t *testing.T, path, expected string) {

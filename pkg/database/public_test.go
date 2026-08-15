@@ -2,7 +2,9 @@ package database_test
 
 import (
 	"context"
+	stdlibsql "database/sql"
 	"errors"
+	"path/filepath"
 	"testing"
 
 	"github.com/rin721/go-scaffold-template/pkg/database"
@@ -15,9 +17,27 @@ type publicAccount struct {
 }
 
 func TestPublicAPIContract(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "public.db")
+	seed, err := stdlibsql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("sql.Open() error = %v", err)
+	}
+	if _, err := seed.ExecContext(t.Context(), `
+CREATE TABLE public_accounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  version INTEGER NOT NULL
+);
+CREATE UNIQUE INDEX uidx_public_accounts_name ON public_accounts (name);`); err != nil {
+		_ = seed.Close()
+		t.Fatalf("seed public schema error = %v", err)
+	}
+	if err := seed.Close(); err != nil {
+		t.Fatalf("close public schema seed error = %v", err)
+	}
 	resource, err := database.NewGORM(t.Context(), &database.Config{
 		Driver: database.DriverSQLite,
-		DSN:    ":memory:",
+		DSN:    databasePath,
 	})
 	if err != nil {
 		t.Fatalf("NewGORM() error = %v", err)
@@ -41,9 +61,6 @@ func TestPublicAPIContract(t *testing.T) {
 		},
 		Indexes:      []database.Index{{Name: "uidx_public_accounts_name", Fields: []string{"Name"}, Unique: true}},
 		VersionField: "Version",
-	}
-	if err := client.Migrate(t.Context(), schema); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
 	}
 	repository, err := database.NewRepository[publicAccount](client, schema)
 	if err != nil {

@@ -48,8 +48,9 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		"database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s",
 		"cache:", "driver: disabled", "i18n:", "defaultLanguage: zh-CN",
 		"storage:", "basePath: .data/storage",
+		"auth:", "mode: development-anonymous", "migration:", "lockTimeout: 15s",
 		"todo:", "titleMaxRunes: 120", "defaultListLimit: 20", "maxListLimit: 100",
-		"http:", "addr: :8080",
+		"http:", "addr: 127.0.0.1:8080",
 	} {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)
@@ -108,6 +109,7 @@ http:
 	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write service config: %v", err)
 	}
+	runTestMigration(t, configPath, "GO_SCAFFOLD2_TEST_011_")
 
 	process := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
 	process.configPath = configPath
@@ -251,8 +253,13 @@ http:
 	process := newTestProcess(t, strings.NewReader(""), &stdout, &stderr)
 	process.configPath = configPath
 	process.environmentPrefix = "GO_SCAFFOLD2_TEST_014_"
+	if err := process.run(t.Context(), []string{"db", "migrate", "up"}); err != nil {
+		t.Fatalf("db migrate up error = %v, stderr=%s", err, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
 
-	if err := process.run(t.Context(), []string{"todo", "create", "--title", "学习 Go"}); err != nil {
+	if err := process.run(t.Context(), []string{"todo", "create", "--subject", "development-loopback", "--scopes", "todos:read,todos:write", "--title", "学习 Go"}); err != nil {
 		t.Fatalf("todo create error = %v, stderr=%s", err, stderr.String())
 	}
 	var created struct {
@@ -264,7 +271,7 @@ http:
 	}
 
 	stdout.Reset()
-	if err := process.run(t.Context(), []string{"todo", "list"}); err != nil {
+	if err := process.run(t.Context(), []string{"todo", "list", "--subject", "development-loopback", "--scopes", "todos:read,todos:write"}); err != nil {
 		t.Fatalf("todo list error = %v", err)
 	}
 	var listed struct {
@@ -275,7 +282,7 @@ http:
 	}
 
 	stdout.Reset()
-	if err := process.run(t.Context(), []string{"todo", "complete", "--id", created.ID}); err != nil {
+	if err := process.run(t.Context(), []string{"todo", "complete", "--subject", "development-loopback", "--scopes", "todos:read,todos:write", "--id", created.ID}); err != nil {
 		t.Fatalf("todo complete error = %v", err)
 	}
 	var completed struct {
@@ -355,11 +362,23 @@ http:
 	}
 
 	stdout.Reset()
-	if err := process.run(t.Context(), []string{"todo", "complete", "--id", createdByHTTP.ID}); err != nil {
+	if err := process.run(t.Context(), []string{"todo", "complete", "--subject", "development-loopback", "--scopes", "todos:read,todos:write", "--id", createdByHTTP.ID}); err != nil {
 		t.Fatalf("CLI complete HTTP Todo error = %v", err)
 	}
 	if err := json.Unmarshal(stdout.Bytes(), &completed); err != nil || completed.Status != "completed" {
 		t.Fatalf("cross-mode complete output = %q, parsed=%#v, err=%v", stdout.String(), completed, err)
+	}
+}
+
+func runTestMigration(t *testing.T, configPath, environmentPrefix string) {
+	t.Helper()
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	process := newTestProcess(t, strings.NewReader(""), &stdout, &stderr)
+	process.configPath = configPath
+	process.environmentPrefix = environmentPrefix
+	if err := process.run(t.Context(), []string{"db", "migrate", "up"}); err != nil {
+		t.Fatalf("db migrate up error = %v, stderr=%s", err, stderr.String())
 	}
 }
 

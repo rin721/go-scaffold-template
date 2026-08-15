@@ -5,20 +5,29 @@ import (
 	"fmt"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
+	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/module/auth"
+	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
+	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
+	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
+	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 type preparedTodo struct {
-	coordinator  *kernel.Coordinator
-	capabilities kernelcomposition.Capabilities
-	module       todo.Module
-	candidate    config.Snapshot
+	coordinator   *kernel.Coordinator
+	capabilities  kernelcomposition.Capabilities
+	module        todo.Module
+	authModule    auth.Module
+	compatibility *migrationbinding.Compatibility
+	completion    *migrationbinding.Completion
+	candidate     config.Snapshot
 }
 
 func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
@@ -38,7 +47,7 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	}
 	// CLI 与 Service 共用正式配置文件，因此两种模式都声明 application-owned 配置节。
 	// 这里只注册 HTTP 配置契约，不会构造 listener、Host 或 watcher。
-	bindings := []config.Binding{kernelcomposition.HTTPConfiguration(), configbinding.Binding()}
+	bindings := []config.Binding{kernelcomposition.HTTPConfiguration(), authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
 	coordinator, err := kernel.NewCoordinator(runtime, bindings...)
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("create configuration coordinator: %w", err)
@@ -51,23 +60,50 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	if err != nil {
 		return preparedTodo{}, err
 	}
+	databaseConfig, err := databaseapp.Decode(candidate)
+	if err != nil {
+		return preparedTodo{}, err
+	}
+	migrationCompletion, err := migrationbinding.NewCompletion(databaseConfig.PackageConfig())
+	if err != nil {
+		return preparedTodo{}, err
+	}
 	databaseAccess, err := adaptDatabaseAccess(capabilities.Database)
+	if err != nil {
+		return preparedTodo{}, err
+	}
+	compatibility, err := migrationbinding.NewCompatibility(databaseAccess)
+	if err != nil {
+		return preparedTodo{}, err
+	}
+	policies, err := operationPolicies()
+	if err != nil {
+		return preparedTodo{}, err
+	}
+	authModule, err := auth.NewLocal(auth.Dependencies{
+		Clock: capabilities.Clock, Logger: capabilities.Logger, Policies: policies,
+	})
+	if err != nil {
+		return preparedTodo{}, fmt.Errorf("compose local auth module: %w", err)
+	}
+	authorizer, err := newTodoAuthorizerAdapter(authModule.Service)
 	if err != nil {
 		return preparedTodo{}, err
 	}
 	module, err := todo.New(todo.Dependencies{
 		Database: databaseAccess, Clock: capabilities.Clock, IDGenerator: capabilities.IDGenerator,
-		Config: todoConfig,
+		Config: todoConfig, Authorizer: authorizer,
 	})
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("compose todo module: %w", err)
 	}
 	return preparedTodo{
-		coordinator: coordinator, capabilities: capabilities, module: module, candidate: candidate,
+		coordinator: coordinator, capabilities: capabilities, module: module, authModule: authModule,
+		compatibility: compatibility, completion: migrationCompletion, candidate: candidate,
 	}, nil
 }
 
-func (a *Application) executeTodo(ctx context.Context, operation func(service.UseCases) error) error {
+func (a *Application) executeTodo(ctx context.Context, actor service.Actor, operation func(context.Context, service.UseCases) error) error {
 	if operation == nil {
 		return fmt.Errorf("todo application operation is nil")
 	}
@@ -82,8 +118,22 @@ func (a *Application) executeTodo(ctx context.Context, operation func(service.Us
 	if err != nil {
 		return fmt.Errorf("create todo operation supervisor: %w", err)
 	}
-	if err := owner.RunOperation(ctx, func(context.Context) error {
-		return operation(prepared.module.Service)
+	if err := owner.RunOperation(ctx, func(operationCtx context.Context) error {
+		if err := prepared.compatibility.Check(operationCtx); err != nil {
+			return fmt.Errorf("verify todo migration compatibility: %w", err)
+		}
+		if err := prepared.completion.Verify(operationCtx); err != nil {
+			return fmt.Errorf("verify todo migration completion: %w", err)
+		}
+		scopes := make([]authmodel.Scope, len(actor.Scopes))
+		for index, scope := range actor.Scopes {
+			scopes[index] = authmodel.Scope(scope)
+		}
+		principal, err := prepared.authModule.Service.LocalPrincipal(operationCtx, actor.Subject, scopes)
+		if err != nil {
+			return fmt.Errorf("construct Todo CLI actor: %w", err)
+		}
+		return operation(authmodel.WithPrincipal(operationCtx, principal), prepared.module.Service)
 	}); err != nil {
 		return fmt.Errorf("execute todo application operation: %w", err)
 	}
@@ -98,9 +148,9 @@ type todoExecutor struct{ application *Application }
 
 func (e todoExecutor) Create(ctx context.Context, command service.CreateCommand) (model.Todo, error) {
 	var result model.Todo
-	err := e.application.executeTodo(ctx, func(useCases service.UseCases) error {
+	err := e.application.executeTodo(ctx, command.Actor, func(operationCtx context.Context, useCases service.UseCases) error {
 		var err error
-		result, err = useCases.Create(ctx, command)
+		result, err = useCases.Create(operationCtx, command)
 		return err
 	})
 	return result, err
@@ -108,9 +158,9 @@ func (e todoExecutor) Create(ctx context.Context, command service.CreateCommand)
 
 func (e todoExecutor) Get(ctx context.Context, query service.GetQuery) (model.Todo, error) {
 	var result model.Todo
-	err := e.application.executeTodo(ctx, func(useCases service.UseCases) error {
+	err := e.application.executeTodo(ctx, query.Actor, func(operationCtx context.Context, useCases service.UseCases) error {
 		var err error
-		result, err = useCases.Get(ctx, query)
+		result, err = useCases.Get(operationCtx, query)
 		return err
 	})
 	return result, err
@@ -118,9 +168,9 @@ func (e todoExecutor) Get(ctx context.Context, query service.GetQuery) (model.To
 
 func (e todoExecutor) List(ctx context.Context, query service.ListQuery) (service.ListResult, error) {
 	var result service.ListResult
-	err := e.application.executeTodo(ctx, func(useCases service.UseCases) error {
+	err := e.application.executeTodo(ctx, query.Actor, func(operationCtx context.Context, useCases service.UseCases) error {
 		var err error
-		result, err = useCases.List(ctx, query)
+		result, err = useCases.List(operationCtx, query)
 		return err
 	})
 	return result, err
@@ -128,9 +178,9 @@ func (e todoExecutor) List(ctx context.Context, query service.ListQuery) (servic
 
 func (e todoExecutor) Complete(ctx context.Context, command service.CompleteCommand) (model.Todo, error) {
 	var result model.Todo
-	err := e.application.executeTodo(ctx, func(useCases service.UseCases) error {
+	err := e.application.executeTodo(ctx, command.Actor, func(operationCtx context.Context, useCases service.UseCases) error {
 		var err error
-		result, err = useCases.Complete(ctx, command)
+		result, err = useCases.Complete(operationCtx, command)
 		return err
 	})
 	return result, err

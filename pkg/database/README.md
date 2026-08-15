@@ -58,15 +58,11 @@ schema := database.Schema{
 }
 ```
 
-Schema 支持表、列、主键、nullable、长度、默认值、普通/唯一索引和单列外键关系。Reference 的 Field 与 ReferenceField 都填写各自 Schema 的字段名，不填写数据库列名；目标 Schema 必须与引用方一起传给同一次 Migrate，更新/删除动作使用 `ReferenceCascade`、`ReferenceRestrict`、`ReferenceSetNull` 或 `ReferenceNoAction`。Default 只接受与字段类型匹配的 NULL、布尔、数值、CURRENT_TIMESTAMP 或正确转义的 SQL 单引号字符串，不接受任意 DDL 表达式。`Migrate` 只承诺 additive migration：创建缺失的表、列、索引和约束，不删除、重命名或调整已有列，也不承诺跨数据库 DDL 回滚。
+Schema 支持表、列、主键、nullable、长度、默认值、普通/唯一索引和单列外键关系。它只服务 Repository 的字段映射、查询校验与并发语义，不是 DDL authority。生产 schema 由业务模块拥有的 versioned SQL 与独立 `db migrate` command 变更；`pkg/database/migrate` 只提供通用执行 Adapter。
 
 ## 怎么使用 Repository
 
 ```go
-if err := client.Migrate(ctx, schema); err != nil {
-	return err
-}
-
 accounts, err := database.NewRepository[Account](client, schema)
 if err != nil {
 	return err

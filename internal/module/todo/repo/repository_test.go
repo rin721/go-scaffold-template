@@ -7,34 +7,47 @@ import (
 	"testing"
 	"time"
 
-	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
+	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/database"
+	dbmigrate "github.com/rin721/go-scaffold-template/pkg/database/migrate"
 	"github.com/rin721/go-scaffold-template/pkg/fault"
 )
 
 func TestRepositorySQLiteContract(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "todo.db")
+	migrationConfig := database.DefaultConfig()
+	migrationConfig.Driver = database.DriverSQLite
+	migrationConfig.DSN = databasePath
+	runner, err := dbmigrate.New(t.Context(), dbmigrate.Config{
+		Database: migrationConfig, LockTimeout: 5 * time.Second,
+	}, migrationbinding.Set())
+	if err != nil {
+		t.Fatalf("New migration runner() error = %v", err)
+	}
+	if err := runner.Up(t.Context()); err != nil {
+		_ = runner.Close()
+		t.Fatalf("Migration up() error = %v", err)
+	}
+	if err := runner.Close(); err != nil {
+		t.Fatalf("Close migration runner() error = %v", err)
+	}
 	resource, err := database.NewGORM(t.Context(), &database.Config{
-		Driver: database.DriverSQLite, DSN: filepath.Join(t.TempDir(), "todo.db"),
+		Driver: database.DriverSQLite, DSN: databasePath,
 	})
 	if err != nil {
 		t.Fatalf("NewGORM() error = %v", err)
 	}
 	defer resource.Close()
 	access := resourceAccess{resource: resource}
-	if err := access.Use(t.Context(), func(client database.Client) error {
-		return client.Migrate(t.Context(), modelbinding.Schema())
-	}); err != nil {
-		t.Fatalf("Migrate() error = %v", err)
-	}
-	repository, err := repo.New(access, modelbinding.Schema())
+	repository, err := repo.New(access, repo.Schema())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
 	now := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
-	todo, err := model.New("11111111-1111-4111-8111-111111111111", "学习 Go", now)
+	todo, err := model.New("11111111-1111-4111-8111-111111111111", "学习 Go", "actor-a", now)
 	if err != nil {
 		t.Fatalf("model.New() error = %v", err)
 	}
@@ -42,7 +55,7 @@ func TestRepositorySQLiteContract(t *testing.T) {
 	if err != nil || created.Version != 1 {
 		t.Fatalf("Create() = %#v, %v", created, err)
 	}
-	items, total, err := repository.List(t.Context(), service.ListFilter{Offset: 0, Limit: 10})
+	items, total, err := repository.List(t.Context(), service.ListFilter{OwnerSubject: "actor-a", Offset: 0, Limit: 10})
 	if err != nil || total != 1 || len(items) != 1 {
 		t.Fatalf("List() = %#v, %d, %v", items, total, err)
 	}
@@ -79,7 +92,7 @@ func (a resourceAccess) WithinTx(ctx context.Context, use func(context.Context, 
 func TestRepositoryPreservesCancellation(t *testing.T) {
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
-	repository, err := repo.New(failingAccess{err: context.Canceled}, modelbinding.Schema())
+	repository, err := repo.New(failingAccess{err: context.Canceled}, repo.Schema())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}

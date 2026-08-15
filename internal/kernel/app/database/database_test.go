@@ -111,7 +111,7 @@ func TestAccessInvalidatesEscapedClientAfterLease(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("Access.Use() error = %v", err)
 	}
-	if err := escaped.Migrate(context.Background()); !errors.Is(err, pkgdatabase.ErrClientUnavailable) {
+	if _, err := escaped.MigrationStatus(context.Background(), "schema_migrations"); !errors.Is(err, pkgdatabase.ErrClientUnavailable) {
 		t.Fatalf("escaped Client error = %v, want ErrClientUnavailable", err)
 	}
 }
@@ -135,5 +135,6 @@ func (f *fakeClient) WithinTx(ctx context.Context, use func(context.Context, pkg
 	f.transactions++
 	return nil
 }
-func (*fakeClient) Migrate(context.Context, ...pkgdatabase.Schema) error      { return nil }
-func (*fakeClient) CheckSchemas(context.Context, ...pkgdatabase.Schema) error { return nil }
+func (*fakeClient) MigrationStatus(context.Context, string) (pkgdatabase.MigrationStatus, error) {
+	return pkgdatabase.MigrationStatus{}, nil
+}

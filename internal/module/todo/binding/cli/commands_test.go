@@ -24,7 +24,11 @@ func TestCommandsUseApplicationModeAndExternalWrite(t *testing.T) {
 		t.Fatalf("Commands() = %#v, %v", commands, err)
 	}
 	for _, command := range append([]cli.CommandSpec{commands[0]}, commands[0].Commands...) {
-		if command.Mode != cli.CommandModeApplication || command.SideEffect != cli.SideEffectExternalWrite {
+		wantEffect := cli.SideEffectExternalWrite
+		if command.Name == "get" || command.Name == "list" {
+			wantEffect = cli.SideEffectNone
+		}
+		if command.Mode != cli.CommandModeApplication || command.SideEffect != wantEffect {
 			t.Fatalf("command %s mode/effect = %v/%v", command.Name, command.Mode, command.SideEffect)
 		}
 	}
@@ -42,16 +46,16 @@ func TestCommandsWriteJSONAndMapInvalidInputToUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
 	}
-	if err := app.Run(t.Context(), []string{"todo", "create", "--title", "学习 Go"}); err != nil {
+	if err := app.Run(t.Context(), []string{"todo", "create", "--subject", "operator-a", "--scopes", "todos:read,todos:write", "--title", "学习 Go"}); err != nil {
 		t.Fatalf("Run(create) error = %v", err)
 	}
 	if !strings.Contains(stdout.String(), `"id":"11111111-1111-4111-8111-111111111111"`) {
 		t.Fatalf("stdout = %q", stdout.String())
 	}
 	for _, args := range [][]string{
-		{"todo", "get", "--id", executor.todo.ID},
-		{"todo", "list", "--status", "pending", "--offset", "0", "--limit", "20"},
-		{"todo", "complete", "--id", executor.todo.ID},
+		{"todo", "get", "--subject", "operator-a", "--scopes", "todos:read,todos:write", "--id", executor.todo.ID},
+		{"todo", "list", "--subject", "operator-a", "--scopes", "todos:read,todos:write", "--status", "pending", "--offset", "0", "--limit", "20"},
+		{"todo", "complete", "--subject", "operator-a", "--scopes", "todos:read,todos:write", "--id", executor.todo.ID},
 	} {
 		stdout.Reset()
 		commandApp, err := kernelcli.NewApp(cli.Config{Name: "test", Stdout: &stdout, Stderr: &bytes.Buffer{}}, contract)
@@ -71,7 +75,7 @@ func TestCommandsWriteJSONAndMapInvalidInputToUsage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewApp(invalid) error = %v", err)
 	}
-	err = invalidApp.Run(t.Context(), []string{"todo", "list", "--limit", "999"})
+	err = invalidApp.Run(t.Context(), []string{"todo", "list", "--subject", "operator-a", "--scopes", "todos:read", "--limit", "999"})
 	if cli.GetExitCode(err) != cli.ExitUsage {
 		t.Fatalf("Run(invalid) error = %v, exit = %d", err, cli.GetExitCode(err))
 	}

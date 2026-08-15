@@ -17,6 +17,7 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/nethttp-middleware"
+	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
@@ -28,6 +29,11 @@ import (
 const acceptLanguageHeader = "Accept-Language"
 
 type requestLanguageContextKey struct{}
+
+// OperationAuthorizer 是 transport 使用的 Auth module 最小授权端口。
+type OperationAuthorizer interface {
+	EnforceOperation(context.Context, authmodel.Principal, string) error
+}
 
 // TodoHandler 实现生成的 strict server interface，并只依赖项目 UseCases。
 type TodoHandler struct {
@@ -47,10 +53,13 @@ func NewTodoHandler(todoService service.UseCases, translator i18n.Translator) (*
 }
 
 // NewTodoHTTPHandler 组装生成 route、OpenAPI request validator 与统一错误边界。
-func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator) (http.Handler, error) {
+func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator, authorizer OperationAuthorizer) (http.Handler, error) {
 	handler, err := NewTodoHandler(todoService, translator)
 	if err != nil {
 		return nil, err
+	}
+	if authorizer == nil {
+		return nil, fmt.Errorf("Todo HTTP operation authorizer is nil")
 	}
 	specification, err := api.GetSwagger()
 	if err != nil {
@@ -71,6 +80,17 @@ func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator
 	router.Use(requireSingleJSONDocument)
 	router.Use(nethttpmiddleware.OapiRequestValidatorWithOptions(specification, &nethttpmiddleware.Options{
 		DoNotValidateServers: true,
+		Options: openapi3filter.Options{
+			AuthenticationFunc: func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
+				if input == nil || input.SecuritySchemeName != "bearerAuth" {
+					return authmodel.ErrUnauthenticated
+				}
+				if _, ok := authmodel.PrincipalFromContext(ctx); !ok {
+					return authmodel.ErrUnauthenticated
+				}
+				return nil
+			},
+		},
 		ErrorHandlerWithOpts: func(_ context.Context, validationErr error, writer http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
 			status, code, message := requestValidationProblem(specification, request, validationErr, options.StatusCode)
 			httpx.WriteProblem(writer, request, &httpx.StatusError{
@@ -78,7 +98,7 @@ func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator
 			})
 		},
 	}))
-	strict := api.NewStrictHandlerWithOptions(handler, []api.StrictMiddlewareFunc{requestMetadata}, api.StrictHTTPServerOptions{
+	strict := api.NewStrictHandlerWithOptions(handler, []api.StrictMiddlewareFunc{requestMetadata(authorizer)}, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(writer http.ResponseWriter, request *http.Request, err error) {
 			httpx.WriteProblem(writer, request, &httpx.StatusError{
 				StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "invalid JSON request body", Err: err,
@@ -157,7 +177,7 @@ func requireSingleJSONDocument(next http.Handler) http.Handler {
 
 // ListTodos 把生成 query DTO 转换为稳定用例查询。
 func (h *TodoHandler) ListTodos(ctx context.Context, request api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
-	query := service.ListQuery{}
+	query := service.ListQuery{Actor: actorFromContext(ctx)}
 	if request.Params.Status != nil {
 		query.Status = string(*request.Params.Status)
 	}
@@ -185,7 +205,7 @@ func (h *TodoHandler) CreateTodo(ctx context.Context, request api.CreateTodoRequ
 	if request.Body == nil {
 		return nil, &httpx.StatusError{StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "request body is required"}
 	}
-	created, err := h.service.Create(ctx, service.CreateCommand{Title: request.Body.Title})
+	created, err := h.service.Create(ctx, service.CreateCommand{Actor: actorFromContext(ctx), Title: request.Body.Title})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -194,7 +214,7 @@ func (h *TodoHandler) CreateTodo(ctx context.Context, request api.CreateTodoRequ
 
 // GetTodo 把生成 path DTO 转换为稳定用例查询。
 func (h *TodoHandler) GetTodo(ctx context.Context, request api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
-	todo, err := h.service.Get(ctx, service.GetQuery{ID: request.Id})
+	todo, err := h.service.Get(ctx, service.GetQuery{Actor: actorFromContext(ctx), ID: request.Id})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -203,7 +223,7 @@ func (h *TodoHandler) GetTodo(ctx context.Context, request api.GetTodoRequestObj
 
 // CompleteTodo 把生成 path DTO 转换为稳定用例命令。
 func (h *TodoHandler) CompleteTodo(ctx context.Context, request api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
-	todo, err := h.service.Complete(ctx, service.CompleteCommand{ID: request.Id})
+	todo, err := h.service.Complete(ctx, service.CompleteCommand{Actor: actorFromContext(ctx), ID: request.Id})
 	if err != nil {
 		return nil, h.present(ctx, err)
 	}
@@ -220,6 +240,15 @@ func todoResponse(todo model.Todo) api.Todo {
 		response.CompletedAt = &completed
 	}
 	return response
+}
+
+func actorFromContext(ctx context.Context) service.Actor {
+	principal, _ := authmodel.PrincipalFromContext(ctx)
+	scopes := make([]string, len(principal.Scopes))
+	for index, scope := range principal.Scopes {
+		scopes[index] = string(scope)
+	}
+	return service.Actor{Subject: principal.Subject, Kind: string(principal.Kind), Scopes: scopes}
 }
 
 func (h *TodoHandler) present(ctx context.Context, err error) error {
@@ -249,6 +278,8 @@ func errorContract(code fault.Code) (int, string, string) {
 		return http.StatusNotFound, "todo_not_found", "Todo 不存在"
 	case fault.CodeConflict:
 		return http.StatusConflict, "todo_conflict", "Todo 已被其他操作修改"
+	case fault.CodePermissionDenied:
+		return http.StatusForbidden, "permission_denied", "当前主体无权执行该操作"
 	case fault.CodeUnavailable:
 		return http.StatusServiceUnavailable, "todo_unavailable", "Todo 服务暂不可用"
 	case fault.CodeTimeout:
@@ -260,16 +291,32 @@ func errorContract(code fault.Code) (int, string, string) {
 	}
 }
 
-func requestMetadata(next api.StrictHandlerFunc, strictName string) api.StrictHandlerFunc {
-	return func(ctx context.Context, writer http.ResponseWriter, request *http.Request, input any) (any, error) {
-		operation, ok := api.OperationForStrictName(strictName)
-		if !ok {
-			return nil, fmt.Errorf("strict operation %q is absent from generated inventory", strictName)
+func requestMetadata(authorizer OperationAuthorizer) api.StrictMiddlewareFunc {
+	return func(next api.StrictHandlerFunc, strictName string) api.StrictHandlerFunc {
+		return func(ctx context.Context, writer http.ResponseWriter, request *http.Request, input any) (any, error) {
+			operation, ok := api.OperationForStrictName(strictName)
+			if !ok {
+				return nil, fmt.Errorf("strict operation %q is absent from generated inventory", strictName)
+			}
+			ctx = httpx.WithOperationID(ctx, string(operation.ID))
+			ctx = context.WithValue(ctx, requestLanguageContextKey{}, request.Header.Get(acceptLanguageHeader))
+			principal, authenticated := authmodel.PrincipalFromContext(ctx)
+			if !authenticated {
+				return nil, &httpx.StatusError{
+					StatusCode: http.StatusUnauthorized, Code: "unauthenticated", Message: "valid bearer authentication is required", Err: authmodel.ErrUnauthenticated,
+				}
+			}
+			if err := authorizer.EnforceOperation(ctx, principal, string(operation.ID)); err != nil {
+				if errors.Is(err, authmodel.ErrPermissionDenied) {
+					return nil, &httpx.StatusError{
+						StatusCode: http.StatusForbidden, Code: "permission_denied", Message: "the authenticated principal is not authorized", Err: err,
+					}
+				}
+				return nil, err
+			}
+			request = request.WithContext(ctx)
+			return next(ctx, writer, request, input)
 		}
-		ctx = httpx.WithOperationID(ctx, string(operation.ID))
-		ctx = context.WithValue(ctx, requestLanguageContextKey{}, request.Header.Get(acceptLanguageHeader))
-		request = request.WithContext(ctx)
-		return next(ctx, writer, request, input)
 	}
 }
 

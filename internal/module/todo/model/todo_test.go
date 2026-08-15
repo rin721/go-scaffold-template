@@ -12,7 +12,7 @@ func TestTodoNormalizesAndCompletesIdempotently(t *testing.T) {
 		t.Fatalf("NormalizeTitle() = %q, %v", title, err)
 	}
 	createdAt := time.Date(2026, 8, 15, 1, 2, 3, 0, time.FixedZone("test", 8*60*60))
-	todo, err := New("id", title, createdAt)
+	todo, err := New("id", title, "actor-a", createdAt)
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -38,7 +38,7 @@ func TestTodoRejectsInvalidValues(t *testing.T) {
 	if _, err := ParseStatus("unknown"); !errors.Is(err, ErrInvalidStatus) {
 		t.Fatalf("status error = %v", err)
 	}
-	if _, err := Restore(Todo{ID: "id", Title: "title", Status: StatusCompleted, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()}); !errors.Is(err, ErrInvalidTime) {
+	if _, err := Restore(Todo{ID: "id", Title: "title", OwnerSubject: "actor-a", Status: StatusCompleted, Version: 1, CreatedAt: time.Now(), UpdatedAt: time.Now()}); !errors.Is(err, ErrInvalidTime) {
 		t.Fatalf("restore error = %v", err)
 	}
 }

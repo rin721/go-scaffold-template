@@ -84,22 +84,13 @@ func (c *borrowedClient) WithinTx(ctx context.Context, use func(context.Context,
 	})
 }
 
-func (c *borrowedClient) Migrate(ctx context.Context, schemas ...Schema) error {
+func (c *borrowedClient) MigrationStatus(ctx context.Context, table string) (MigrationStatus, error) {
 	operationCtx, cancel, err := c.state.operationContext(ctx)
 	if err != nil {
-		return err
+		return MigrationStatus{}, err
 	}
 	defer cancel()
-	return c.delegate.Migrate(operationCtx, schemas...)
-}
-
-func (c *borrowedClient) CheckSchemas(ctx context.Context, schemas ...Schema) error {
-	operationCtx, cancel, err := c.state.operationContext(ctx)
-	if err != nil {
-		return err
-	}
-	defer cancel()
-	return c.delegate.CheckSchemas(operationCtx, schemas...)
+	return c.delegate.MigrationStatus(operationCtx, table)
 }
 
 func (c *borrowedClient) databaseSession(ctx context.Context) (any, error) {

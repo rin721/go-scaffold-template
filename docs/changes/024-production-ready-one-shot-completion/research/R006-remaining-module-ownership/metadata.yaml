@@ -1,0 +1,41 @@
+schema_version: 1
+id: R006
+title: "C5-C6 新增能力归属复核"
+question: "management、observability 与 versioned migration 如何按当前 module/capability/process owner 规则收口，避免继续形成分散顶层包？"
+research_type: internal-architecture-fit
+topics: ["management", "observability", "migration", "application module ownership"]
+keywords: ["internal/module/ops", "internal/module/migration", "Todo migrations", "process owner"]
+languages: ["Go"]
+frameworks: []
+technologies: ["OpenTelemetry", "Prometheus", "golang-migrate"]
+applicable_scenarios: ["024 C5 operations plane", "024 C6 database migration", "copy-remove Todo acceptance"]
+non_applicable_scenarios: ["CI workflow files", "Dockerfile", "GoReleaser configuration"]
+status: active
+summary: "C5 收口为 internal/module/ops，C6 的命令编排收口为 internal/module/migration，Todo SQL/compatibility 归 Todo；只有可跨模块复用的 migration engine 留在 pkg/database 子能力。ListenerHub、stable registry 与 build variables 是进程 owner，composition 只连接，不承载模块规则。"
+evidence:
+  types: ["current-code", "authoritative-project-documentation", "package-boundary-review"]
+  primary_sources:
+    - title: "应用模块 authority"
+      locator: "internal/module/README.md"
+      snapshot: "vertical application units own model/service/adapters/bindings while composition only wires, verified 2026-08-15"
+    - title: "应用模块开发指南"
+      locator: "docs/development/application-module-development.md"
+      snapshot: "module-specific adapters and participants do not automatically become Kernel Components, verified 2026-08-15"
+    - title: "pkg capability authority"
+      locator: "pkg/README.md"
+      snapshot: "pkg contains only cross-domain reusable low-level capabilities and database is the existing DB technology boundary, verified 2026-08-15"
+    - title: "Todo copy-owned boundary"
+      locator: "internal/module/todo/README.md"
+      snapshot: "Todo owns schema and migration semantics and must be removable as one vertical slice, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: current-repository-authority
+  review_after: "2026-09-15"
+  refresh_triggers: ["module authority changes", "ops is split into separately deployed processes", "migration engine gains runtime lifecycle"]
+relations:
+  extends: ["024-R003", "024-R005"]
+  related: ["020-R003", "022-R008"]
+  supersedes: ["024 design sections 7-8 package ownership only"]
+  superseded_by: []
+report: report.md

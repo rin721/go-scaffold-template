@@ -15,9 +15,12 @@ import (
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/internal/module"
+	"github.com/rin721/go-scaffold-template/internal/module/auth"
+	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
-	modelbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/model"
+	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	"github.com/rin721/go-scaffold-template/pkg/clock"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
@@ -53,6 +56,7 @@ type applicationGeneration struct {
 	storage  *resourceHandle[storageapp.Access]
 
 	module       todo.Module
+	authModule   auth.Module
 	participants []supervisor.Participant
 	route        *httpx.PreparedRoute
 	server       *httpx.Server
@@ -206,6 +210,25 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.recordResource("storage", reused)
 
+	authConfig, err := authconfig.Decode(snapshot)
+	if err != nil {
+		return abort(err)
+	}
+	policies, err := operationPolicies()
+	if err != nil {
+		return abort(err)
+	}
+	generation.authModule, err = auth.NewHTTP(auth.Dependencies{
+		Clock: clock.System(), Logger: generation.logger.value(), Config: authConfig, Policies: policies,
+	})
+	if err != nil {
+		return abort(err)
+	}
+	authorizer, err := newTodoAuthorizerAdapter(generation.authModule.Service)
+	if err != nil {
+		return abort(err)
+	}
+
 	todoConfig, err := configbinding.Decode(snapshot)
 	if err != nil {
 		return abort(err)
@@ -214,26 +237,43 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
-	if previous != nil {
-		if err := generation.database.value().CheckSchemas(ctx, modelbinding.Schema()); err != nil {
-			return abort(fmt.Errorf("verify todo schema readiness: %w", err))
-		}
+	compatibility, err := migrationbinding.NewCompatibility(databaseAccess)
+	if err != nil {
+		return abort(err)
+	}
+	if err := compatibility.Check(ctx); err != nil {
+		return abort(fmt.Errorf("verify todo migration compatibility: %w", err))
+	}
+	databaseConfig, err := databaseapp.Decode(snapshot)
+	if err != nil {
+		return abort(err)
+	}
+	migrationCompletion, err := migrationbinding.NewCompletion(databaseConfig.PackageConfig())
+	if err != nil {
+		return abort(err)
+	}
+	if err := migrationCompletion.Verify(ctx); err != nil {
+		return abort(fmt.Errorf("verify todo migration completion: %w", err))
 	}
 	generation.module, err = todo.New(todo.Dependencies{
 		Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
-		Config: todoConfig,
+		Config: todoConfig, Authorizer: authorizer,
 	})
 	if err != nil {
 		return abort(err)
 	}
 	generation.resourceStats.Built = append(generation.resourceStats.Built, "todo")
-	if previous == nil {
-		for _, participant := range generation.module.Contribution.Participants {
-			if err := participant.Start(ctx); err != nil {
-				return abort(fmt.Errorf("start initial generation participant %s: %w", participant.Name(), err))
-			}
-			generation.participants = append(generation.participants, participant)
+
+	if err := module.ValidateContributions(generation.authModule.Contribution, generation.module.Contribution); err != nil {
+		return abort(fmt.Errorf("validate application module contributions: %w", err))
+	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "auth")
+	participants := append(append([]supervisor.Participant(nil), generation.module.Contribution.Participants...), generation.authModule.Contribution.Participants...)
+	for _, participant := range participants {
+		if err := participant.Start(ctx); err != nil {
+			return abort(fmt.Errorf("start generation participant %s: %w", participant.Name(), err))
 		}
+		generation.participants = append(generation.participants, participant)
 	}
 
 	httpConfig, err := kernelcomposition.HTTPServerConfig(snapshot)
@@ -244,7 +284,7 @@ func (f *applicationGenerationFactory) Prepare(
 		Logger: generation.logger.value(), Clock: clock.System(), IDGenerator: idgen.UUID(), Validator: validation.New(),
 		Database: generation.database.value(), Cache: generation.cache.value(),
 		I18n: generation.i18n.value(), Storage: generation.storage.value(),
-	}, httpConfig, generation.module.Service)
+	}, httpConfig, generation.module.Service, generation.authModule)
 	if err != nil {
 		return abort(err)
 	}

@@ -4,7 +4,7 @@ info:
   version: 1.0.0-rc.1
   description: |
     当前模板的公开 HTTP 契约。所有失败使用 RFC 9457 Problem Details；
-    Todo operation 在安全检查点完成前明确标记为 public，后续会单轨切换为 protected policy。
+    Todo operation 使用 bearer JWT，并由生成的 policy inventory 驱动授权。
 tags:
   - name: Todo
     description: Todo 示例资源。
@@ -14,8 +14,12 @@ paths:
       operationId: createTodo
       summary: 创建 Todo
       tags: [Todo]
-      security: []
-      x-policy: public
+      security:
+        - bearerAuth: []
+      x-policy:
+        mode: protected
+        scope: todos:write
+        action: todo.create
       requestBody:
         required: true
         content:
@@ -49,8 +53,12 @@ paths:
       operationId: listTodos
       summary: 查询 Todo 列表
       tags: [Todo]
-      security: []
-      x-policy: public
+      security:
+        - bearerAuth: []
+      x-policy:
+        mode: protected
+        scope: todos:read
+        action: todo.list
       parameters:
         - name: status
           in: query
@@ -96,8 +104,12 @@ paths:
       operationId: getTodo
       summary: 读取 Todo
       tags: [Todo]
-      security: []
-      x-policy: public
+      security:
+        - bearerAuth: []
+      x-policy:
+        mode: protected
+        scope: todos:read
+        action: todo.read
       responses:
         '200':
           description: Todo 详情。
@@ -126,8 +138,12 @@ paths:
       operationId: completeTodo
       summary: 完成 Todo
       tags: [Todo]
-      security: []
-      x-policy: public
+      security:
+        - bearerAuth: []
+      x-policy:
+        mode: protected
+        scope: todos:write
+        action: todo.complete
       responses:
         '200':
           description: 已完成的 Todo。

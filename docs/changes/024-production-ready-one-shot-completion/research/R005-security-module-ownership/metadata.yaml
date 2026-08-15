@@ -1,0 +1,38 @@
+schema_version: 1
+id: R005
+title: "认证授权能力的应用模块归属复核"
+question: "024 C4 的认证、授权、JWT/JWKS 与审计应作为 Kernel Capability、分散的顶层 Adapter，还是收口为 application module？"
+research_type: internal-architecture-fit
+topics: ["application module", "authentication", "authorization", "resource ownership"]
+keywords: ["internal/module/auth", "ApplicationGeneration", "jwx v3.2.0", "module-owned adapter"]
+languages: ["Go"]
+frameworks: []
+technologies: ["JWT", "JWKS", "OpenAPI"]
+applicable_scenarios: ["024 C4 security", "HTTP bearer authentication", "CLI actor", "Todo ownership"]
+non_applicable_scenarios: ["database connection pool", "cache backend", "object storage manager"]
+status: active
+summary: "认证授权是当前应用的纵向模块，jwx/JWKS、policy、audit、配置与 HTTP middleware 应收口在 internal/module/auth；其网络缓存由 ApplicationGeneration 启停，不进入 Kernel Plan。Todo 只定义自己需要的 actor/authorization/audit 窄 port，由唯一 composition root 连接两个模块。"
+evidence:
+  types: ["current-code", "authoritative-project-documentation", "package-boundary-review"]
+  primary_sources:
+    - title: "应用模块开发指南"
+      locator: "docs/development/application-module-development.md"
+      snapshot: "module-specific Adapter and participants remain in the module; ApplicationGeneration rebuilds synchronous HTTP module graphs, verified 2026-08-15"
+    - title: "应用模块 authority"
+      locator: "internal/module/README.md"
+      snapshot: "model/service/adapters/bindings/module.go are grouped by business name; composition is the sole cross-module wiring point, verified 2026-08-15"
+    - title: "当前 Application Generation"
+      locator: "internal/composition/generation.go"
+      snapshot: "generation owns Todo, Router and HTTP lifecycle and starts module participants before admission, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: current-repository-authority
+  review_after: "2026-09-15"
+  refresh_triggers: ["application module authority changes", "auth becomes a reusable bottom capability", "JWT resource cannot follow generation lifecycle"]
+relations:
+  extends: ["024-R002", "024-R004"]
+  related: ["012-R020"]
+  supersedes: ["024 design section 6 package ownership only"]
+  superseded_by: []
+report: report.md

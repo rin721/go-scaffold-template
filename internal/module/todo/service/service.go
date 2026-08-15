@@ -3,6 +3,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,36 @@ import (
 	"github.com/rin721/go-scaffold-template/pkg/idgen"
 )
 
+var ErrPermissionDenied = errors.New("todo actor is not authorized")
+
+// Actor 是 HTTP/CLI 边界显式传入的项目主体事实。
+type Actor struct {
+	Subject string
+	Kind    string
+	Scopes  []string
+}
+
+// Action 是 Todo module 拥有的业务授权动作。
+type Action string
+
+const (
+	ActionCreate   Action = "todo.create"
+	ActionList     Action = "todo.list"
+	ActionRead     Action = "todo.read"
+	ActionComplete Action = "todo.complete"
+)
+
+// ResourceFacts 是完成对象级授权所需的真实持久化事实。
+type ResourceFacts struct {
+	ID           string
+	OwnerSubject string
+}
+
+// Authorizer 是 Todo Service 使用方定义的对象授权与审计窄 port。
+type Authorizer interface {
+	Enforce(context.Context, Actor, Action, ResourceFacts) error
+}
+
 // Policy 是已由配置边界校验的 Todo 业务策略。
 type Policy struct {
 	TitleMaxRunes    int
@@ -20,20 +51,30 @@ type Policy struct {
 }
 
 // CreateCommand 是创建 Todo 的用例输入。
-type CreateCommand struct{ Title string }
+type CreateCommand struct {
+	Actor Actor
+	Title string
+}
 
 // GetQuery 是按 ID 查询 Todo 的用例输入。
-type GetQuery struct{ ID string }
+type GetQuery struct {
+	Actor Actor
+	ID    string
+}
 
 // ListQuery 是 Todo 列表的筛选和分页输入。
 type ListQuery struct {
+	Actor  Actor
 	Status string
 	Offset int
 	Limit  int
 }
 
 // CompleteCommand 是完成 Todo 的用例输入。
-type CompleteCommand struct{ ID string }
+type CompleteCommand struct {
+	Actor Actor
+	ID    string
+}
 
 // ListResult 是协议无关的 Todo 列表结果。
 type ListResult struct {
@@ -45,9 +86,10 @@ type ListResult struct {
 
 // ListFilter 是 Service 交给 Repository 的稳定查询条件。
 type ListFilter struct {
-	Status *model.Status
-	Offset int
-	Limit  int
+	Status       *model.Status
+	OwnerSubject string
+	Offset       int
+	Limit        int
 }
 
 // Repository 是 Todo Service 使用方定义的最小持久化契约。
@@ -72,10 +114,11 @@ type Service struct {
 	clock      clock.Clock
 	ids        idgen.Generator
 	policy     Policy
+	authorizer Authorizer
 }
 
 // New 创建无 I/O 副作用的 Todo Service。
-func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, policy Policy) (*Service, error) {
+func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, policy Policy, authorizer Authorizer) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("todo repository is nil")
 	}
@@ -85,16 +128,26 @@ func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, p
 	if ids == nil {
 		return nil, fmt.Errorf("todo id generator is nil")
 	}
+	if authorizer == nil {
+		return nil, fmt.Errorf("todo authorizer is nil")
+	}
 	if policy.TitleMaxRunes <= 0 || policy.DefaultListLimit <= 0 || policy.MaxListLimit <= 0 ||
 		policy.DefaultListLimit > policy.MaxListLimit {
 		return nil, fmt.Errorf("todo policy is invalid")
 	}
-	return &Service{repository: repository, clock: currentClock, ids: ids, policy: policy}, nil
+	return &Service{repository: repository, clock: currentClock, ids: ids, policy: policy, authorizer: authorizer}, nil
 }
 
 // Create 创建一个待完成 Todo。
 func (s *Service) Create(ctx context.Context, command CreateCommand) (model.Todo, error) {
 	if err := validateContext(ctx); err != nil {
+		return model.Todo{}, err
+	}
+	actor, err := validateActor(command.Actor)
+	if err != nil {
+		return model.Todo{}, err
+	}
+	if err := s.enforce(ctx, actor, ActionCreate, ResourceFacts{OwnerSubject: actor.Subject}, false); err != nil {
 		return model.Todo{}, err
 	}
 	title, err := model.NormalizeTitle(command.Title, s.policy.TitleMaxRunes)
@@ -108,7 +161,7 @@ func (s *Service) Create(ctx context.Context, command CreateCommand) (model.Todo
 	if err := idgen.Validate(id); err != nil {
 		return model.Todo{}, fault.Wrap(err, fault.CodeInternal, "todo.create.id", false)
 	}
-	todo, err := model.New(id, title, s.clock.Now())
+	todo, err := model.New(id, title, actor.Subject, s.clock.Now())
 	if err != nil {
 		return model.Todo{}, fault.Wrap(err, fault.CodeInternal, "todo.create.model", false)
 	}
@@ -124,6 +177,10 @@ func (s *Service) Get(ctx context.Context, query GetQuery) (model.Todo, error) {
 	if err := validateContext(ctx); err != nil {
 		return model.Todo{}, err
 	}
+	actor, err := validateActor(query.Actor)
+	if err != nil {
+		return model.Todo{}, err
+	}
 	id, err := validateID(query.ID)
 	if err != nil {
 		return model.Todo{}, err
@@ -132,12 +189,22 @@ func (s *Service) Get(ctx context.Context, query GetQuery) (model.Todo, error) {
 	if err != nil {
 		return model.Todo{}, preserveRepositoryError(err, "todo.get.repository")
 	}
+	if err := s.enforce(ctx, actor, ActionRead, ResourceFacts{ID: todo.ID, OwnerSubject: todo.OwnerSubject}, true); err != nil {
+		return model.Todo{}, err
+	}
 	return todo, nil
 }
 
 // List 查询稳定分页的 Todo 列表。
 func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error) {
 	if err := validateContext(ctx); err != nil {
+		return ListResult{}, err
+	}
+	actor, err := validateActor(query.Actor)
+	if err != nil {
+		return ListResult{}, err
+	}
+	if err := s.enforce(ctx, actor, ActionList, ResourceFacts{OwnerSubject: actor.Subject}, false); err != nil {
 		return ListResult{}, err
 	}
 	if query.Offset < 0 {
@@ -150,7 +217,7 @@ func (s *Service) List(ctx context.Context, query ListQuery) (ListResult, error)
 	if limit < 1 || limit > s.policy.MaxListLimit {
 		return ListResult{}, fault.New(fault.CodeInvalidArgument, "limit is outside the allowed range")
 	}
-	filter := ListFilter{Offset: query.Offset, Limit: limit}
+	filter := ListFilter{OwnerSubject: actor.Subject, Offset: query.Offset, Limit: limit}
 	if query.Status != "" {
 		status, err := model.ParseStatus(query.Status)
 		if err != nil {
@@ -173,6 +240,10 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (model.
 	if err := validateContext(ctx); err != nil {
 		return model.Todo{}, err
 	}
+	actor, err := validateActor(command.Actor)
+	if err != nil {
+		return model.Todo{}, err
+	}
 	id, err := validateID(command.ID)
 	if err != nil {
 		return model.Todo{}, err
@@ -180,6 +251,9 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (model.
 	todo, err := s.repository.Get(ctx, id)
 	if err != nil {
 		return model.Todo{}, preserveRepositoryError(err, "todo.complete.get")
+	}
+	if err := s.enforce(ctx, actor, ActionComplete, ResourceFacts{ID: todo.ID, OwnerSubject: todo.OwnerSubject}, true); err != nil {
+		return model.Todo{}, err
 	}
 	changed, err := todo.Complete(s.clock.Now())
 	if err != nil {
@@ -193,6 +267,28 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (model.
 		return model.Todo{}, preserveRepositoryError(err, "todo.complete.save")
 	}
 	return saved, nil
+}
+
+func validateActor(actor Actor) (Actor, error) {
+	actor.Subject = strings.TrimSpace(actor.Subject)
+	if actor.Subject == "" || strings.TrimSpace(actor.Kind) == "" || len(actor.Scopes) == 0 {
+		return Actor{}, fault.New(fault.CodePermissionDenied, "Todo actor is not authorized")
+	}
+	return actor, nil
+}
+
+func (s *Service) enforce(ctx context.Context, actor Actor, action Action, resource ResourceFacts, hideExistence bool) error {
+	if err := s.authorizer.Enforce(ctx, actor, action, resource); err != nil {
+		if hideExistence && errors.Is(err, ErrPermissionDenied) {
+			return fault.Wrap(err, fault.CodeNotFound, "todo.authorize.hidden", false)
+		}
+		code := fault.CodeInternal
+		if errors.Is(err, ErrPermissionDenied) {
+			code = fault.CodePermissionDenied
+		}
+		return fault.Wrap(err, code, "todo.authorize", false)
+	}
+	return nil
 }
 
 func validateID(value string) (string, error) {

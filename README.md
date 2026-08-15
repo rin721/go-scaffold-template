@@ -48,7 +48,21 @@
 Copy-Item config.example.yaml config.yaml
 ```
 
-示例默认选择 `development + sqlite`，可直接创建 `.data/app.db`。切换到 PostgreSQL 或 MySQL 时，按注释选择 Driver，并通过环境变量提供真实 DSN：
+示例默认选择 `development + sqlite`。首次启动 Service 前必须由独立命令应用 versioned migration；Service 自身只读校验版本与 Todo owner 完成状态，不执行 DDL：
+
+```powershell
+go run ./cmd/app db migrate status
+go run ./cmd/app db migrate up
+go run ./cmd/app
+```
+
+旧库存在 Todo 行时，`up` 会保留隔离占位 owner 并拒绝完成，必须由 operator 显式提供真实 subject 后重试：
+
+```powershell
+go run ./cmd/app db migrate up --legacy-owner-subject <subject>
+```
+
+切换到 PostgreSQL 或 MySQL 时，按注释选择 Driver，并通过环境变量提供真实 DSN：
 
 ```powershell
 $env:APP_DATABASE__DSN = '<database-dsn>'
@@ -67,9 +81,9 @@ go run ./cmd/app config init
 go run ./cmd/app config init --force
 ```
 
-生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，把 Storage 设为本地 `.data/storage`，启用 Todo 默认分页/标题限制，并让 HTTP 监听 `:8080`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
+生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，把 Storage 设为本地 `.data/storage`，启用 Todo 默认分页/标题限制，并让开发 HTTP 仅监听 `127.0.0.1:8080`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。同一 EnvSource 的重复逻辑路径、大小写别名、空 segment 或祖先/后代路径会确定性失败；File/Env 之间只允许 object/object 递归合并或 non-object/non-object 覆盖，object 与 scalar、array、null 不得相互改形状。Service 初始候选完成 strict decode、资源 Ready、Todo migration、listener bind 和 Server Serve-ready 后才提交第一代。后续文件候选执行同样的完整构造，但 Database 只做只读 Schema readiness，不在 reload 中执行 DDL。配置缺失、未知字段、资源不可达或 Schema 不完整都会保留旧代；`Ctrl+C` 或 `SIGTERM` 会撤销 admission 并触发有界排空。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_AUTH__MODE`、`APP_AUTH__JWT__JWKSURL`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。同一 EnvSource 的重复逻辑路径、大小写别名、空 segment 或祖先/后代路径会确定性失败；File/Env 之间只允许 object/object 递归合并或 non-object/non-object 覆盖，object 与 scalar、array、null 不得相互改形状。Service 初始候选完成 strict decode、资源 Ready、Todo migration compatibility、Auth profile、listener bind 和 Server Serve-ready 后才提交第一代；所有代都只读校验 schema version/dirty/owner completion，绝不执行 migration。配置缺失、未知字段、资源不可达或 migration 不兼容都会保留旧代；`Ctrl+C` 或 `SIGTERM` 会撤销 admission 并触发有界排空。
 
 ## Todo 快速学习示例
 
@@ -90,18 +104,18 @@ Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/v1/todos -ContentT
 
 [`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成 strict Chi server interface，`internal/transport/http` 只负责把生成 DTO 映射到 Todo UseCases；缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、Todo 手写 HTTP handler 和 route middleware 已删除。
 
-同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 会按 `Coordinator -> Todo migration -> operation -> reverse Stop` 完整管理资源，但不会启动 HTTP listener 或配置 watcher：
+同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 不解析 bearer token，必须显式传入本机 operator 的 `--subject` 与 `--scopes`，并与 HTTP 共用对象授权和低敏审计：
 
 ```powershell
-go run ./cmd/app todo create --title "学习 Go"
-go run ./cmd/app todo list --status pending --offset 0 --limit 20
-go run ./cmd/app todo get --id <todo-id>
-go run ./cmd/app todo complete --id <todo-id>
+go run ./cmd/app todo create --subject <subject> --scopes todos:read,todos:write --title "学习 Go"
+go run ./cmd/app todo list --subject <subject> --scopes todos:read --status pending --offset 0 --limit 20
+go run ./cmd/app todo get --subject <subject> --scopes todos:read --id <todo-id>
+go run ./cmd/app todo complete --subject <subject> --scopes todos:write --id <todo-id>
 ```
 
 目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)。业务垂直切片与旧 route middleware 的历史证据仍保存在 [014](docs/changes/014-todo-business-vertical-slice/README.md) 和 [015](docs/changes/015-todo-route-middleware-example/README.md)，当前 HTTP 契约只以 OpenAPI 与生成物为准。
 
-无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/todo` 七节都可在同一 PID 生效，不再要求重启：未变化的底层资源按 section digest 引用复用，变化资源先 Build/Ready；Todo Policy、Handler、Router 和 `http.Server` 每代重建。ListenerHub 独占物理 TCP listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、Schema readiness 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。环境变量仍高于文件，进程不会读取另一个 shell 在启动后新增的环境值。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
+无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/auth/todo` 参与代际候选；`migration` 只供显式命令使用。未变化的底层资源按 section digest 引用复用，Todo、Auth、Handler、Router 和 `http.Server` 每代重建。ListenerHub 独占物理 TCP listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、migration compatibility 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
 
 GenerationCoordinator 提供 attempt、candidate/current/retiring generation、Snapshot digest、changed sections、phase、configured/bound/retiring address、active connections/requests、typed resource build/reuse、空 restart policy、cleanup debt 和脱敏 failure phase/owner/error type；Supervisor 继续记录 Participant/Task 与 shutdown 预算。默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
 

@@ -10,13 +10,14 @@ import (
 type Code string
 
 const (
-	CodeInvalidArgument Code = "invalid_argument"
-	CodeNotFound        Code = "not_found"
-	CodeConflict        Code = "conflict"
-	CodeUnavailable     Code = "unavailable"
-	CodeTimeout         Code = "timeout"
-	CodeCanceled        Code = "canceled"
-	CodeInternal        Code = "internal"
+	CodeInvalidArgument  Code = "invalid_argument"
+	CodeNotFound         Code = "not_found"
+	CodeConflict         Code = "conflict"
+	CodePermissionDenied Code = "permission_denied"
+	CodeUnavailable      Code = "unavailable"
+	CodeTimeout          Code = "timeout"
+	CodeCanceled         Code = "canceled"
+	CodeInternal         Code = "internal"
 )
 
 // Error 是保留错误链和项目语义的错误类型。
