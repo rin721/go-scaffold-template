@@ -3,7 +3,7 @@
 ## 1. 门禁状态
 
 - 024 研究门禁：C1-C3 证据见 `R001..R004`；C4-C6 module ownership 复核见 `R005..R006` 并已通过。
-- 024 计划状态：C1-C6 已完成；C7 实现与 Windows 本地证据完成，C8 验收中。R004 的 `jwx v3.2.0` 选择继续有效；Go 1.26.5 已由 R007 的安全证据单轨替换为 1.26.6。
+- 024 计划状态：C1-C7 已完成；C8 的两个隔离副本、Windows quality/security 与 local RC 已完成，Linux 原生 runtime、容器、PostgreSQL/MySQL 和远端 CI 仍未执行。R004 的 `jwx v3.2.0` 选择继续有效；Go 1.26.5 已由 R007 的安全证据单轨替换为 1.26.6。
 - 当前标签：`Foundation-closed(current synchronous HTTP/CLI profile)`；Production HTTP API-ready 未通过。
 - 当前授权：连续实施 `ONE-001..025`、本地与 CI 验证、检查点提交，以及临时本地容器/测试数据库。
 - 当前禁止：push、tag、GitHub Release、GHCR、外部 attestation、真实部署与真实数据迁移。
@@ -33,10 +33,10 @@
 | `ONE-019` | XL | `ONE-011`、`ONE-013`、`ONE-015`、`ONE-017`、`ONE-018` | 建立 generation、quality、security、DB、container CI | pinned Actions；所有 gate fail closed；无 continue-on-error/环境绕过 | 实现完成；Windows 本地门禁通过，未触发远端 CI |
 | `ONE-020` | L | `ONE-018`、`ONE-019` | GoReleaser、Syft、Cosign、checksum 与 local RC 验证 | Windows/Linux artifact、SPDX SBOM、bundle/signature 与 build/source digest 对应 | 已完成（C7 local RC） |
 | `ONE-021` | M | `ONE-020` | 完成 copy-owned 指南、identity manifest、migration/rollback/security Runbook | 干净环境可按文档执行；不依赖本机路径、未跟踪文件或隐式 secret | 已完成（C7） |
-| `ONE-022` | L | `ONE-021` | 创建“保留 Todo”隔离副本并全门禁验收 | identity 迁移、三 DB、两平台/容器/API/security/release smoke 通过 | 实施中（C8） |
-| `ONE-023` | XL | `ONE-021` | 创建“移除 Todo”隔离副本并全门禁验收 | Todo 代码/路由/spec/config/migration/docs/dependency 无残留，模板仍完整通过 | 实施中（C8） |
-| `ONE-024` | XL | `ONE-022`、`ONE-023` | 执行双平台、容器和完整失败矩阵总验收 | `ACC-REQ-001..006` 全有真实证据；未执行项不标通过 | 未开始（依赖双副本） |
-| `ONE-025` | L | `ONE-024` | 同步唯一权威文档、清理旧轨、汇总 Commit 与发布结论 | 三标签一致；024 无残留 diff；local RC 或明确授权后的 remote release 可验证 | 未开始（依赖总验收） |
+| `ONE-022` | L | `ONE-021` | 创建“保留 Todo”隔离副本并全门禁验收 | identity 迁移、三 DB、两平台/容器/API/security/release smoke 通过 | 部分完成：Windows quality/security/local RC 通过；Linux/容器/PostgreSQL/MySQL 未执行 |
+| `ONE-023` | XL | `ONE-021` | 创建“移除 Todo”隔离副本并全门禁验收 | Todo 代码/路由/spec/config/migration/docs/dependency 无残留，模板仍完整通过 | 部分完成：当前实现残留扫描与 Windows quality/security/local RC 通过；Linux/容器未执行 |
+| `ONE-024` | XL | `ONE-022`、`ONE-023` | 执行双平台、容器和完整失败矩阵总验收 | `ACC-REQ-001..006` 全有真实证据；未执行项不标通过 | 部分完成：Windows 本地矩阵通过；环境相关门禁未执行 |
+| `ONE-025` | L | `ONE-024` | 同步唯一权威文档、清理旧轨、汇总 Commit 与发布结论 | 三标签一致；024 无残留 diff；local RC 或明确授权后的 remote release 可验证 | 进行中：未通过标签已同步；依赖总验收才能完成 |
 
 ## 3. 检查点与提交边界
 
@@ -107,6 +107,7 @@ go test ./... -run 'Contract|Protocol|Problem|JWT|JWKS|Authorization|Audit'
 | 5 | 2026-08-15 | C4 + C6 implementation：`ONE-012/013/017` 完成，`ONE-016` 三 driver 实现 | Auth module + jwx v3.2.0、OpenAPI operation policy、Todo actor/owner/跨主体隐藏、独立 `db migrate`、三 driver checksummed SQL、显式 legacy owner completion、startup read-only exact-version gate；Windows `go test ./...` 通过 | `2752110` | 本机无 Docker 且无可运行 WSL，PostgreSQL/MySQL 动态 migration/lock/dirty gate 必须由 C7 CI 真验收 |
 | 6 | 2026-08-15 | C5：`ONE-014..015` | Ops module、独立 management listener、startup/live/ready、scope-protected diagnostics、build info、稳定 Prometheus registry、OTel 1.44 trace/OTLP HTTP、有界 drop/flush/self-diagnostics；业务/管理面隔离与重复 generation 测试通过 | `411ff86` | 外部 OTLP backend 未配置；exporter failure 使用受控 fake 动态验证 |
 | 7 | 2026-08-15 | C7 实现与 Windows 本地证据：`ONE-002/003/018..021` | Go 1.26.6；Windows 全量 test/race/vet/CGO-free build、生成 diff、artifact allowlist 通过；`govulncheck` 可达漏洞 0、`gosec` 0 issue、`gitleaks` 0 leak；GoReleaser v2.17.1 配置通过，Windows/Linux amd64 archives、SPDX SBOM、SHA-256 checksum、本地 Cosign bundle/signature 生成并反向验证 | 见本行所在检查点提交 | 本机无 Docker 且无可运行 WSL；Linux runtime、container、PostgreSQL/MySQL 与远端 CI 未执行，必须在 C8 保持未通过状态 |
+| 8 | 2026-08-15 | C8 Windows 隔离复制证据：`ONE-022/023` 本地部分与 `ONE-024/025` 状态同步 | source `3339305`、archive SHA-256 `bd005829...655e`；保留 Todo commit `21a5005` 与移除 Todo commit `11c9954` 均通过 quality/race/vet/CGO-free、安全扫描、Windows archive CLI smoke 和 source-commit 对应 local RC；临时 Cosign 私钥已删除；见 R008 | 见本行所在检查点提交 | Linux 原生 runtime、container、PostgreSQL/MySQL、远端 CI/keyless attestation 未执行；三项竣工标签不能升级 |
 
 后续每个检查点必须补充命令、平台、退出码、artifact/digest、Commit 与未通过项。只有最终总验收可以把任务状态改为完成。
 

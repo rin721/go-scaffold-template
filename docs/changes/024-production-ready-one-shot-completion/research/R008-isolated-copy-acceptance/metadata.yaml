@@ -1,0 +1,37 @@
+schema_version: 1
+id: R008
+title: "C8 隔离复制验收"
+question: "固定 C7 source commit 导出的保留 Todo 与移除 Todo 副本，能否在不依赖源工作区和源 remote 的前提下完成 identity migration、Windows 门禁与可验证 local RC？"
+research_type: isolated-acceptance
+topics: ["copy-owned", "identity migration", "Todo removal", "Windows", "local RC"]
+keywords: ["git archive", "source commit", "archive checksum", "GoReleaser metadata", "residual scan"]
+languages: ["Go", "PowerShell", "YAML", "Markdown"]
+technologies: ["GoReleaser", "Syft", "Cosign", "govulncheck", "gosec", "gitleaks"]
+applicable_scenarios: ["024 C8", "copy-owned scaffold", "keep Todo", "remove Todo", "local release candidate"]
+non_applicable_scenarios: ["Linux native runtime", "OCI runtime", "PostgreSQL/MySQL integration", "remote CI", "published release"]
+status: active
+summary: "两个副本均已从同一固定 source commit 独立迁移身份并通过 Windows quality/security/local RC；移除副本当前实现无 Todo 残留。Linux、容器、PostgreSQL/MySQL 与远端 CI 因环境和授权边界保持未通过。"
+evidence:
+  types: ["current-project", "isolated-copy", "dynamic-validation", "local-artifact"]
+  primary_sources:
+    - title: "固定 source archive"
+      locator: "tmp/scaffold-copy-validation-024-source.tar"
+      snapshot: "source 3339305783a82ca2a36bd27c4961adeb435eb3ff; SHA-256 bd0058296692e96b19837e91d4e78ff2808cc8f791bd4f3a39b7a1366eb4655e"
+    - title: "保留 Todo 副本"
+      locator: "tmp/scaffold-copy-validation-024/keep-todo"
+      snapshot: "target commit 21a50051efdc063fff89c6a3feb02a4a880481f5; module example.com/acme/task-service; local RC 1.0.0-rc.1-local.21a5005"
+    - title: "移除 Todo 副本"
+      locator: "tmp/scaffold-copy-validation-024/remove-todo"
+      snapshot: "target commit 11c9954fdbf48c3a18dd067a3f5355909438a373; module example.com/acme/platform-service; local RC 1.0.0-rc.1-local.11c9954"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: source-and-target-commit
+  review_after: "2026-08-16"
+  refresh_triggers: ["source commit change", "copy manifest change", "identity mapping change", "release pipeline change", "Linux or container environment becomes available"]
+relations:
+  extends: ["024-R003", "024-R007"]
+  related: ["020-R003"]
+  supersedes: []
+  superseded_by: []
+report: report.md

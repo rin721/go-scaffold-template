@@ -9,6 +9,7 @@
 5. [R005 认证授权能力的应用模块归属复核](R005-security-module-ownership/report.md)：撤回分散顶层包方案，固定 `internal/module/auth` owner、generation lifecycle 与 Todo 跨模块窄 port。
 6. [R006 C5-C6 新增能力归属复核](R006-remaining-module-ownership/report.md)：将 management/observability 合并为 Ops module，并固定 migration engine、command 与 Todo SQL 的不同 owner。
 7. [R007 C7 安全基线刷新](R007-security-baseline-refresh/report.md)：记录固定漏洞门禁发现的可达风险，并将 Go/gRPC/x.image 单轨更新到修复版本。
+8. [R008 C8 隔离复制验收](R008-isolated-copy-acceptance/report.md)：记录保留 Todo 与移除 Todo 两个独立副本的 Windows、本地安全与 local RC 证据，以及仍未执行的 Linux、容器和服务器数据库门禁。
 
 ## 复用记录
 

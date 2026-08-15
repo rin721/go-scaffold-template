@@ -14,7 +14,7 @@
 
 ## 一句话结论
 
-当前项目**还不能称为成熟的 Go Server HTTP API 后端脚手架模板**，但底层已在明确范围内闭环：生命周期、统一 diagnostics、配置确定性、preflight restart recovery 和 current-profile 跨层验收均已通过。当前标签是 **`Foundation-closed(current synchronous HTTP/CLI profile)`**；HTTP 产品 authority、协议、安全、管理、遥测、交付和 release 仍未完成。
+当前项目**还不能称为成熟的 Go Server HTTP API 后端脚手架模板**。底层已在明确范围内闭环；后续 024 也已实现 HTTP authority、协议、安全、管理、遥测、版本化迁移与本地 release，并完成两个隔离副本的 Windows 门禁。但 Linux 原生 runtime、容器、PostgreSQL/MySQL 与远端 CI 尚无真实证据，因此当前标签仍是 **`Foundation-closed(current synchronous HTTP/CLI profile)`**，不能升级为 Production HTTP API-ready。
 
 本次闭环没有推倒重来：
 
@@ -34,12 +34,12 @@
 | Drain 与 Stop | 通过（当前 profile） | terminal drain 超时保持 cleanup-pending；后续 Stop 继续同一 drain，terminal attempt 失败保留责任 |
 | 诊断与治理 | 通过（diagnostics 范围） | Host 提供单一 `ProcessDiagnostics`；owner kind/generation/phase/policy/attempt/budget/pending/terminal/verification 已结构化且脱敏；EnvSource 属于独立配置门禁 |
 | 业务扩展 | 通过（current profile） | 同步 HTTP/CLI/startup Participant 可在逐模块能力评估后进入设计；Runner/Health/new resource 仍阻断 |
-| HTTP API 产品治理 | 未通过 | API authority、统一协议、安全、管理面、遥测、迁移和 release 仍缺 |
+| HTTP API 产品治理 | 实现完成、总验收未通过 | 024 已落地 API authority、统一协议、安全、管理面、遥测、迁移和 local RC；Linux、容器、服务器数据库与远端 CI 仍缺真实证据 |
 
 ## 成熟标签与业务停止线
 
 - `Foundation-closed`：配置、装配、资源、运行、reload、drain、stop、诊断和故障验收全部闭环。当前只在 synchronous HTTP/CLI profile 达到。
-- `Copy-ready`：正式 release 可在支持平台复制、迁移 identity、保留/移除示例并独立演进。当前部分达到。
+- `Copy-ready`：正式 release 可在支持平台复制、迁移 identity、保留/移除示例并独立演进。两个 Windows 隔离副本已通过，Linux/容器未通过，因此仍为部分达到。
 - `Production HTTP API-ready`：协议、安全、管理、遥测、数据演进、交付和兼容保证均已实现并验收。当前未达到。
 
 新的 Handler/Service/Repo/Model 仍须先做逐模块能力评估；需求完全落在已证明 synchronous HTTP/CLI profile 时可进入详细设计。需要后台 Runner、动态 Health、新共享资源、长连接或新 reload policy 时，仍先新增独立 foundation 研究，不绕过组合根。
@@ -62,4 +62,4 @@
 
 ## 当前授权边界
 
-四项 Foundation 计划均已完成。本 goal 的临时全流程授权只覆盖 `FCL-001..008`、本地验证和本任务提交；推送、部署、真实配置、外部系统、tag、release 和 HTTP 产品治理始终不在范围。
+四项 Foundation 计划均已完成；后续施工 authority 已转为 [024](../024-production-ready-one-shot-completion/README.md)。当前授权允许 024 本地实施、验证和提交，但禁止 push、tag、GitHub Release、GHCR、外部 attestation、真实部署和真实数据迁移；未执行项不能借授权边界改写为通过。

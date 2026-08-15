@@ -24,7 +24,7 @@
 - [019 HTTP API 成熟度缺口评估](019-http-api-maturity-gap-assessment/README.md)：已完成当前 HTTP API 运行链审计、成熟度参考、缺口优先级和分阶段路线；没有非文档实施授权。
 - [020 复制型脚手架产品形态](020-scaffold-product-form/README.md)：已完成 copy-owned 单轨决策、两个独立副本的身份迁移、Todo 保留/移除和 Windows 门禁；Linux、正式复制指南与 release 能力仍待独立实施。
 - [021 仓库身份迁移](021-repository-identity-migration/README.md)：已将 canonical remote、Go module/import、运行品牌与当前使用文档统一为 `go-scaffold-template`；另一个 `go-scaffold` 仓库未进入范围。
-- [022 HTTP API 脚手架成熟就绪度](022-http-api-template-readiness/README.md)：`Foundation-closed(current synchronous HTTP/CLI profile)` 已通过；API 契约、安全、管理、遥测、交付、portability 和 release 仍待后续独立计划。
+- [022 HTTP API 脚手架成熟就绪度](022-http-api-template-readiness/README.md)：`Foundation-closed(current synchronous HTTP/CLI profile)` 已通过；024 已完成产品能力与 Windows 本地证据，但 Linux、容器、服务器数据库和远端 CI 总验收尚未通过。
 - [023 全配置无感重载](023-full-configuration-seamless-reload/README.md)：已完成本地实施验收；Application Generation/ListenerHub 与七节配置重载已落地，Linux 真实 runtime 和真实 Redis 经用户批准跳过并保持未验证，未 push。
 - [024 生产就绪模板一次性竣工](024-production-ready-one-shot-completion/README.md)：已确认并实施中；连续完成 `ONE-001..025` 与本地检查点提交，禁止 push、tag、远端 Release、GHCR 和外部 attestation。
 

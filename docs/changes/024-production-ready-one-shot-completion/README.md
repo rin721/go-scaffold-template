@@ -5,13 +5,13 @@
 - 任务类型：研究与非文档实施计划。
 - 代码基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
 - 研究门禁：C1-C3 已通过并完成；C4-C6 模块归属复核已通过，见 [R005](research/R005-security-module-ownership/report.md) 与 [R006](research/R006-remaining-module-ownership/report.md)。
-- 计划状态：**已确认，实施中**。用户于 2026-08-15 确认 R005/R006 修订后的 module-owned 方案，并继续实施 C4-C8；R004 的 `jwx v3.2.0` 选择继续有效。
+- 计划状态：**已确认，实施中**。C1-C7 与 C8 Windows 隔离复制证据已完成；Linux 原生 runtime、容器、PostgreSQL/MySQL 和远端 CI 仍未执行。用户于 2026-08-15 确认 R005/R006 修订后的 module-owned 方案，并继续实施 C4-C8；R004 的 `jwx v3.2.0` 选择继续有效。
 - 外部授权边界：不允许 push、tag、GitHub Release、GHCR 或外部 attestation。
 - Authority：023 的研究与实现目标已由本变更吸收；024 是当前唯一施工 authority。C1-C3 已提交，错误的 C4 未提交骨架已撤回。
 
 ## 一句话结论
 
-剩余竣工不再拆成十二个独立 Program。024 将 reload、API authority、协议、边缘政策、认证授权、管理面、观测、版本化迁移、可移植性、CI、容器、release 与复制验收合并为一个施工级总计划；用户在本计划报告后的后续消息中只需确认一次，Agent 随后连续实施、验证和提交，除非命中明确的重新确认触发器。
+024 已把 reload、API authority、协议、边缘政策、认证授权、管理面、观测、版本化迁移、可移植性、CI、容器、release 与复制验收合并为一个施工级总计划。实现与 Windows 本地证据已经贯通到两个隔离副本；当前不能竣工的原因是缺少计划明确要求的 Linux、容器和服务器数据库真实环境，而不是继续缺少模块归属或本地实现。
 
 “一次性”表示一次计划确认、连续施工和一次最终总验收，不表示把全部变更压成一个不可审查的 commit。计划采用按依赖排序的检查点 commit，任何检查点都不得降低最终完成定义，也不得提前宣称竣工。
 
