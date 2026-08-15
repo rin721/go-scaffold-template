@@ -2,7 +2,7 @@
 
 `internal/kernel/app` 是底层能力的统一组件声明层。组件作者只声明“输出什么、怎样构造、需要哪些可选契约、配置变化如何处理”；是否启用以及选择哪个实现由 `internal/kernel/composition` 决定。
 
-本指南只处理已经被 [应用模块开发指南](../../../docs/development/application-module-development.md) 判定为“由当前进程选择并注入的底层 Capability”。业务模块专属第三方 Adapter 留在 `internal/module/<name>/adapter/<technology>` 并完全封装；非业务、跨模块或进程级第三方能力才优先经过 `pkg` 项目契约进入 Kernel App。拥有 SDK、Client 或 goroutine 本身不会自动决定轨道，应先分别确认业务归属、调用方、资源 owner 和运行 owner。
+本指南只处理已经被 [应用模块开发指南](../../../docs/development/application-module-development.md) 同时判定为“跨业务复用”且“由当前进程统一选择”的底层资源。业务模块专属第三方 Adapter 留在 `internal/module/<name>/adapter/<technology>` 并完全封装；只满足复用的普通库可以位于 `pkg`，但不进入 Kernel App。拥有 SDK、Client、cache 或 goroutine 本身不会自动决定轨道，应先分别确认真实消费者、选择位置、业务归属、资源 owner 和运行 owner。
 
 ## 选择组件形态
 

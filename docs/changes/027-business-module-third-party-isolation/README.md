@@ -10,28 +10,31 @@
 
 ## 问题
 
-当前设计只强调“模块专属第三方 Adapter 留在模块”，没有同时冻结另一半规则：非业务、可复用或进程级第三方能力应先形成项目自有封装并在底层装配。结果是 Auth/JWT 与 Ops/OTel/Prometheus 都被放入 `internal/module`，且 Ops 的装配接口直接暴露 `trace.Tracer`、具体 Prometheus Registry 和 OTel Provider。
+当前设计只强调“模块专属第三方 Adapter 留在模块”，没有把业务能力完整收口范围和底层升级门禁写成同一条规则。结果是一方面容易只收口 Model/Service，却把 Handler、Adapter、binding 或 contribution 放到模块外；另一方面又可能仅因出现 SDK、Client、cache 或 goroutine，就把单模块能力误升为 Kernel Capability。Ops 的装配接口还直接暴露 `trace.Tracer`、具体 Prometheus Registry 和 OTel Provider。
 
-第三方实现出现在业务模块私有 Adapter 内本身不违规；第三方类型、具体 Adapter 或技术配置越过模块/Capability 契约才违规。非业务第三方能力如果继续在上层临时拼装，也违反底层能力统一装配方向。
+第三方实现出现在业务模块私有 Adapter 内本身不违规；第三方类型、具体 Adapter 或技术配置越过模块/Capability 契约才违规。只有能力评估同时证明资源跨业务复用且由进程统一选择，才允许进入完整底层装配链。
 
 ## 计划结论
 
 采用两条互斥轨道：
 
 ```text
-业务模块专属第三方
-  internal/module/<name>/adapter/<technology>
-    -> 实现模块自己定义的窄 port
+新增业务能力
+  internal/module/<name>/
+    -> 收口 model、repo、service、handler、Adapter、binding 与 contribution
+    -> 专属第三方进入 adapter/<technology>，只实现本模块定义的窄 port
     -> 第三方类型不越过 Adapter package
 
-非业务、跨模块或进程级第三方
+同时满足“跨业务复用 + 进程统一选择”的底层资源
   pkg/<capability>                         项目自有契约、错误与 facade/Access
     -> internal/kernel/app/<capability>    底层 Definition 与生命周期
     -> internal/kernel/composition         唯一实现选择与 Plan 装配
     -> internal/composition / module       只消费项目自有输出
 ```
 
-按当前事实，Auth 的 JWT/JWKS 与 audit 是 Auth 业务/应用语义专属 Adapter，可以继续留在模块内，但 `auth.Module` 不得暴露 jwx 类型或具体 Adapter。Prometheus、OpenTelemetry、OTLP exporter 和通用 HTTP observation 属于非业务、进程级 Observability Capability，应从 Ops 模块技术实现中抽离，经过项目自有契约封装并在底层装配；Ops 只保留 management/diagnostics 用例语义并消费稳定输出。
+业务专属 Adapter 的完整路径是 `internal/module/<name>/adapter/<technology>`；它不是无 owner 的全局 `internal/module/adapter`。拥有第三方 SDK、Client、cache 或 goroutine 本身不会改变轨道。
+
+按当前事实，Auth 的 JWT/JWKS 与 audit 只服务 Auth 模块，可以继续留在模块内，但 `auth.Module` 不得暴露 jwx 类型或具体 Adapter。Prometheus、OpenTelemetry、OTLP exporter 和通用 HTTP observation 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，并由进程统一选择和治理，满足双条件，才进入 Observability 底层 Capability 计划。
 
 当前源码尚未迁移。实施、门禁和测试属于非文档任务，只有用户在本计划报告后的后续消息明确确认 027 当前方案后才能开始。
 

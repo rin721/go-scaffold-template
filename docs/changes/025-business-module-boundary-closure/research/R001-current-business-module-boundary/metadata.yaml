@@ -43,5 +43,5 @@ relations:
   extends: ["017-R001", "024-R005", "024-R006"]
   related: ["016-R001", "024-R008"]
   supersedes: []
-  superseded_by: ["027-R001 (non-business adapter placement only)"]
+  superseded_by: ["027-R001 (Kernel Capability upgrade criteria only)"]
 report: report.md

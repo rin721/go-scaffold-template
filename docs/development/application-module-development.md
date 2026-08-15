@@ -4,6 +4,8 @@
 
 应用模块是由唯一 application composition root 显式选择的进程内纵向业务单元，不是 Go module、Kernel Component、动态插件或自动发现的 Provider 集合。普通 Model、Service、Repository、Adapter、Handler、binding 和 contribution 按业务名称收口，不进入 Kernel Plan。
 
+新增业务能力必须先完整收口到 `internal/module/<name>`。这里的“完整”指 model、repo、service、handler、Adapter、binding、配置、migration/运行单元与 contribution 等真实职责都由该模块拥有，不要求为不存在的职责制造空目录。只有能力评估同时证明资源跨业务复用且由进程统一选择，才允许把底层资源提升到完整 Kernel Capability 链。
+
 ## 1. 开始条件
 
 收到“新增应用模块”请求后，不先复制 Todo 目录，也不先创建空 Handler、Repository、配置或 CLI。研究阶段先写清：
@@ -26,7 +28,7 @@
 | 用例 | 哪个 actor 触发什么行为，有哪些外部副作用 | 用例、约束与非目标 |
 | 现有能力 | `pkg` 和 production composition 已有哪些能力可复用 | 能力、入口与代码证据 |
 | 新能力 | 是否新增外部系统、SDK、协议或跨模块能力 | 有/无及理由 |
-| 归属 | 是模块专属 Adapter、跨模块通用 Capability，还是进程选择的底层能力 | 唯一语义 owner |
+| 归属 | 是否只服务本模块；若拟升级底层，是否同时有跨业务消费者和进程统一选择证据 | 唯一语义 owner 与分类矩阵结论 |
 | 资源 | 是否有连接、Client、listener、订阅、goroutine、缓存或派生句柄 | 构造和释放 owner |
 | 运行 | 是否需要 Start、Ready、Health、Run、Stop、Wait | 运行 owner 和顺序 |
 | 配置 | 是否有配置、Secret、Defaults、严格校验和变化分类 | section owner 与失败语义 |
@@ -57,11 +59,16 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 
 模块专属 cache、goroutine、migration、消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；拥有第三方 SDK 或 goroutine 本身不构成 Kernel Capability 升级理由。
 
-### 3.3 新的通用或进程级底层 Capability
+### 3.3 跨业务且由进程统一选择的底层 Capability
 
-非业务、跨业务域复用，或由进程统一选择实现、配置和资源的第三方能力，先在 `pkg/<name>` 定义最小项目接口、错误和资源边界，再按 [Kernel App 组件开发](../../internal/kernel/app/README.md) 进入 `internal/kernel/app/<name>` 与 production composition。上层模块和 application composition 只消费项目自有 facade/Access，不得直接持有第三方或底层具体 Adapter。
+只有能力评估同时证明以下两项，底层资源才进入完整 `pkg/<name> -> internal/kernel/app/<name> -> internal/kernel/composition` 链：
 
-业务专属与进程级是互斥分类：不能因为第三方实现放进了某个模块目录，就把实际服务整个进程的 registry、exporter、通用 middleware 或共享 Client 解释成业务专属。当前 Ops 内 Prometheus/OTel 实现与导出泄漏是 [027](../changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，新模块不得复制。
+1. 已有跨业务消费者或资源语义明确不属于任何单一业务模块；“未来可能复用”不算证据。
+2. 实现、配置、资源 identity、生命周期或替换策略必须由进程 composition 统一选择，模块不能各自安全构造。
+
+只满足跨业务复用但不需要进程选择的普通库，可以评估进入 `pkg`，但不得虚构 Kernel App 组件。只服务一个模块，即使拥有 SDK、Client、cache、连接或 goroutine，也继续收口在该模块并通过 contribution/Participant 管理生命周期。
+
+业务专属与底层 Capability 是互斥分类。当前 Observability 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，且 registry/provider/exporter 由进程统一选择和治理，因此满足双条件；Ops 内 Prometheus/OTel 实现与导出泄漏是 [027](../changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，新模块不得复制。
 
 ### 3.4 证据不足
 
@@ -81,9 +88,9 @@ internal/module/<capability>/
 ├── binding/
 │   ├── config/     # 模块配置 owner
 │   ├── model/      # Schema/migration 等完成品
-│   ├── http/       # 模块自有 operation Handler、DTO 映射与请求窄端口
-│   └── cli/        # 已绑定命令 contract
-└── module.go       # 纯内存局部装配
+│   ├── http/       # 模块自有 HTTP Handler、DTO 映射与请求窄端口
+│   └── cli/        # 模块自有 CLI Handler/已绑定命令 contract
+└── module.go       # 纯内存局部装配与 contribution 输出
 ```
 
 Todo 是当前完整示例，但只复制依赖方向和验证方法，不复制业务字段或无关入口：
@@ -100,7 +107,7 @@ model <- service <- repo
 1. 用 Model 表达业务状态与不变量；没有独立领域行为时不制造空领域层。
 2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
 3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
-4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换、exported 类型、配置和资源边界；非业务或进程级能力先走底层 Capability 路径。
+4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换、exported 类型、配置和资源边界；只有跨业务复用与进程统一选择两项均有证据时才走完整底层 Capability 路径。
 5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 只返回本模块 operation Handler，不创建 Router 或绑定整份 OpenAPI；不同入口复用同一 Service，不互相回环。
 6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回窄 Handler/Service 与完成品 contribution。
 7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、静态聚合所有 HTTP operation、合并 contribution 并建立 Host；`internal/transport/http` 只把完整 aggregate 绑定一次生成路由。
@@ -111,7 +118,7 @@ HTTP 的固定构造顺序是 `module Handler -> application strict aggregate ->
 
 一个功能可以同时包含底层共享资源和模块专属运行单元，必须分别确定 owner：
 
-- 共享连接、连接池、可换代 Client 或稳定能力出口可以由 Kernel App 管理；
+- 共享连接、连接池、可换代 Client 或稳定能力出口只有同时跨业务复用且由进程统一选择时才由 Kernel App 管理；
 - 业务消费者、migration、索引任务和模块 Cleanup 由模块 contribution 声明并由 Host/Supervisor 管理；
 - listener、Server 和进程级 runner 由 application owner 管理，模块不自行创建第二套 Server；
 - 创建资源的一方负责关闭，借用者不获得共享资源 `Close` 权；
@@ -170,7 +177,7 @@ HTTP 的固定构造顺序是 `module Handler -> application strict aggregate ->
 
 ### 8.1 消息系统
 
-共享连接、连接池或稳定 Publisher/Subscriber 出口可能是底层 Capability；具体业务 Consumer、消息转换和订阅语义属于拥有用例的模块，其长期消费循环作为 Participant 交给 Host/Supervisor。
+共享连接、连接池或稳定 Publisher/Subscriber 出口只有同时存在跨业务消费者并由进程统一选择时才是底层 Capability；具体业务 Consumer、消息转换和订阅语义属于拥有用例的模块，其长期消费循环作为 Participant 交给 Host/Supervisor。
 
 研究必须回答：
 
@@ -196,7 +203,7 @@ HTTP 的固定构造顺序是 `module Handler -> application strict aggregate ->
 
 ### 8.3 搜索
 
-共享搜索 Client 可能是底层 Capability；查询模型、索引文档转换、增量同步和重建任务属于拥有数据语义的模块。
+共享搜索 Client 只有同时跨业务复用并由进程统一选择时才是底层 Capability；查询模型、索引文档转换、增量同步和重建任务属于拥有数据语义的模块。
 
 研究必须回答：
 

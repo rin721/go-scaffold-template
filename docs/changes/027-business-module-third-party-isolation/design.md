@@ -5,9 +5,10 @@
 第三方依赖按业务归属和装配层级分两轨，不能用一个“全部放模块”或“全部下沉”规则替代判断：
 
 ```text
-业务专属：Module port <- Module Adapter(third party) <- module.go
+业务能力：internal/module/<name> 收口完整纵向切片
+          Module port <- Module Adapter(third party) <- module.go
 
-非业务/进程级：pkg contract <- Kernel App(third party)
+双条件底层资源：pkg contract <- Kernel App(third party)
                     <- kernel composition <- application composition/module
 ```
 
@@ -21,10 +22,13 @@
 internal/module/<name>/
 ├── model/
 ├── service/              # 调用方定义的窄 port
+├── repo/                 # 业务持久化 Adapter；真实需要时建立
 ├── adapter/<technology>/ # 第三方实现，只服务本模块
-├── binding/
+├── binding/              # config、HTTP/CLI Handler、migration 等入口完成品
 └── module.go             # 依据模块配置选择私有 Adapter
 ```
+
+Model、repo、service、Handler、Adapter、binding、配置/迁移/运行单元与 contribution 都属于“先收口”的职责集合，不要求每项都建立独立目录。没有真实职责时不制造空层；Handler 可以位于 `binding/http` 或 `binding/cli`，contribution 可以由 `module.go` 输出，但都不能外溢到顶层通用包。
 
 约束：
 
@@ -45,14 +49,20 @@ auth.NewHTTP                     -> auth.Module(project-owned outputs only)
 
 不把 Auth/JWT 搬入通用 `pkg/auth`，除非未来证据证明它成为跨业务底层 Capability。
 
-## 3. 非业务第三方 Capability
+## 3. 底层 Capability 双条件门禁
 
-符合任一条件时优先进入底层能力评估：
+进入完整底层链必须同时满足：
 
-- 被多个业务模块、协议入口或进程级 middleware 消费；
-- 由进程统一选择实现、配置、资源或替换策略；
-- 需要稳定 identity、共享连接、registry、exporter 或跨 generation 生命周期；
-- 业务 owner 无法独占其语义和资源。
+1. **跨业务复用**：已有至少两个独立业务 owner/应用入口消费同一个稳定能力语义，或资源本身明确不属于任一业务模块；“以后可能复用”不算证据。
+2. **进程统一选择**：实现、配置、资源 identity、生命周期或替换策略必须由进程 composition 统一决定，业务模块不能各自安全构造。
+
+SDK、Client、cache、连接、goroutine、registry、exporter 或终结动作只会触发生命周期审计，不会单独满足任何升级条件。分类矩阵固定为：
+
+| 跨业务复用 | 进程统一选择 | 设计结果 |
+| --- | --- | --- |
+| 否 | 任意 | 留在 `internal/module/<name>`；第三方进该模块 `adapter/<technology>`，运行资源由模块 contribution/Participant 管理 |
+| 是 | 否 | 可以形成普通 `pkg` 复用库；不进入 Kernel App，不虚构进程资源 |
+| 是 | 是 | 进入完整底层 Capability 链 |
 
 目标路径：
 
@@ -65,9 +75,11 @@ internal/composition                连接到模块、Router、Server
 
 `pkg` 不允许导入 `internal`，也不暴露第三方；Kernel App 不把私有实例或 Close 权交给消费者；application composition 不自行创建第二套 Client/provider。
 
+每个新 Kernel App 组件的研究必须给出真实消费者、统一选择位置、配置 owner、资源 owner 和生命周期证据，并引用在任务设计中。缺少任一条件时保持模块内或普通 `pkg` 形态，不能用技术复杂度替代边界证据。
+
 ## 4. Observability 项目契约
 
-新增 `pkg/observability`，只表达当前真实消费者需要，不包装整套 OTel/Prometheus API。候选职责应拆成窄契约：
+Observability 由 Auth/Todo 业务 HTTP 与 Ops management/diagnostics 等不同模块消费者共同使用，且 registry/provider/exporter 由进程统一选择与治理，因此满足双条件。新增 `pkg/observability` 只表达当前真实消费者需要，不包装整套 OTel/Prometheus API。候选职责应拆成窄契约：
 
 - `HTTPObserver`：按稳定 operation inventory 包装 `http.Handler`；输入/输出只使用标准库和项目 operation view；
 - `MetricsEndpoint`：提供只连接项目 registry 的 `http.Handler`；
@@ -154,7 +166,8 @@ Ops Module outputs
 4. `internal/composition` 禁止直接导入 Observability 第三方包或 `internal/module/*/adapter/**`。
 5. `pkg/observability` 与全部 `pkg` 一样禁止第三方类型泄漏和 `internal` 反向依赖。
 6. Observability 具体实现只允许从 `internal/kernel/app/observability` 被底层 composition 选择；禁止旁路构造第二套 provider/registry。
-7. architecture test 使用 import origin 与 AST/type 信息，不维护只针对 `otel`、`prometheus` 的脆弱字符串名单。
+7. 新增 Kernel App 组件的任务研究必须记录跨业务消费者与进程统一选择证据；静态 architecture test 负责可执行的 import/export/旁路规则，不能伪装成能推断业务语义。
+8. architecture test 使用 import origin 与 AST/type 信息，不维护只针对 `otel`、`prometheus` 的脆弱字符串名单。
 
 ## 9. 单轨迁移
 

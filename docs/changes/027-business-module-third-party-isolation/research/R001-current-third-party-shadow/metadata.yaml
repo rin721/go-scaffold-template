@@ -1,17 +1,17 @@
 schema_version: 1
 id: R001
 title: "当前第三方影子、封装泄漏与装配层级复核"
-question: "业务模块使用的第三方库应如何在模块内封装，非业务第三方能力应如何封装并下沉装配，当前实现违反了哪些边界？"
+question: "新增业务能力应如何完整收口，模块专属第三方应如何封装，什么证据才允许资源进入完整底层 Capability 装配链？"
 research_type: current-project
 topics: ["application module", "third-party isolation", "capability boundary", "composition root", "package graph"]
 keywords: ["module adapter", "trace.Tracer", "prometheusadapter.Registry", "oteladapter.Provider", "pkg capability", "kernel app"]
 languages: ["Go"]
 frameworks: ["OpenTelemetry", "Prometheus", "jwx"]
 technologies: ["Go package graph", "AST export inspection"]
-applicable_scenarios: ["027 设计计划", "业务模块第三方 Adapter", "非业务第三方能力", "底层装配治理"]
+applicable_scenarios: ["027 设计计划", "新增业务能力", "业务模块第三方 Adapter", "Kernel Capability 升级评估", "底层装配治理"]
 non_applicable_scenarios: ["替换 JWT/OTel/Prometheus 技术选型", "修改公开 HTTP API", "拆分独立服务", "新增业务用例"]
 status: active
-summary: "模块私有 JWT Adapter 没有泄漏 jwx 类型，符合业务模块内封装方向；Ops 的 exported 装配协议却暴露具体 Prometheus/OTel Adapter 与 trace.Tracer，且进程级 Observability 被误放在应用模块技术目录。应保留业务专属 Adapter 的模块内归属，同时把非业务 Observability 建成项目自有 Capability 并经 Kernel App 底层装配，所有边界禁止第三方类型泄漏。"
+summary: "新增业务能力必须先完整收口到 internal/module/<name>；模块私有 JWT Adapter 没有泄漏 jwx 类型，方向正确。Ops 却暴露具体 Prometheus/OTel Adapter 与 trace.Tracer；Observability 有跨业务消费者且由进程统一选择，满足双条件，才应形成项目自有 Capability 并经 Kernel App 装配。SDK、Client、cache 或 goroutine 本身不构成升级理由。"
 evidence:
   types: ["source-code", "tests", "authoritative-project-documentation", "existing-research", "user-decision"]
   primary_sources:
@@ -27,7 +27,7 @@ evidence:
     - title: "既有模块 Adapter 归属研究"
       locator: "docs/changes/024-production-ready-one-shot-completion/research/R005-security-module-ownership; docs/changes/024-production-ready-one-shot-completion/research/R006-remaining-module-ownership; docs/changes/025-business-module-boundary-closure/research/R001-current-business-module-boundary"
       snapshot: "verified 2026-08-16"
-    - title: "用户确认的第三方分轨原则"
+    - title: "用户确认的完整收口与双条件升级原则"
       locator: "current conversation"
       snapshot: "2026-08-16"
 researched_at: "2026-08-16"

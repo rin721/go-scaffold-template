@@ -2,7 +2,7 @@
 
 `internal/module/ops` 当前同时实现 management 用例与 observability 技术装配。它拥有 startup/liveness/readiness 语义、脱敏 diagnostics/build 用例和 management HTTP binding；当前源码还包含 Prometheus Adapter、OpenTelemetry trace Adapter、低基数标签策略和业务 HTTP middleware。
 
-这段“当前实现”不是后续模块模板。Prometheus、OTel、OTLP exporter 和通用 HTTP observation 实际服务整个进程，且当前导出协议已经暴露具体 Adapter/第三方类型。[027 第三方封装与分轨装配](../../../docs/changes/027-business-module-third-party-isolation/README.md) 已把目标边界修订为：Ops 只消费项目自有 Observability 契约，具体技术经过 `pkg -> internal/kernel/app -> internal/kernel/composition` 底层装配。该源码迁移尚未获得确认，不能把目标描述成已实现。
+这段“当前实现”不是后续模块模板。Prometheus、OTel、OTLP exporter 和通用 HTTP observation 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，且由进程统一选择和治理，满足底层 Capability 双条件；当前导出协议却暴露具体 Adapter/第三方类型。[027 第三方封装与分轨装配](../../../docs/changes/027-business-module-third-party-isolation/README.md) 已把目标边界修订为：Ops 只消费项目自有 Observability 契约，具体技术经过 `pkg -> internal/kernel/app -> internal/kernel/composition` 底层装配。该源码迁移尚未获得确认，不能把目标描述成已实现。
 
 当前进程组合根连接 Auth management scope、Kernel/Supervisor typed runtime snapshot、独立 business/management `ListenerHub` 与稳定 Prometheus registry。Ops module 不绑定物理端口，也不查询容器或其他模块内部实现；但 composition 仍直接持有 Prometheus 具体 Adapter，这是 027 待消除的边界偏差。
 

@@ -21,7 +21,9 @@ model <- service <- repo/binding <- module.go <- internal/composition
 
 HTTP 模块遵循固定的 Handler-first 链路：模块先返回窄 operation Handler，`internal/composition` 静态聚合各模块 operation，`internal/transport/http` 只绑定一次 OpenAPI validator、strict middleware 和生成路由，application Router 最后安装全局 middleware 并挂载唯一 API route tree。新增模块不得复制完整 Router、route binding 或 method/path 表。
 
-目录按真实职责建立，不为对称制造空 Handler、Repository 或 binding。业务模块专属第三方 SDK、Client、cache、goroutine、migration 或 Adapter 默认仍归模块，但必须完全封装技术影子。非业务、跨模块或由进程统一选择和治理的第三方能力，必须先形成项目自有契约，再进入 `pkg -> internal/kernel/app -> internal/kernel/composition`；不能为了就近使用而塞进某个业务模块。
+新增业务能力先把真实存在的 Model、Repository、Service、Handler、Adapter、binding、配置、migration/运行单元与 contribution 完整收口到 `internal/module/<name>`，不为对称制造空层。只服务该模块的第三方进入完整路径 `internal/module/<name>/adapter/<technology>` 并完全封装技术影子；不存在无 owner 的全局 `internal/module/adapter`。
+
+只有能力评估同时证明资源跨业务复用且由进程统一选择，才进入完整 `pkg -> internal/kernel/app -> internal/kernel/composition` 链。只满足跨业务复用的普通库可以评估留在 `pkg`，但不自动获得 Kernel 组件；SDK、Client、cache、连接或 goroutine 本身都不是升级理由。
 
 当前 Auth/JWT 符合“模块内 Adapter、项目 port 输出”的方向；Ops 中 Prometheus/OTel 具体类型已经进入模块与 composition 装配协议，且 Observability 实际服务整个进程。这是 [027 第三方封装与分轨装配](../../docs/changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，不是新模块示例。源码迁移尚未获得确认，当前运行事实仍以代码为准。
 

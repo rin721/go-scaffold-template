@@ -2,16 +2,17 @@
 
 ## 1. 研究问题
 
-本报告回答三个问题：业务模块使用第三方库时是否允许在模块目录看见具体技术；什么情况才构成第三方泄漏；非业务、跨模块或进程级第三方能力为什么应先封装并在底层装配。
+本报告回答三个问题：新增业务能力哪些职责必须先收口到 `internal/module/<name>`；业务模块使用第三方库时怎样在模块内封装；什么证据足以让资源升级到完整底层 Capability 装配链。
 
 ## 2. 用户确认的边界
 
-本任务采用用户本轮明确给出的两条原则：
+本任务采用用户本轮明确给出的三条原则：
 
-1. 每个业务模块使用的第三方库，应在该模块内实现 Adapter 并封装，不能暴露第三方库。
-2. 除业务模块外，其他第三方库应尽量先形成不暴露第三方影子的项目封装，再在底层装配。
+1. 新增业务能力先按 `internal/module/<name>` 收口 model、repo、service、handler、Adapter、binding、配置/运行职责与 contribution。
+2. 只服务一个业务模块的第三方库进入该模块的 `adapter/<technology>`，封装后只服务本模块，不暴露第三方类型。
+3. 只有能力评估同时证明资源跨业务复用且由进程统一选择，才进入 `pkg/<name> -> internal/kernel/app/<name> -> internal/kernel/composition`；SDK、Client、cache 或 goroutine 本身不是升级理由。
 
-因此，判断标准不是“仓库中完全不能出现第三方技术名”，而是第三方是否处于正确 owner 的实现叶子、是否越过项目自有契约，以及非业务能力是否绕过底层装配。
+因此，判断标准不是“仓库中完全不能出现第三方技术名”，而是业务纵向切片是否完整收口、第三方是否处于正确 owner 的实现叶子、是否越过项目自有契约，以及完整底层链是否有双条件证据。
 
 ## 3. 方法与范围
 
@@ -44,14 +45,14 @@
 
 ### 4.3 Ops Observability 不是业务模块专属技术
 
-Prometheus registry、HTTP metrics、OTel provider、OTLP exporter、trace propagation 和通用请求 observation 服务整个进程，不只服务 Ops management 用例。当前事实也证明其 owner 是进程级：
+Prometheus registry、HTTP metrics、OTel provider、OTLP exporter、trace propagation 和通用请求 observation 不只服务 Ops management 用例。当前事实分别证明双条件：
 
+- Auth/Todo 业务 HTTP 与 Ops management/diagnostics 是不同模块消费者，构成跨业务复用；
 - Prometheus registry identity 由 `applicationGenerationFactory` 跨 generation 持有；
 - OTel provider/exporter 是 generation-owned 资源并参与 Start/Stop/flush；
-- 业务 Router 在 Todo/Auth 模块装配完成后统一套用 observability middleware；
-- diagnostics/metrics endpoint 只是该能力的一个消费者。
+- 实现、配置、registry/provider identity 与切换由进程 composition 统一选择和治理。
 
-因此，把这些具体实现放在 `internal/module/ops/adapter` 会让“management 用例 owner”同时冒充“进程底层观测能力 owner”。按用户确认的第二条原则，它应先形成项目自有 Observability Capability，再从底层注入 Ops/application。
+因此，Observability 不是因为拥有 exporter/goroutine 才下沉，而是因为真实满足“跨业务复用 + 进程统一选择”。把具体实现放在 `internal/module/ops/adapter` 会让“management 用例 owner”同时冒充“进程底层观测能力 owner”；它应先形成项目自有 Capability，再从底层注入 Ops/application。
 
 ### 4.4 Migration 对照说明
 
@@ -65,7 +66,7 @@ Prometheus registry、HTTP metrics、OTel provider、OTLP exporter、trace propa
 
 - 业务模块 Adapter 的 exported 声明是否泄漏第三方 selector；
 - 模块根 `Dependencies`/`Module` 是否暴露模块内具体 Adapter；
-- 非业务第三方实现是否绕过 `pkg -> kernel/app -> kernel/composition` 直接进入上层模块；
+- 未满足双条件的能力是否仅因技术复杂度越级进入 `pkg -> kernel/app -> kernel/composition`；
 - `internal/composition` 是否长期持有本应被 Capability 隐藏的第三方/具体 Adapter 类型。
 
 `pkg/boundary_test.go` 已有第三方导出类型检查，但只覆盖 `pkg` 且名单不是通用 import-origin 判断。现有测试通过不能证明本任务边界成立。
@@ -76,6 +77,7 @@ Prometheus registry、HTTP metrics、OTel provider、OTLP exporter、trace propa
 
 ### 5.1 业务模块专属第三方
 
+- 新增业务能力先在 `internal/module/<name>` 收口 Model、repo、Service、Handler、Adapter、binding、配置/迁移/运行单元和 contribution；这些是职责集合，不要求制造空目录。
 - 物理位置保留在 `internal/module/<name>/adapter/<technology>`。
 - Adapter 依赖并实现模块调用方定义的窄 port；第三方类型、错误、配置对象和关闭权不得越过 Adapter package。
 - 模块的 Model、Service、binding、`Dependencies`、`Module` 和 Contribution 只暴露标准库或项目自有类型。
@@ -83,12 +85,15 @@ Prometheus registry、HTTP metrics、OTel provider、OTLP exporter、trace propa
 
 Auth/JWT 保持这条轨道，不迁到顶层通用 Adapter，也不升级为 Kernel Capability。
 
-### 5.2 非业务、跨模块或进程级第三方
+### 5.2 底层 Capability 双条件门禁
 
-- `pkg/<capability>` 定义项目自有最小契约、错误、配置语义和 facade/Access，不复制第三方 API。
-- `internal/kernel/app/<capability>` 声明具体构造、typed config、依赖、Ready/Start/finalizer、Reload 和资源 owner。
-- `internal/kernel/composition` 是唯一实现选择与底层 Plan 装配位置。
-- application composition 和模块只消费 project-owned 输出，不导入第三方或底层具体 Adapter。
+| 跨业务复用 | 进程统一选择 | 结果 |
+| --- | --- | --- |
+| 否 | 任意 | 继续归属业务模块；资源生命周期通过模块 contribution/Participant 管理 |
+| 是 | 否 | 可以评估普通 `pkg` 复用库，但不进入 Kernel App |
+| 是 | 是 | 才进入完整 `pkg -> internal/kernel/app -> internal/kernel/composition` 链 |
+
+完整底层链中，`pkg/<capability>` 定义项目自有最小契约、错误、配置语义和 facade/Access；`internal/kernel/app/<capability>` 声明构造、typed config、依赖、Ready/Start/finalizer、Reload 和资源 owner；`internal/kernel/composition` 是唯一实现选择与 Plan 装配位置。上层只消费 project-owned 输出。
 
 Prometheus、OTel、OTLP 和通用 HTTP observation 进入 Observability Capability 轨；Ops 只消费项目自有 metrics handler、HTTP observer 和低敏 diagnostics 契约。
 
@@ -129,12 +134,12 @@ internal/module/ops/
 
 ## 8. 适用性、局限与未知
 
-本结论适用于当前单体进程和显式 composition。业务模块 Adapter 只有在技术确实专属于该业务语义时才能留在模块；一旦被多个模块消费或由进程统一选择，必须重新做 Capability 评估。
+本结论适用于当前单体进程和显式 composition。业务模块 Adapter 只要仍专属于该模块就留在模块；被多个业务消费或由进程统一选择中的任一事实只触发重新评估，必须两项同时成立才升级到完整底层链。
 
 本轮没有实施 Observability Capability。稳定 Metrics 与 generation Telemetry 应用一个还是两个 Kernel Definition，需要在实施前按现有 Plan/Generation 生命周期做定向验证；027 设计将其列为必须保持的分裂点，而不是允许实施者自行泄漏具体类型。
 
 ## 9. 对当前任务的影响与研究门禁
 
-027 必须修订当前模块开发指南、`pkg` 与 Kernel App 说明，冻结分轨决策表；后续源码迁移要收口 Ops 导出协议、建立底层 Observability Capability、删除旧技术实现路径并补 package graph/AST 门禁。
+027 必须修订当前模块开发指南、`pkg` 与 Kernel App 说明，冻结完整业务收口清单和双条件决策表；后续源码迁移要收口 Ops 导出协议、建立底层 Observability Capability、删除旧技术实现路径并补 package graph/AST 门禁。
 
 当前 import、导出签名、进程调用链、资源 owner、正向 migration 对照和门禁缺口均有可复核证据；剩余组件拆分细节不妨碍形成带重新确认触发器的计划，研究门禁通过。

@@ -7,7 +7,7 @@
 - 只收纳跨业务域复用的底层能力库，不放具体业务规则、领域模型、页面逻辑或一次性 glue code。
 - 不创建 `common`、`utils`、`helpers`、`shared` 等无明确所有权的杂物包。
 - 第三方库必须被项目自有能力接口或 adapter 隔离，业务常用接口不得泄漏易变的第三方类型。
-- 非业务、跨模块或进程级第三方能力必须优先在 `pkg/<name>` 形成项目自有契约，再由 `internal/kernel/app/<name>` 与底层 composition 选择和治理；上层不得直接持有具体 Adapter。
+- 完整 `pkg/<name> -> internal/kernel/app/<name> -> internal/kernel/composition` 链只治理同时跨业务复用且由进程统一选择的底层资源；只满足复用的普通库不虚构 Kernel 组件，只服务单模块的第三方留在该模块 Adapter。上层不得直接持有具体 Adapter。
 - 阻塞 I/O、后台任务、重试和资源释放必须有 `context`、超时、关闭或等待边界。
 - 错误必须保留原始原因并增加项目语义，敏感值在日志、错误和本地调试输出中必须脱敏。
 - `pkg` 不得导入 `internal`；受托管能力定义、显式组合、生命周期钩子和配置切换统一由 `internal/kernel/**` 承担。
