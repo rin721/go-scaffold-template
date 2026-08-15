@@ -1,0 +1,44 @@
+schema_version: 1
+id: R001
+title: "当前 Handler 与 HTTP route binding 耦合复核"
+question: "当前新增第二个业务 HTTP 模块时，是否仍能保持简单、高效、通用，Handler 构造与 route binding 的顺序和职责是否清晰？"
+research_type: current-project
+topics: ["application module", "HTTP handler", "route binding", "composition root", "OpenAPI"]
+keywords: ["todo.NewHTTP", "httpbinding.New", "StrictServerInterface", "HandlerWithOptions", "applicationRouter", "Mount"]
+languages: ["Go"]
+frameworks: ["Chi", "oapi-codegen"]
+technologies: ["OpenAPI 3.0.3", "net/http"]
+applicable_scenarios: ["026 设计计划", "新增第二个业务 HTTP 模块", "Handler-first 路由装配", "路由职责收口"]
+non_applicable_scenarios: ["改变公开 HTTP API", "拆分独立服务", "动态插件路由", "新增真实业务用例"]
+status: active
+summary: "当前实现对单个 Todo 模块行为正确，但 httpbinding.New 同时拥有 operation Handler、validator、strict middleware、Chi Router 和整份生成 route binding；TodoHandler 还直接满足应用级完整 StrictServerInterface。运行成本当前可接受，新增第二模块的编译耦合、重复绑定风险和职责可读性不符合通用扩展标准，应改为模块 Handler 先完成、应用静态聚合、生成路由只绑定一次。"
+evidence:
+  types: ["source-code", "tests", "generated-code", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "Todo HTTP profile 与 binding 构造"
+      locator: "internal/module/todo/module.go; internal/module/todo/binding/http/handler.go"
+      snapshot: "a42703f0644355c2f6344ca225c682491c8ecc3f"
+    - title: "Application Generation 与 Router 装配"
+      locator: "internal/composition/generation.go; internal/composition/service.go; pkg/httpx/router.go"
+      snapshot: "a42703f0644355c2f6344ca225c682491c8ecc3f"
+    - title: "生成 strict interface 与整份 route binding"
+      locator: "internal/transport/http/api/api.gen.go; api/openapi.yaml; api/oapi-codegen.yaml"
+      snapshot: "oapi-codegen v2.8.0 output at a42703f"
+    - title: "025 边界收口结论与限制"
+      locator: "docs/changes/025-business-module-boundary-closure"
+      snapshot: "verified 2026-08-16"
+    - title: "当前定向测试"
+      locator: "go test ./internal/module/todo/binding/http ./internal/composition ./pkg/httpx -count=1"
+      snapshot: "passed 2026-08-16"
+researched_at: "2026-08-16"
+verified_at: "2026-08-16"
+validity:
+  mode: snapshot
+  review_after: "2026-09-16"
+  refresh_triggers: ["OpenAPI generator or version changes", "a second business HTTP module is implemented", "application Router ownership changes", "module HTTP contribution contract changes"]
+relations:
+  extends: ["025-R001"]
+  related: ["015-R001", "024-R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

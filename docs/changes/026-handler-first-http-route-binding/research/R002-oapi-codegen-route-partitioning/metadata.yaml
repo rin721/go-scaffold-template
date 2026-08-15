@@ -1,0 +1,41 @@
+schema_version: 1
+id: R002
+title: "oapi-codegen v2.8.0 路由分区能力与方案比较"
+question: "在保留单一 OpenAPI authority 和 strict Chi 的前提下，应使用单一生成 binding 加静态聚合，还是按 tag/spec 分包或运行时注册？"
+research_type: external-technology-fit
+topics: ["oapi-codegen", "strict server", "route partitioning", "code generation"]
+keywords: ["include-tags", "include-operation-ids", "import-mapping", "strict-server", "chi-server"]
+languages: ["Go"]
+frameworks: ["Chi", "oapi-codegen"]
+technologies: ["oapi-codegen v2.8.0", "OpenAPI 3.0.3"]
+applicable_scenarios: ["026 方案选择", "单一 OpenAPI 的多业务模块", "生成路由聚合"]
+non_applicable_scenarios: ["oapi-codegen 版本升级", "OpenAPI 多服务拆分", "动态插件路由"]
+status: active
+summary: "oapi-codegen v2.8.0 官方支持 strict server、include-tags/include-operation-ids 和 import-mapping，但按模块生成会引入多配置、多文件/包和共享 schema 管理。当前只有一份小型 OpenAPI，最佳适配是保留一份完整生成 binding，由应用静态 aggregate 满足完整接口；按 tag/spec 分包保留为规模触发后的升级路径，运行时手写 Registry 不采用。"
+evidence:
+  types: ["official-documentation", "official-source", "current-project-configuration"]
+  primary_sources:
+    - title: "oapi-codegen v2.8.0 configuration reference"
+      locator: "https://github.com/oapi-codegen/oapi-codegen/blob/v2.8.0/docs/configuration.md"
+      snapshot: "v2.8.0, verified 2026-08-16"
+    - title: "oapi-codegen v2.8.0 README and strict server guidance"
+      locator: "https://github.com/oapi-codegen/oapi-codegen/blob/v2.8.0/README.md"
+      snapshot: "v2.8.0, verified 2026-08-16"
+    - title: "oapi-codegen same-package import mapping example"
+      locator: "https://github.com/oapi-codegen/oapi-codegen/tree/v2.8.0/examples/import-mapping/samepackage"
+      snapshot: "v2.8.0, verified 2026-08-16"
+    - title: "仓库固定生成配置"
+      locator: "go.mod; api/oapi-codegen.yaml; internal/transport/http/api/generate.go"
+      snapshot: "a42703f0644355c2f6344ca225c682491c8ecc3f"
+researched_at: "2026-08-16"
+verified_at: "2026-08-16"
+validity:
+  mode: versioned
+  review_after: "2026-11-16"
+  refresh_triggers: ["oapi-codegen version changes", "OpenAPI is split into multiple files", "generated API becomes a maintenance bottleneck", "runtime-extensible routes are required"]
+relations:
+  extends: ["024-R002"]
+  related: ["026-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md
