@@ -2,7 +2,7 @@
 
 本文是当前项目新增应用模块的权威开发入口。目录职责和允许依赖见 [`internal/module`](../../internal/module/README.md)，当前与暂缓的底层 Capability 见 [`pkg`](../../pkg/README.md)，Kernel App 组件形态和接入 API 见 [Kernel App 组件开发](../../internal/kernel/app/README.md)。
 
-应用模块是由唯一 application composition root 显式选择的进程内纵向业务单元，不是 Go module、Kernel Component、动态插件或自动发现的 Provider 集合。普通 Model、Service、Repository、Handler 和 binding 不进入 Kernel Plan。
+应用模块是由唯一 application composition root 显式选择的进程内纵向业务单元，不是 Go module、Kernel Component、动态插件或自动发现的 Provider 集合。普通 Model、Service、Repository、Adapter、Handler、binding 和 contribution 按业务名称收口，不进入 Kernel Plan。
 
 ## 1. 开始条件
 
@@ -53,7 +53,7 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 
 ### 3.2 模块专属 Adapter 或运行单元
 
-只服务单个业务语义、没有跨模块稳定契约价值的协议转换留在模块 Adapter。模块专属 migration、消费者循环、索引同步或清理任务以有明确 owner 的 contribution/Participant 接入 Host；它们不因此自动成为 Kernel Component。
+只服务单个业务语义、没有跨模块稳定契约价值的协议转换留在模块 Adapter。模块专属第三方 SDK、Client、cache、goroutine、migration、消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；拥有这些技术对象本身不构成 Kernel Capability 升级理由。
 
 ### 3.3 新的通用或进程级底层 Capability
 
@@ -72,12 +72,11 @@ internal/module/<capability>/
 ├── model/          # 业务状态、值与不变量
 ├── service/        # 用例与调用方拥有的窄 port
 ├── repo/           # 持久化 Adapter；仅在真实需要时建立
-├── handler/        # 入站协议转换；仅在真实需要时建立
 ├── middleware/     # 模块拥有的 HTTP 横切策略
 ├── binding/
 │   ├── config/     # 模块配置 owner
 │   ├── model/      # Schema/migration 等完成品
-│   ├── http/       # 已绑定路由 contribution
+│   ├── http/       # 模块自有 Handler、DTO 映射与已绑定协议完成品
 │   └── cli/        # 已绑定命令 contract
 └── module.go       # 纯内存局部装配
 ```
@@ -85,8 +84,10 @@ internal/module/<capability>/
 Todo 是当前完整示例，但只复制依赖方向和验证方法，不复制业务字段或无关入口：
 
 ```text
-model <- service <- repo/handler <- binding <- module.go <- internal/composition
-                         middleware ─┘
+model <- service <- repo
+           ↑         ↑
+     binding/http  module.go <- internal/composition
+     binding/cli     middleware ─┘
 ```
 
 开发顺序：

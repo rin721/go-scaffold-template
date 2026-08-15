@@ -66,7 +66,7 @@ type applicationGeneration struct {
 	i18n     *resourceHandle[i18n.Translator]
 	storage  *resourceHandle[storageapp.Access]
 
-	module            todo.Module
+	module            todo.HTTPModule
 	authModule        auth.Module
 	opsModule         ops.Module
 	participants      []supervisor.Participant
@@ -255,6 +255,10 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	requestAccess, err := newTodoRequestAccessAdapter(generation.authModule.Service)
+	if err != nil {
+		return abort(err)
+	}
 
 	todoConfig, err := configbinding.Decode(snapshot)
 	if err != nil {
@@ -282,9 +286,12 @@ func (f *applicationGenerationFactory) Prepare(
 	if err := migrationCompletion.Verify(ctx); err != nil {
 		return abort(fmt.Errorf("verify todo migration completion: %w", err))
 	}
-	generation.module, err = todo.New(todo.Dependencies{
-		Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
-		Config: todoConfig, Authorizer: authorizer,
+	generation.module, err = todo.NewHTTP(todo.HTTPDependencies{
+		Dependencies: todo.Dependencies{
+			Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
+			Config: todoConfig, Authorizer: authorizer,
+		},
+		Translator: generation.i18n.value(), RequestAccess: requestAccess,
 	})
 	if err != nil {
 		return abort(err)
@@ -328,7 +335,7 @@ func (f *applicationGenerationFactory) Prepare(
 		Logger: generation.logger.value(), Clock: clock.System(), IDGenerator: idgen.UUID(), Validator: validation.New(),
 		Database: generation.database.value(), Cache: generation.cache.value(),
 		I18n: generation.i18n.value(), Storage: generation.storage.value(),
-	}, httpConfig, generation.module.Service, generation.authModule)
+	}, httpConfig, generation.authModule.HTTPMiddleware, generation.module.Handler)
 	if err != nil {
 		return abort(err)
 	}

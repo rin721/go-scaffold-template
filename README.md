@@ -103,7 +103,7 @@ PATCH /api/v1/todos/{id}/complete
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/v1/todos -ContentType application/json -Body '{"title":"学习 Go"}'
 ```
 
-[`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成 strict Chi server interface，`internal/transport/http` 只负责把生成 DTO 映射到 Todo UseCases；缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、Todo 手写 HTTP handler 和 route middleware 已删除。
+[`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成的 strict Chi server interface、DTO 与 route binding 位于 `internal/transport/http/api`；Todo 手写 DTO 映射、错误呈现和请求访问端口收口在 `internal/module/todo/binding/http`。缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、旧 Todo 自建路由 authority 和 route middleware 已删除。
 
 同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 不解析 bearer token，必须显式传入本机 operator 的 `--subject` 与 `--scopes`，并与 HTTP 共用对象授权和低敏审计：
 

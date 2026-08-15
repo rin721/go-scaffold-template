@@ -1,4 +1,4 @@
-package httptransport
+package httpbinding
 
 import (
 	"bytes"
@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
@@ -93,32 +92,81 @@ func TestTodoHTTPContractRedactsUnexpectedUseCaseError(t *testing.T) {
 	}
 }
 
+func TestTodoHTTPContractEnforcesRequestAccess(t *testing.T) {
+	tests := []struct {
+		name   string
+		access RequestAccess
+		status int
+		code   string
+	}{
+		{name: "unauthenticated", access: requestAccessStub{}, status: http.StatusUnauthorized, code: "unauthenticated"},
+		{name: "permission denied", access: requestAccessStub{authenticated: true, err: service.ErrPermissionDenied}, status: http.StatusForbidden, code: "permission_denied"},
+		{name: "dependency failure", access: requestAccessStub{authenticated: true, err: errors.New("private auth dependency")}, status: http.StatusInternalServerError, code: "internal_server_error"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := newTodoContractHandlerWithAccess(t, &stubUseCases{}, test.access)
+			recorder := httptest.NewRecorder()
+			handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/v1/todos", nil))
+			problem := decodeProblem(t, recorder)
+			if recorder.Code != test.status || problem.Code != test.code {
+				t.Fatalf("response = status %d problem %#v", recorder.Code, problem)
+			}
+			if strings.Contains(recorder.Body.String(), "private auth dependency") {
+				t.Fatalf("private access error leaked: %s", recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestTodoHTTPContractRejectsNilRequestAccess(t *testing.T) {
+	translator, err := i18n.New(nil)
+	if err != nil {
+		t.Fatalf("i18n.New() error = %v", err)
+	}
+	if _, err := New(&stubUseCases{}, translator, nil); err == nil {
+		t.Fatal("New() error = nil")
+	}
+}
+
 func newTodoContractHandler(t *testing.T, useCases service.UseCases) http.Handler {
+	return newTodoContractHandlerWithAccess(t, useCases, allowRequestAccess{})
+}
+
+func newTodoContractHandlerWithAccess(t *testing.T, useCases service.UseCases, access RequestAccess) http.Handler {
 	t.Helper()
 	translator, err := i18n.New(nil)
 	if err != nil {
 		t.Fatalf("i18n.New() error = %v", err)
 	}
-	handler, err := NewTodoHTTPHandler(useCases, translator, allowOperationAuthorizer{})
+	handler, err := New(useCases, translator, access)
 	if err != nil {
-		t.Fatalf("NewTodoHTTPHandler() error = %v", err)
+		t.Fatalf("New() error = %v", err)
 	}
-	now := time.Date(2026, 8, 15, 8, 0, 0, 0, time.UTC)
-	principal, err := authmodel.NewPrincipal(
-		"http-test", authmodel.ActorService, []authmodel.Scope{"todos:read", "todos:write"}, now, now,
-	)
-	if err != nil {
-		t.Fatalf("NewPrincipal() error = %v", err)
-	}
-	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		handler.ServeHTTP(writer, request.WithContext(authmodel.WithPrincipal(request.Context(), principal)))
-	})
+	return handler
 }
 
-type allowOperationAuthorizer struct{}
+type allowRequestAccess struct{}
 
-func (allowOperationAuthorizer) EnforceOperation(context.Context, authmodel.Principal, string) error {
+func (allowRequestAccess) Actor(context.Context) (service.Actor, bool) {
+	return service.Actor{Subject: "http-test", Kind: "service", Scopes: []string{"todos:read", "todos:write"}}, true
+}
+
+func (allowRequestAccess) EnforceOperation(context.Context, service.Actor, string) error {
 	return nil
+}
+
+type requestAccessStub struct {
+	authenticated bool
+	err           error
+}
+
+func (s requestAccessStub) Actor(context.Context) (service.Actor, bool) {
+	return service.Actor{Subject: "http-test", Kind: "service", Scopes: []string{"todos:read"}}, s.authenticated
+}
+
+func (s requestAccessStub) EnforceOperation(context.Context, service.Actor, string) error {
+	return s.err
 }
 
 func decodeProblem(t *testing.T, recorder *httptest.ResponseRecorder) httpx.Problem {

@@ -3,12 +3,15 @@ package todo
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/rin721/go-scaffold-template/internal/module"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
+	httpbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/clock"
+	"github.com/rin721/go-scaffold-template/pkg/i18n"
 	"github.com/rin721/go-scaffold-template/pkg/idgen"
 )
 
@@ -29,6 +32,19 @@ type Module struct {
 	Contribution module.Contribution
 }
 
+// HTTPDependencies 是 Todo HTTP profile 在 core 依赖之外需要的请求边界能力。
+type HTTPDependencies struct {
+	Dependencies
+	Translator    i18n.Translator
+	RequestAccess httpbinding.RequestAccess
+}
+
+// HTTPModule 是 Todo 长期 Service profile 的完整输出。
+type HTTPModule struct {
+	Module
+	Handler http.Handler
+}
+
 // New 纯内存构造 Todo Service、Adapter 与 contribution。
 func New(dependencies Dependencies) (Module, error) {
 	repository, err := repo.New(dependencies.Database, repo.Schema())
@@ -46,4 +62,17 @@ func New(dependencies Dependencies) (Module, error) {
 		return Module{}, fmt.Errorf("validate todo contribution: %w", err)
 	}
 	return Module{Service: todoService, Contribution: contribution}, nil
+}
+
+// NewHTTP 纯内存构造 Todo core 与模块自有 HTTP binding。
+func NewHTTP(dependencies HTTPDependencies) (HTTPModule, error) {
+	core, err := New(dependencies.Dependencies)
+	if err != nil {
+		return HTTPModule{}, err
+	}
+	handler, err := httpbinding.New(core.Service, dependencies.Translator, dependencies.RequestAccess)
+	if err != nil {
+		return HTTPModule{}, fmt.Errorf("compose todo HTTP binding: %w", err)
+	}
+	return HTTPModule{Module: core, Handler: handler}, nil
 }

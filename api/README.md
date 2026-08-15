@@ -11,11 +11,11 @@
    go generate ./internal/transport/http/api
    ```
 
-3. 审阅 `internal/transport/http/api/*.gen.go`。生成 DTO 只允许停留在 HTTP Adapter，不能进入 module core、service 或 repository。
+3. 审阅 `internal/transport/http/api/*.gen.go`。生成 DTO 只允许进入模块自己的 HTTP binding，不能进入 module core、service 或 repository；顶层 transport 不承载手写业务 Adapter。
 4. 执行 contract tests 与 breaking gate：
 
    ```powershell
-   go test ./internal/transport/http ./pkg/httpx -count=1
+   go test ./internal/module/todo/binding/http ./pkg/httpx -count=1
    go tool oasdiff breaking <base-openapi.yaml> api/openapi.yaml
    ```
 

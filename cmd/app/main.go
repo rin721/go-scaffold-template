@@ -2,19 +2,15 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"runtime"
 	"strings"
+	"syscall"
 
 	applicationcomposition "github.com/rin721/go-scaffold-template/internal/composition"
-	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
-	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
-	"github.com/rin721/go-scaffold-template/pkg/cli"
-	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
-	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 const (
@@ -36,25 +32,9 @@ func main() {
 }
 
 func runMain(stdin io.Reader, stdout, stderr io.Writer, args []string) int {
-	ctx, stop := supervisor.SignalContext(context.Background())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-
-	baseline, err := pkglogger.New(nil)
-	if err != nil {
-		return reportProcessError(stderr, fmt.Errorf("create baseline logger: %w", err), cli.ExitError)
-	}
-	manager, err := kernellogging.New(baseline)
-	if err != nil {
-		closeErr := baseline.Close()
-		return reportProcessError(stderr, errors.Join(fmt.Errorf("create kernel logging manager: %w", err), closeErr), cli.ExitError)
-	}
-
-	process := newProcess(stdin, stdout, stderr, manager)
-	exitCode := execute(ctx, process, args)
-	if err := baseline.Close(); err != nil {
-		return reportProcessError(stderr, fmt.Errorf("close baseline logger: %w", err), cli.ExitError)
-	}
-	return exitCode
+	return execute(ctx, newProcess(stdin, stdout, stderr), args)
 }
 
 // process 保存应用入口拥有的固定装配参数和标准流。
@@ -66,17 +46,15 @@ type process struct {
 	stdin             io.Reader
 	stdout            io.Writer
 	stderr            io.Writer
-	logging           *kernellogging.Manager
 }
 
-func newProcess(stdin io.Reader, stdout, stderr io.Writer, logging *kernellogging.Manager) process {
+func newProcess(stdin io.Reader, stdout, stderr io.Writer) process {
 	return process{
 		configPath:        defaultConfigPath,
 		environmentPrefix: environmentPrefix,
 		stdin:             stdin,
 		stdout:            stdout,
 		stderr:            stderr,
-		logging:           logging,
 	}
 }
 
@@ -88,35 +66,21 @@ func (p process) run(ctx context.Context, args []string) error {
 	if ctx == nil {
 		return fmt.Errorf("application context is nil")
 	}
-	if p.logging == nil {
-		return fmt.Errorf("application logging manager is nil")
-	}
-	application, err := applicationcomposition.New(applicationcomposition.Config{
+	return applicationcomposition.Run(ctx, applicationcomposition.EntryConfig{
 		Name: applicationName, Description: applicationDescription,
 		ConfigPath: p.configPath, EnvironmentPrefix: p.environmentPrefix,
-		Stdin: p.stdin, Stdout: p.stdout, Stderr: p.stderr, Logging: p.logging,
-		Build: opsmodel.BuildInfo{Version: buildVersion, Commit: buildCommit, BuildTime: buildTime, GoVersion: runtime.Version(), Dirty: strings.EqualFold(buildDirty, "true")},
-	})
-	if err != nil {
-		return fmt.Errorf("compose application: %w", err)
-	}
-	return application.Run(ctx, args)
+		Stdin: p.stdin, Stdout: p.stdout, Stderr: p.stderr,
+		Build: applicationcomposition.BuildInfo{Version: buildVersion, Commit: buildCommit, BuildTime: buildTime, GoVersion: runtime.Version(), Dirty: strings.EqualFold(buildDirty, "true")},
+	}, args)
 }
 
 func execute(ctx context.Context, process process, args []string) int {
 	err := process.run(ctx, args)
 	if err == nil {
-		return cli.ExitSuccess
+		return applicationcomposition.ExitSuccess
 	}
 	if _, writeErr := fmt.Fprintf(process.stderr, "%s: %v\n", applicationName, err); writeErr != nil {
-		return cli.ExitError
+		return applicationcomposition.ExitError
 	}
-	return cli.GetExitCode(err)
-}
-
-func reportProcessError(stderr io.Writer, err error, exitCode int) int {
-	if _, writeErr := fmt.Fprintf(stderr, "%s: %v\n", applicationName, err); writeErr != nil {
-		return cli.ExitError
-	}
-	return exitCode
+	return applicationcomposition.ExitCode(err)
 }

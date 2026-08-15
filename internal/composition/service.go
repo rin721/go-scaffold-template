@@ -4,19 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
-	"github.com/rin721/go-scaffold-template/internal/module/auth"
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
 	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
-	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
-	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
 	httpapi "github.com/rin721/go-scaffold-template/internal/transport/http/api"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
@@ -55,7 +53,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create application generation factory: %w", err)
 	}
-	factory.build = a.config.Build
+	factory.build = a.config.Build.opsModel()
 	coordinator, err := kernel.NewGenerationCoordinator(loader, bindings, factory, kernel.Options{Logging: a.config.Logging})
 	if err != nil {
 		return nil, fmt.Errorf("create application generation coordinator: %w", err)
@@ -85,10 +83,17 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	return &serviceRuntime{supervisor: process, coordinator: coordinator, factory: factory}, nil
 }
 
-func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig httpx.ServerConfig, todoService service.UseCases, authModule auth.Module) (httpx.Router, error) {
-	todoHandler, err := httptransport.NewTodoHTTPHandler(todoService, capabilities.I18n, authModule.Service)
-	if err != nil {
-		return nil, fmt.Errorf("compose generated Todo HTTP transport: %w", err)
+func applicationRouter(
+	capabilities kernelcomposition.Capabilities,
+	httpConfig httpx.ServerConfig,
+	authMiddleware func(http.Handler) http.Handler,
+	businessHandler http.Handler,
+) (httpx.Router, error) {
+	if authMiddleware == nil {
+		return nil, fmt.Errorf("application auth HTTP middleware is nil")
+	}
+	if businessHandler == nil {
+		return nil, fmt.Errorf("application business HTTP handler is nil")
 	}
 	trustedProxy, err := httpx.TrustedProxy(httpConfig.TrustedProxyCIDRs)
 	if err != nil {
@@ -114,8 +119,8 @@ func applicationRouter(capabilities kernelcomposition.Capabilities, httpConfig h
 		rateLimiter.Middleware(),
 		overload.Middleware(),
 	)
-	router.UseHTTP(authModule.HTTPMiddleware)
-	router.Mount("/", todoHandler)
+	router.UseHTTP(authMiddleware)
+	router.Mount("/", businessHandler)
 	return router, nil
 }
 

@@ -1,5 +1,5 @@
-// Package httptransport 把生成的 OpenAPI transport 契约适配到项目 UseCases。
-package httptransport
+// Package httpbinding 把生成的 OpenAPI transport 契约适配到 Todo UseCases。
+package httpbinding
 
 import (
 	"bytes"
@@ -17,7 +17,6 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/nethttp-middleware"
-	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
@@ -29,10 +28,14 @@ import (
 const acceptLanguageHeader = "Accept-Language"
 
 type requestLanguageContextKey struct{}
+type requestActorContextKey struct{}
 
-// OperationAuthorizer 是 transport 使用的 Auth module 最小授权端口。
-type OperationAuthorizer interface {
-	EnforceOperation(context.Context, authmodel.Principal, string) error
+var errUnauthenticated = errors.New("Todo request is unauthenticated")
+
+// RequestAccess 是 Todo HTTP binding 使用的请求身份与 operation 授权窄端口。
+type RequestAccess interface {
+	Actor(context.Context) (service.Actor, bool)
+	EnforceOperation(context.Context, service.Actor, string) error
 }
 
 // TodoHandler 实现生成的 strict server interface，并只依赖项目 UseCases。
@@ -52,14 +55,14 @@ func NewTodoHandler(todoService service.UseCases, translator i18n.Translator) (*
 	return &TodoHandler{service: todoService, translator: translator}, nil
 }
 
-// NewTodoHTTPHandler 组装生成 route、OpenAPI request validator 与统一错误边界。
-func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator, authorizer OperationAuthorizer) (http.Handler, error) {
+// New 组装生成 route、OpenAPI request validator 与统一错误边界。
+func New(todoService service.UseCases, translator i18n.Translator, access RequestAccess) (http.Handler, error) {
 	handler, err := NewTodoHandler(todoService, translator)
 	if err != nil {
 		return nil, err
 	}
-	if authorizer == nil {
-		return nil, fmt.Errorf("Todo HTTP operation authorizer is nil")
+	if access == nil {
+		return nil, fmt.Errorf("Todo HTTP request access is nil")
 	}
 	specification, err := api.GetSwagger()
 	if err != nil {
@@ -83,10 +86,10 @@ func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator
 		Options: openapi3filter.Options{
 			AuthenticationFunc: func(ctx context.Context, input *openapi3filter.AuthenticationInput) error {
 				if input == nil || input.SecuritySchemeName != "bearerAuth" {
-					return authmodel.ErrUnauthenticated
+					return errUnauthenticated
 				}
-				if _, ok := authmodel.PrincipalFromContext(ctx); !ok {
-					return authmodel.ErrUnauthenticated
+				if _, ok := access.Actor(ctx); !ok {
+					return errUnauthenticated
 				}
 				return nil
 			},
@@ -98,7 +101,7 @@ func NewTodoHTTPHandler(todoService service.UseCases, translator i18n.Translator
 			})
 		},
 	}))
-	strict := api.NewStrictHandlerWithOptions(handler, []api.StrictMiddlewareFunc{requestMetadata(authorizer)}, api.StrictHTTPServerOptions{
+	strict := api.NewStrictHandlerWithOptions(handler, []api.StrictMiddlewareFunc{requestMetadata(access)}, api.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(writer http.ResponseWriter, request *http.Request, err error) {
 			httpx.WriteProblem(writer, request, &httpx.StatusError{
 				StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "invalid JSON request body", Err: err,
@@ -126,6 +129,10 @@ func requestValidationProblem(specification *openapi3.T, request *http.Request, 
 		return http.StatusUnsupportedMediaType, "unsupported_media_type", "request Content-Type is not supported"
 	}
 	switch suggestedStatus {
+	case http.StatusUnauthorized:
+		return suggestedStatus, "unauthenticated", "valid bearer authentication is required"
+	case http.StatusForbidden:
+		return suggestedStatus, "permission_denied", "the authenticated principal is not authorized"
 	case http.StatusNotFound:
 		if specification != nil && specification.Paths != nil && request != nil {
 			if pathItem := specification.Paths.Find(request.URL.Path); pathItem != nil && pathItem.GetOperation(request.Method) == nil {
@@ -243,12 +250,8 @@ func todoResponse(todo model.Todo) api.Todo {
 }
 
 func actorFromContext(ctx context.Context) service.Actor {
-	principal, _ := authmodel.PrincipalFromContext(ctx)
-	scopes := make([]string, len(principal.Scopes))
-	for index, scope := range principal.Scopes {
-		scopes[index] = string(scope)
-	}
-	return service.Actor{Subject: principal.Subject, Kind: string(principal.Kind), Scopes: scopes}
+	actor, _ := ctx.Value(requestActorContextKey{}).(service.Actor)
+	return actor
 }
 
 func (h *TodoHandler) present(ctx context.Context, err error) error {
@@ -291,7 +294,7 @@ func errorContract(code fault.Code) (int, string, string) {
 	}
 }
 
-func requestMetadata(authorizer OperationAuthorizer) api.StrictMiddlewareFunc {
+func requestMetadata(access RequestAccess) api.StrictMiddlewareFunc {
 	return func(next api.StrictHandlerFunc, strictName string) api.StrictHandlerFunc {
 		return func(ctx context.Context, writer http.ResponseWriter, request *http.Request, input any) (any, error) {
 			operation, ok := api.OperationForStrictName(strictName)
@@ -300,20 +303,21 @@ func requestMetadata(authorizer OperationAuthorizer) api.StrictMiddlewareFunc {
 			}
 			ctx = httpx.WithOperationID(ctx, string(operation.ID))
 			ctx = context.WithValue(ctx, requestLanguageContextKey{}, request.Header.Get(acceptLanguageHeader))
-			principal, authenticated := authmodel.PrincipalFromContext(ctx)
+			actor, authenticated := access.Actor(ctx)
 			if !authenticated {
 				return nil, &httpx.StatusError{
-					StatusCode: http.StatusUnauthorized, Code: "unauthenticated", Message: "valid bearer authentication is required", Err: authmodel.ErrUnauthenticated,
+					StatusCode: http.StatusUnauthorized, Code: "unauthenticated", Message: "valid bearer authentication is required", Err: errUnauthenticated,
 				}
 			}
-			if err := authorizer.EnforceOperation(ctx, principal, string(operation.ID)); err != nil {
-				if errors.Is(err, authmodel.ErrPermissionDenied) {
+			if err := access.EnforceOperation(ctx, actor, string(operation.ID)); err != nil {
+				if errors.Is(err, service.ErrPermissionDenied) {
 					return nil, &httpx.StatusError{
 						StatusCode: http.StatusForbidden, Code: "permission_denied", Message: "the authenticated principal is not authorized", Err: err,
 					}
 				}
 				return nil, err
 			}
+			ctx = context.WithValue(ctx, requestActorContextKey{}, actor)
 			request = request.WithContext(ctx)
 			return next(ctx, writer, request, input)
 		}

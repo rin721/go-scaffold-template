@@ -15,9 +15,7 @@ import (
 	"testing"
 	"time"
 
-	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
-	"github.com/rin721/go-scaffold-template/pkg/cli"
-	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
+	applicationcomposition "github.com/rin721/go-scaffold-template/internal/composition"
 )
 
 func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
@@ -444,8 +442,8 @@ func TestExecuteUsesCLIExitCodeAndReportsError(t *testing.T) {
 	var stderr bytes.Buffer
 	process := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &stderr)
 	exitCode := execute(context.Background(), process, []string{"unknown"})
-	if exitCode != cli.ExitUsage {
-		t.Fatalf("exit code = %d, want %d", exitCode, cli.ExitUsage)
+	if exitCode != applicationcomposition.ExitUsage {
+		t.Fatalf("exit code = %d, want %d", exitCode, applicationcomposition.ExitUsage)
 	}
 	if !strings.Contains(stderr.String(), "go-scaffold-template: run application CLI") {
 		t.Fatalf("stderr = %q, want application context", stderr.String())
@@ -459,8 +457,8 @@ func TestExecuteCoversSuccessConfigAndCancellationExitCodes(t *testing.T) {
 		args []string
 		want int
 	}{
-		{name: "success", ctx: t.Context(), args: []string{"--help"}, want: cli.ExitSuccess},
-		{name: "config", ctx: t.Context(), args: []string{"config", "init", "--output", filepath.Join(t.TempDir(), "config.txt")}, want: cli.ExitConfig},
+		{name: "success", ctx: t.Context(), args: []string{"--help"}, want: applicationcomposition.ExitSuccess},
+		{name: "config", ctx: t.Context(), args: []string{"config", "init", "--output", filepath.Join(t.TempDir(), "config.txt")}, want: applicationcomposition.ExitConfig},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -473,8 +471,8 @@ func TestExecuteCoversSuccessConfigAndCancellationExitCodes(t *testing.T) {
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
 	current := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, &bytes.Buffer{})
-	if code := execute(cancelled, current, []string{"config", "init", "--output", filepath.Join(t.TempDir(), "cancelled.yaml")}); code != cli.ExitInterrupted {
-		t.Fatalf("execute(cancelled) = %d, want %d", code, cli.ExitInterrupted)
+	if code := execute(cancelled, current, []string{"config", "init", "--output", filepath.Join(t.TempDir(), "cancelled.yaml")}); code != applicationcomposition.ExitInterrupted {
+		t.Fatalf("execute(cancelled) = %d, want %d", code, applicationcomposition.ExitInterrupted)
 	}
 }
 
@@ -482,8 +480,8 @@ func TestExecuteReturnsErrorWhenReportingFails(t *testing.T) {
 	t.Parallel()
 
 	process := newTestProcess(t, strings.NewReader(""), &bytes.Buffer{}, failingWriter{})
-	if exitCode := execute(context.Background(), process, []string{"unknown"}); exitCode != cli.ExitError {
-		t.Fatalf("exit code = %d, want %d", exitCode, cli.ExitError)
+	if exitCode := execute(context.Background(), process, []string{"unknown"}); exitCode != applicationcomposition.ExitError {
+		t.Fatalf("exit code = %d, want %d", exitCode, applicationcomposition.ExitError)
 	}
 }
 
@@ -495,9 +493,5 @@ func (failingWriter) Write([]byte) (int, error) {
 
 func newTestProcess(t *testing.T, stdin io.Reader, stdout, stderr io.Writer) process {
 	t.Helper()
-	manager, err := kernellogging.New(pkglogger.Noop())
-	if err != nil {
-		t.Fatalf("logging.New() error = %v", err)
-	}
-	return newProcess(stdin, stdout, stderr, manager)
+	return newProcess(stdin, stdout, stderr)
 }

@@ -12,11 +12,12 @@ todo/
 ├── binding/
 │   ├── config/             # todo 配置节
 │   ├── cli/                # 显式 actor 的 Application command
+│   ├── http/               # strict Handler、DTO 映射、错误呈现与请求访问端口
 │   └── migration/          # 三 driver SQL、checksum、owner completion/readiness
 └── module.go               # 局部纯装配
 ```
 
-HTTP transport 不属于 module core。公开契约由根目录 [`api/openapi.yaml`](../../../api/openapi.yaml) 定义，生成的 strict server interface 与 DTO 位于 `internal/transport/http/api`，手写 Adapter 位于 `internal/transport/http`。Adapter 只依赖本模块的 `service.UseCases`，生成类型不会进入 model、service 或 repo。
+HTTP binding 不属于 module core，但属于 Todo 模块。公开契约由根目录 [`api/openapi.yaml`](../../../api/openapi.yaml) 定义，生成的 strict server interface 与 DTO 位于 `internal/transport/http/api`；手写 Handler、DTO 映射、错误呈现和 `RequestAccess` 位于本模块 `binding/http`。该 binding 只依赖 Todo `service.UseCases`、Todo-owned 窄端口和项目协议契约，不导入 Auth module；生成类型不会进入 model、service 或 repo。
 
 ## 业务操作
 
@@ -27,4 +28,4 @@ HTTP transport 不属于 module core。公开契约由根目录 [`api/openapi.ya
 
 HTTP 路由与 CLI 命令的运行方式见根 [README](../../../README.md)。模块边界、配置和 Schema 的早期实施依据保存在 [014 变更记录](../../../docs/changes/014-todo-business-vertical-slice/README.md)；[015 变更记录](../../../docs/changes/015-todo-route-middleware-example/README.md) 仅保留已被 strict OpenAPI transport 取代的历史证据。
 
-长期 Service 的 Todo Config、Policy、Repository、Service、对象授权 port 与 transport Adapter 都属于不可变 Application Generation。Todo 不导入 Auth module；唯一 composition root 用小 Adapter 连接两个模块完成品。所有 Service/CLI 候选只读校验 migration version、dirty 与 legacy owner completion，目标数据库不兼容时 fail closed；只有独立 `db migrate up` command 可以执行 Todo-owned versioned SQL。
+长期 Service 的 Todo Config、Policy、Repository、Service、对象授权 port 与 HTTP binding 都属于不可变 Application Generation。Todo HTTP profile 返回完成的 Service、Handler 与 contribution；唯一 composition root 用小 Adapter 连接 Auth Principal/Service 与 Todo-owned 请求访问、对象授权端口，再把完成 Handler 安装到应用 Router。所有 Service/CLI 候选只读校验 migration version、dirty 与 legacy owner completion，目标数据库不兼容时 fail closed；只有独立 `db migrate up` command 可以执行 Todo-owned versioned SQL。
