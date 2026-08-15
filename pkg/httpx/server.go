@@ -84,14 +84,35 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	listener, err := net.Listen("tcp", s.server.Addr)
+	if err != nil {
+		return fmt.Errorf("bind http server %s: %w", s.server.Addr, err)
+	}
+	if err := s.StartWithListener(ctx, listener); err != nil {
+		return errors.Join(err, listener.Close())
+	}
+	return nil
+}
+
+// StartWithListener 使用调用方预先准备的 listener 启动 Server 生命周期。
+// listener 的关闭责任在成功后转移给 Server；失败时仍由调用方关闭。
+func (s *Server) StartWithListener(ctx context.Context, listener net.Listener) error {
+	if s == nil || s.server == nil {
+		return fmt.Errorf("http server is nil")
+	}
+	if ctx == nil {
+		return fmt.Errorf("http server start context is nil")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if listener == nil {
+		return fmt.Errorf("http server listener is nil")
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state != serverCreated {
 		return fmt.Errorf("http server already started")
-	}
-	listener, err := net.Listen("tcp", s.server.Addr)
-	if err != nil {
-		return fmt.Errorf("bind http server %s: %w", s.server.Addr, err)
 	}
 	s.listener = listener
 	s.state = serverStarted

@@ -123,6 +123,7 @@ model <- service <- repo/handler <- binding <- module.go <- internal/composition
 | 配置化且新旧实例可安全并存 | `app.ManagedConfigured` | 稳定 Lease facade，`KernelInstanceSwap` |
 | 配置变化不能安全热换 | `app.ManagedConfigured` | 稳定 Lease facade，`RestartRequired` |
 | 明确替换同一既有稳定 target | `app.ManagedConfiguredReplacement` | 复用 target 输出，`KernelInstanceSwap` |
+| 影响当前同步 HTTP 模块对象图 | Application Generation | 完整重建 Router/Server，对新连接提交并排空旧代 |
 
 分别回答以下问题，不能因为某个 API 已存在就机械套用：
 
@@ -133,7 +134,7 @@ model <- service <- repo/handler <- binding <- module.go <- internal/composition
 - 失败时继续使用旧实例是否有明确价值；
 - 配置改变的是底层资源，还是整个模块对象图、路由或订阅关系。
 
-配置存在不等于能够热重载。影响模块对象图、路由、命令、排他订阅或其他无法加入同一事务的变化，初版使用 `RestartRequired`，不能让 Kernel 单独接受整个候选。
+配置存在不等于能够热重载。当前同步 HTTP Service 已能把模块对象图、路由与底层能力放入完整 Application Generation；模块配置必须通过 composition factory 重建，而不是让 Kernel 单独接受 section。排他订阅、hijacked connection 或无法证明 admission/drain 的资源仍使用 `RestartRequired` 或先建立专用 Handoff，不能机械套用当前 HTTP 协议。
 
 ## 7. 当前契约不适用时
 
@@ -150,7 +151,7 @@ model <- service <- repo/handler <- binding <- module.go <- internal/composition
 升级流程：
 
 1. 在当前模块研究中记录具体用例、缺口和受影响契约。
-2. 比较 `RestartRequired`、模块级受管运行单元和扩展 Kernel 契约三条路径。
+2. 比较 Application Generation、`RestartRequired`、模块级受管运行单元和专用 Handoff 四条路径。
 3. 改变公共生命周期、依赖模型或资源切换语义时建立新的 `docs/changes/<seq-num-name>/`。
 4. 难以逆转的长期决策使用 ADR。
 5. 新方案确认前，模块任务保持待确认，不增加空 Hook、静默回退或临时兼容层。

@@ -7,8 +7,8 @@
 - 保持 `pkg/*` 通用库不感知 kernel、DI、drain 或热替换。
 - 所有当前进程选择的底层能力都通过 `kernel/app/<name>` 和 composition；Clock、ID Generator、Validator 直接输出普通接口，Database、Cache、Storage 输出稳定租约 Access，Logger 与 I18n 输出稳定 facade。
 - `app.Plan` 只支持显式有序 `Add`、typed `Binding/Input` 和针对既有 typed target 的 `Replace`；不扫描、不提供运行期 Resolver，也不装配尚未建设的业务对象。
-- 配置变化时先准备全部候选，再反向排空旧租约；失败恢复旧入口，`RestartRequired` 在任何副作用前阻止整轮应用。
-- 配置节的默认值与严格绑定由同一个 owner 契约提供；服务入口由唯一 Coordinator 加载同一不可变候选，Bootstrap CLI 则只构造默认配置所需契约，不创建 Kernel、资源或监听器。
+- 长期 Service 以完整不可变 Application Generation 应用配置：同一 Snapshot 构造全部 Capability、Todo、Router 与 HTTP Server，候选失败保留旧代，提交后旧连接排空并反向释放资源。
+- 配置节的默认值与严格绑定由同一个 owner 契约提供；Service 由唯一 GenerationCoordinator 加载候选，Bootstrap CLI 则只构造默认配置所需契约，不创建资源、listener 或 goroutine。
 - 首个 Todo 应用模块位于 `internal/module/todo`，以显式 `model/service/repo/handler/binding` 结构提供 HTTP 与 CLI；模块对象由 `internal/composition` 手工装配，不进入 Kernel Plan。
 
 ## 已实现底层库
@@ -32,7 +32,7 @@
 
 ## Bootstrap CLI 与 Service
 
-有参数时，`cmd/app` 先选择 Bootstrap mode，`composition.ComposeBootstrap` 只构造配置节契约、默认配置管理器和命令树。无参数时才创建 Loader、Kernel、服务能力、Coordinator、HTTP Server 和 Host。`composition.Compose(runtime, options)` 先加入 Kernel 内置 Logger target；`options.Logger` 可以保留基线，也可以显式加入配置化 Logger replacement，随后按 Clock、ID Generator、Validator、Database、Cache、I18n、Storage 建立完整 Plan。返回的 Logger 和 I18n Translator 是稳定 facade，Database、Cache、Storage 是稳定 Access。
+有参数时，`cmd/app` 选择 Bootstrap/one-shot mode；`composition.ComposeBootstrap` 只构造配置节契约、默认配置管理器和命令树，具体命令才按 invocation 创建 Kernel 资源。无参数时创建 Loader、GenerationCoordinator、typed resource pools、ListenerHub 和完整 Application Generation。每代显式拥有 Logger、Database、Cache、I18n、Storage、Todo、Router 与 `http.Server`；Clock、ID Generator 和 Validator 是无配置的普通能力。
 
 当前 `cmd/app` 选择配置化 Logger replacement；默认配置由 Bootstrap 聚合 Logger、Database、Cache、I18n、Storage、application-owned HTTP 与 Todo 七段。默认值在写文件前经过与运行时相同的严格解码和语义校验。具体运行方式见 [Kernel 说明](internal/kernel/README.md)。
 
@@ -69,7 +69,7 @@ go run ./cmd/app config init --force
 
 生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，把 Storage 设为本地 `.data/storage`，启用 Todo 默认分页/标题限制，并让 HTTP 监听 `:8080`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。同一 EnvSource 的重复逻辑路径、大小写别名、空 segment 或祖先/后代路径会确定性失败；File/Env 之间只允许 object/object 递归合并或 non-object/non-object 覆盖，object 与 scalar、array、null 不得相互改形状。无参数模式只加载一次候选，所有 Kernel 与 application owner 在资源副作用前完成严格解码和校验；随后启动 Database、Cache、I18n、Storage、Todo migration 和 HTTP listener。只有 migration 完成、listener 已绑定、受监督 Serve runner 已确认运行且全部必需 owner 启动后，进程才 ready。未匹配请求仍返回 404。配置缺失、未知/重复字段、类型非法或资源不可达都会返回非零退出码；`Ctrl+C` 或 `SIGTERM` 会撤销 readiness 并触发有界反向停止。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。同一 EnvSource 的重复逻辑路径、大小写别名、空 segment 或祖先/后代路径会确定性失败；File/Env 之间只允许 object/object 递归合并或 non-object/non-object 覆盖，object 与 scalar、array、null 不得相互改形状。Service 初始候选完成 strict decode、资源 Ready、Todo migration、listener bind 和 Server Serve-ready 后才提交第一代。后续文件候选执行同样的完整构造，但 Database 只做只读 Schema readiness，不在 reload 中执行 DDL。配置缺失、未知字段、资源不可达或 Schema 不完整都会保留旧代；`Ctrl+C` 或 `SIGTERM` 会撤销 admission 并触发有界排空。
 
 ## Todo 快速学习示例
 
@@ -101,11 +101,11 @@ go run ./cmd/app todo complete --id <todo-id>
 
 目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
 
-无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更；后续候选仍会完整加载和校验，恢复到当前有效配置或只保留合法热切换变化时才解除重启要求。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，不能通过恢复配置自动清除。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
+无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/todo` 七节都可在同一 PID 生效，不再要求重启：未变化的底层资源按 section digest 引用复用，变化资源先 Build/Ready；Todo Policy、Handler、Router 和 `http.Server` 每代重建。ListenerHub 独占物理 TCP listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、Schema readiness 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。环境变量仍高于文件，进程不会读取另一个 shell 在启动后新增的环境值。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
 
-Host 通过单一 `ProcessDiagnostics` 组合 Kernel capability ownership 与 Supervisor Participant/Task responsibility：可定位 config/instance generation、phase、policy、attempt、pending/failed/forced/finalized、共享 shutdown deadline 和脱敏 error type。该结构只供当前进程内 Health 与未来受控 management transport 消费；默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
+GenerationCoordinator 提供 attempt、current/retiring generation、Snapshot digest、changed sections、phase、bound address、active requests、cleanup debt 和脱敏 error type；Supervisor 继续记录 Participant/Task 与 shutdown 预算。默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，配置重载修复与生命周期证据见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，三项能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，Bootstrap/Config/监督/HTTP/诊断闭环见 [012 业务模块架构](docs/changes/012-business-module-architecture/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，底层组件生命周期见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。当前生产竣工与完整 Service 重载的唯一施工 authority 是 [024 生产就绪模板一次性竣工](docs/changes/024-production-ready-one-shot-completion/README.md)；[023 全配置无感重载](docs/changes/023-full-configuration-seamless-reload/README.md) 只保留历史研究证据。
 
 ## 本地验证
 

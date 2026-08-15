@@ -1,6 +1,6 @@
 # Kernel 与 App 组件装配
 
-`internal/kernel` 治理当前进程选择的底层 App 组件：Coordinator 生成全应用唯一配置候选，Kernel 按计划启动和安全换代，Host 监督长期任务并反向关闭资源。它不扫描包、不构造业务对象，也不提供运行期 Service Locator。
+`internal/kernel` 同时提供底层 App 组件运行时和长期 Service 的完整代际协调协议。one-shot CLI 仍由 Coordinator/Kernel 按 Plan 启停资源；长期 Service 由 GenerationCoordinator 从同一 Snapshot 构造不可变 Application Generation。它不扫描包、不提供运行期 Service Locator，也不让业务代码查询容器。
 
 ## 固定接入路径
 
@@ -15,7 +15,7 @@ pkg/<name>
 - `pkg/<name>` 定义项目能力契约并隔离第三方库。
 - `internal/kernel/app/<name>` 把独立实现声明为无安装副作用的 `Definition[O]`；明确接管内置 target 的实现使用 `ReplacementDefinition[T]`。
 - `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并用 typed `Replace` 指明替换目标；所有检查成功后才一次性安装。
-- Coordinator 是 Loader 的唯一进程级调用者；Kernel 只执行冻结计划；Host 保证上层 Participant 先于 Kernel 停止。
+- one-shot Coordinator 是对应 Loader 的唯一调用者；Service GenerationCoordinator 是长期 watcher 的唯一 Loader 调用者。Kernel 只执行冻结计划，完整代际由 application composition root 显式构造。
 
 当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database、Cache、I18n、Storage。修改清单只发生在 composition，不使用 `init` 自动注册。
 
@@ -46,7 +46,7 @@ err := capabilities.Database.Use(ctx, func(client databaseapp.Client) error {
 
 Database App 在 `build` 中明确调用 `pkg/database.NewGORM`，配置只选择 `sqlite/postgres/mysql` Driver 与连接参数，不包含可切换底层实现的 Engine。业务仓储通过项目 `Schema`、`BaseRepository` 和 `Tx` 使用数据库，不接触 GORM 类型；就绪检查通过 `Database Access.Ping` 在当前资源租约内执行，不暴露 Stats 或 Close。
 
-Cache 使用 `ManagedConfigured + Leased + RestartRequired`。稳定 Access 不公开 `RemoteStore`；调用方通过 `cacheapp.NewClient[T]` 构造自己拥有且必须关闭的泛型 Client。默认 `disabled` 不连接 Redis；启用 Redis 后 App 拥有并关闭连接池。Cache 配置变化会在整轮 Reload 产生任何副作用前返回 `RestartRequired`。
+Cache 的底层 App 仍使用 `ManagedConfigured + Leased`，稳定 Access 不公开 `RemoteStore`；调用方通过 `cacheapp.NewClient[T]` 构造自己拥有且必须关闭的泛型 Client。长期 Service 不再对该 App 执行局部 reload，而是把 Cache backend 纳入完整 Application Generation，因此 Cache section 可同进程生效。当前 Todo 没有 Cache Client；后续模块若创建泛型 Client/L1，必须由对应 generation 持有并关闭，不能跨代共享 L1/tag index。
 
 I18n 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，但输出仍是普通 `pkg/i18n.Translator` 稳定 facade。消息文件相对进程工作目录读取；成功重载后 facade 身份不变、内部 Translator 换代，候选资源加载失败则旧翻译器继续服务。
 
@@ -102,6 +102,8 @@ go run ./cmd/app config init
 
 ## 生命周期与重载
 
+### one-shot Kernel
+
 初始启动按运行节点顺序执行：
 
 ```text
@@ -121,7 +123,20 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 
 候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。无副作用的 `RestartRequired` 不会永久阻止 watcher：下一候选仍从 Loader 和全部 owner 校验开始，只有成功恢复到当前有效配置或完成合法热切换后才清除 restart latch。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 ownership snapshot 并阻断后续 Reload，恢复配置不能误清 cleanup debt。
 
-`WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
+上述三种策略仍是独立 Kernel Plan 的底层契约，用于 one-shot 资源和可复用组件测试；长期 Service 不再把七节配置拆成多个运行中 Kernel reload 事务。
+
+### 长期 Service Application Generation
+
+Service 使用 `GenerationCoordinator -> GenerationFactory -> typed resource pools -> ListenerHub`：
+
+1. FileSource 先完成有界稳定双采样，Loader 合并 File < Env 并执行全部 owner strict validation；
+2. Logger、Database、Cache、I18n、Storage 按 section digest 获取 typed 引用，未变化资源复用，变化资源建立独立 immutable component runtime；
+3. 从同一 Snapshot 重建 Todo Repository/Policy/Service/Handler/Router 和 `http.Server`；初始代执行 migration，reload 只读校验 Schema；
+4. ListenerHub 在候选期 bind 新地址或复用同一物理 listener，候选 Server 先 Serve-ready 但没有 admission；
+5. commit 切换 route 与 process logger target，旧 route 停止接收新连接；旧 Server 排空后按 Storage、I18n、Cache、Database、Logger 反向释放引用；
+6. candidate 失败反向 Abort 且 current 不变；提交后清理失败形成 cleanup debt、撤销 readiness 并 fail-closed。
+
+`WatchFiles` 监听配置文件父目录，Write/Create/Rename/Remove 经防抖后只投递容量一的 latest-wins 通知。GenerationCoordinator 串行加载和提交；非法候选上报后 watcher 继续工作。普通同步 HTTP 连接固定一个 generation；当前没有 TLS/HTTP3、WebSocket、SSE 或 hijacked connection 的跨代保证。
 
 Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。每个 object scope 的大小写等价 key 必须唯一；object/object 递归合并，scalar/array/null 组成的 non-object 由高优先级 Source 整体替换，object 与 non-object 任一方向改形状都会在 Snapshot 产生前失败。同一 EnvSource 还会确定性拒绝重复逻辑路径、大小写别名、空 segment 和祖先/后代路径，错误只携带 Source、路径与类别，不输出配置值。
 
@@ -139,16 +154,16 @@ Reload 比较的是合并后的有效配置段摘要：如果文件字段已被�
 
 ## 运行示例
 
-当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service，`prepareTodo` 从同一候选构造 Kernel capabilities 与 Todo 模块，`runService` 再显式创建 Router、HTTP Server 和 Host。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口，不重复装配业务对象。
+当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service；`prepareTodo` 只服务 invocation-scoped CLI，`runService` 创建 GenerationCoordinator、完整 generation factory、ListenerHub 与 Supervisor。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口。
 
 `kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md) 与 [Todo 模块说明](../module/todo/README.md)。
 
 ## 边界
 
-- 当前默认 Service 已接入 application-owned HTTP lifecycle 与 Todo 应用模块；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
+- 当前默认 Service 已接入完整 Application Generation；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
 - Database App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 终结 Redis，泛型 Cache Client 由其构造调用方关闭。当前 StorageManager 属于 `NoFinalization`，公开 `Close` 只保留独立消费者 API。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
-- 默认应用入口显式选择 Watch；Todo Application CLI 解析成功后才创建 one-shot Kernel/数据库，并且不创建 Host、HTTP listener 或 watcher。
-- HTTP 与 Todo 配置都是 application-owned `RestartRequired` 节；同端口、业务策略变化、文件锁、单消费者等不能在当前进程中静默热切换。
+- 默认 Service 显式选择 generation watcher；Todo Application CLI 解析成功后才创建 one-shot Kernel/数据库，并且不创建 HTTP listener 或 watcher。
+- 当前七节配置都进入完整 generation；同地址 HTTP 由进程级 ListenerHub 交接。外部数据迁移和未纳入当前 profile 的排他 consumer 仍需独立设计。

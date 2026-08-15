@@ -29,6 +29,7 @@ type Tx interface {
 type Client interface {
 	WithinTx(context.Context, func(context.Context, Tx) error) error
 	Migrate(context.Context, ...Schema) error
+	CheckSchemas(context.Context, ...Schema) error
 }
 
 // Resource 是数据库资源所有者使用的完整能力。

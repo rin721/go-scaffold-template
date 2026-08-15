@@ -7,11 +7,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
-	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
@@ -36,66 +34,6 @@ func TestExampleConfigSatisfiesApplicationBindings(t *testing.T) {
 	}
 	if prepared.module.Service == nil || prepared.coordinator == nil {
 		t.Fatalf("prepared application = %#v", prepared)
-	}
-}
-
-func TestTodoConfigurationChangeRequiresRestart(t *testing.T) {
-	directory := t.TempDir()
-	configPath := filepath.Join(directory, "config.yaml")
-	payload := fmt.Sprintf(`logger:
-  environment: development
-  level: info
-database:
-  driver: sqlite
-  dsn: %q
-cache:
-  driver: disabled
-i18n:
-  defaultLanguage: zh-CN
-  messageFiles: []
-  missingBehavior: error
-storage:
-  driver: local
-  local:
-    basePath: %q
-todo:
-  titleMaxRunes: 120
-  defaultListLimit: 20
-  maxListLimit: 100
-http:
-  addr: 127.0.0.1:0
-`, filepath.ToSlash(filepath.Join(directory, "todo.db")), filepath.ToSlash(filepath.Join(directory, "storage")))
-	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
-		t.Fatalf("write config: %v", err)
-	}
-	manager, err := kernellogging.New(logger.Noop())
-	if err != nil {
-		t.Fatalf("logging.New() error = %v", err)
-	}
-	application, err := New(Config{
-		Name: "go-scaffold-template", Description: "test application", ConfigPath: configPath,
-		EnvironmentPrefix: "GO_SCAFFOLD2_TEST_014_RELOAD_", Logging: manager,
-	})
-	if err != nil {
-		t.Fatalf("New() error = %v", err)
-	}
-	prepared, err := application.prepareTodo(t.Context())
-	if err != nil {
-		t.Fatalf("prepareTodo() error = %v", err)
-	}
-	if err := prepared.coordinator.Start(t.Context()); err != nil {
-		t.Fatalf("coordinator.Start() error = %v", err)
-	}
-	t.Cleanup(func() { _ = prepared.coordinator.Stop(context.Background()) })
-
-	updated := strings.Replace(payload, "titleMaxRunes: 120", "titleMaxRunes: 80", 1)
-	if err := os.WriteFile(configPath, []byte(updated), 0o600); err != nil {
-		t.Fatalf("update config: %v", err)
-	}
-	result, err := prepared.coordinator.Reload(t.Context())
-	if !errors.Is(err, app.ErrRestartRequired) || result.Applied ||
-		len(result.RestartRequired) != 1 || result.RestartRequired[0] != "module.todo" {
-		t.Fatalf("Reload() = %#v, %v; want Todo restart requirement", result, err)
 	}
 }
 
@@ -165,9 +103,8 @@ func TestReloadErrorReporterClassifiesAndRedacts(t *testing.T) {
 		level   string
 		message string
 	}{
-		{errors.New("candidate failed"), "error", "kernel reload rejected; previous configuration remains active"},
-		{&app.RestartRequiredError{Components: []app.ID{"todo"}}, "warn", "kernel reload requires process restart; previous configuration remains active"},
-		{&kernel.CommittedCleanupError{Err: errors.New("close failed")}, "error", "kernel reload applied but previous resources failed to close"},
+		{errors.New("candidate failed"), "error", "application generation reload rejected; previous generation remains active"},
+		{&kernel.CommittedCleanupError{Err: errors.New("close failed")}, "error", "application generation reload applied with cleanup debt"},
 	}
 	for _, test := range tests {
 		log := logger.NewTestLogger()

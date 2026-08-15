@@ -30,7 +30,7 @@ type BootstrapOptions struct {
 // ComposeBootstrap 只构造配置节契约、默认配置管理器和命令树。
 // 它不会创建 Kernel、稳定能力 facade、资源连接、listener 或 goroutine。
 func ComposeBootstrap(cfg pkgcli.Config, options BootstrapOptions) (Bootstrap, error) {
-	bindings, err := bootstrapConfigBindings(options.Configuration...)
+	bindings, err := ConfigurationBindings(options.Configuration...)
 	if err != nil {
 		return Bootstrap{}, err
 	}
@@ -48,7 +48,9 @@ func ComposeBootstrap(cfg pkgcli.Config, options BootstrapOptions) (Bootstrap, e
 	return Bootstrap{Configuration: manager, CLI: command}, nil
 }
 
-func bootstrapConfigBindings(application ...config.Binding) ([]config.Binding, error) {
+// ConfigurationBindings 返回当前完整配置文件的底层与 application-owned 契约。
+// 本函数只构造校验元数据，不创建资源、listener 或 goroutine。
+func ConfigurationBindings(application ...config.Binding) ([]config.Binding, error) {
 	bindings := make([]config.Binding, 0, 6+len(application))
 	loggerDefinition, err := loggerapp.Replacement()
 	if err != nil {

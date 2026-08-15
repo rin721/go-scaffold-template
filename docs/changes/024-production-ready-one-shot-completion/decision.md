@@ -1,6 +1,6 @@
 # ADR-003：采用单轨生产就绪竣工方案
 
-- 状态：待确认
+- 状态：已接受
 - 日期：2026-08-15
 - 依据：[R001](research/R001-current-one-shot-baseline/report.md)、[R002](research/R002-api-security-stack-selection/report.md)、[R003](research/R003-delivery-release-stack-selection/report.md)
 - 取代范围：022 中尚未启动的 `PORTABILITY/API/MANAGEMENT/OBSERVABILITY/SECURITY/MIGRATION/DELIVERY/RELEASE/ACCEPTANCE` Program；023 若尚未形成已确认 commit，其施工 authority 同样由 024 单轨吸收。

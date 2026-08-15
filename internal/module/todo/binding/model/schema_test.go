@@ -43,3 +43,5 @@ func (c recordingClient) Migrate(context.Context, ...database.Schema) error {
 	*c.migrated = true
 	return nil
 }
+
+func (recordingClient) CheckSchemas(context.Context, ...database.Schema) error { return nil }

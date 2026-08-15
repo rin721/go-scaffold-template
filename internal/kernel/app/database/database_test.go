@@ -135,4 +135,5 @@ func (f *fakeClient) WithinTx(ctx context.Context, use func(context.Context, pkg
 	f.transactions++
 	return nil
 }
-func (*fakeClient) Migrate(context.Context, ...pkgdatabase.Schema) error { return nil }
+func (*fakeClient) Migrate(context.Context, ...pkgdatabase.Schema) error      { return nil }
+func (*fakeClient) CheckSchemas(context.Context, ...pkgdatabase.Schema) error { return nil }

@@ -6,49 +6,68 @@ import (
 	"fmt"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
-	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
+	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	"github.com/rin721/go-scaffold-template/internal/module"
+	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func (a *Application) runService(ctx context.Context) error {
-	prepared, err := a.prepareTodo(ctx)
+	runtime, err := a.newServiceRuntime()
 	if err != nil {
 		return err
 	}
-	httpConfig, err := kernelcomposition.HTTPServerConfig(prepared.candidate)
-	if err != nil {
-		return fmt.Errorf("compose HTTP configuration: %w", err)
-	}
-	router, err := applicationRouter(prepared.capabilities, prepared.module.Contribution)
-	if err != nil {
-		return err
-	}
-	httpServer, err := httpx.NewServer(&httpConfig, router)
-	if err != nil {
-		return fmt.Errorf("compose HTTP server: %w", err)
-	}
-	participants := make([]supervisor.Participant, 0, len(prepared.module.Contribution.Participants)+2)
-	participants = append(participants, prepared.module.Contribution.Participants...)
-	participants = append(participants, applicationLifecycle{
-		applicationName: a.config.Name,
-		logging:         prepared.capabilities.Logger,
-	}, httpServer)
-	host, err := kernel.NewHost(
-		prepared.coordinator,
-		serviceHostOptions(prepared.capabilities.Logger, httpServer),
-		participants...,
-	)
-	if err != nil {
-		return fmt.Errorf("create application host: %w", err)
-	}
-	if err := host.Run(ctx); err != nil {
-		return fmt.Errorf("run application host: %w", err)
+	if err := runtime.supervisor.Run(ctx); err != nil {
+		return fmt.Errorf("run application supervisor: %w", err)
 	}
 	return nil
+}
+
+type serviceRuntime struct {
+	supervisor  *supervisor.Supervisor
+	coordinator *kernel.GenerationCoordinator
+}
+
+func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
+	loader := config.New(
+		config.FileSource(a.config.ConfigPath),
+		config.EnvSource(a.config.EnvironmentPrefix),
+	)
+	bindings, err := kernelcomposition.ConfigurationBindings(configbinding.Binding())
+	if err != nil {
+		return nil, fmt.Errorf("compose service configuration bindings: %w", err)
+	}
+	factory, err := newApplicationGenerationFactory(a.config.Logging)
+	if err != nil {
+		return nil, fmt.Errorf("create application generation factory: %w", err)
+	}
+	coordinator, err := kernel.NewGenerationCoordinator(loader, bindings, factory, kernel.Options{Logging: a.config.Logging})
+	if err != nil {
+		return nil, fmt.Errorf("create application generation coordinator: %w", err)
+	}
+	process, err := supervisor.New(supervisor.Config{},
+		coordinator,
+		applicationLifecycle{applicationName: a.config.Name, logging: a.config.Logging.Logger()},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("create application supervisor: %w", err)
+	}
+	if err := process.AddTask("application-generation.monitor", coordinator.Monitor); err != nil {
+		return nil, fmt.Errorf("register application generation monitor: %w", err)
+	}
+	watchReady := make(chan struct{})
+	if err := process.AddRunner(supervisor.Task{
+		Name: "application-config-watch", Ready: watchReady,
+		Run: func(ctx context.Context) error {
+			return coordinator.Watch(ctx, reloadErrorReporter(a.config.Logging.Logger()), watchReady)
+		},
+	}); err != nil {
+		return nil, fmt.Errorf("register application config watcher: %w", err)
+	}
+	return &serviceRuntime{supervisor: process, coordinator: coordinator}, nil
 }
 
 func applicationRouter(capabilities kernelcomposition.Capabilities, contributions ...module.Contribution) (httpx.Router, error) {
@@ -70,18 +89,6 @@ func applicationRouter(capabilities kernelcomposition.Capabilities, contribution
 	return router, nil
 }
 
-func serviceHostOptions(logging logger.Logger, server *httpx.Server) kernel.HostOptions {
-	options := kernel.HostOptions{
-		Watch: &kernel.WatchOptions{OnReloadError: reloadErrorReporter(logging)},
-	}
-	if server != nil {
-		options.Runners = []supervisor.Task{{
-			Name: "http-server.serve", Run: server.Run, Ready: server.Running(),
-		}}
-	}
-	return options
-}
-
 func reloadErrorReporter(logging logger.Logger) func(error) {
 	return func(err error) {
 		if logging == nil || err == nil {
@@ -89,14 +96,11 @@ func reloadErrorReporter(logging logger.Logger) func(error) {
 		}
 		var committed *kernel.CommittedCleanupError
 		fields := []logger.Field{logger.String("error_type", fmt.Sprintf("%T", err))}
-		switch {
-		case errors.As(err, &committed):
-			logging.Error("kernel reload applied but previous resources failed to close", fields...)
-		case errors.Is(err, app.ErrRestartRequired):
-			logging.Warn("kernel reload requires process restart; previous configuration remains active", fields...)
-		default:
-			logging.Error("kernel reload rejected; previous configuration remains active", fields...)
+		if errors.As(err, &committed) {
+			logging.Error("application generation reload applied with cleanup debt", fields...)
+			return
 		}
+		logging.Error("application generation reload rejected; previous generation remains active", fields...)
 	}
 }
 

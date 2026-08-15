@@ -104,6 +104,57 @@ func (c *gormClient) Migrate(ctx context.Context, schemas ...Schema) error {
 	return nil
 }
 
+// CheckSchemas 只读校验目标数据库已经具备声明的表、列、索引和外键。
+// 它用于运行中配置候选的 Ready 阶段，不执行 migration 或任何 DDL。
+func (c *gormClient) CheckSchemas(ctx context.Context, schemas ...Schema) error {
+	if c.unavailable() {
+		return ErrClientUnavailable
+	}
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	resolvedSchemas := make([]resolvedSchema, 0, len(schemas))
+	byTable := make(map[string]resolvedSchema, len(schemas))
+	for _, schema := range schemas {
+		resolved, err := resolveSchema(schema)
+		if err != nil {
+			return err
+		}
+		if _, exists := byTable[resolved.Table]; exists {
+			return fmt.Errorf("%w: duplicate schema table %q", ErrInvalidSchema, resolved.Table)
+		}
+		resolvedSchemas = append(resolvedSchemas, resolved)
+		byTable[resolved.Table] = resolved
+	}
+	if err := validateReferences(byTable); err != nil {
+		return err
+	}
+	for _, resolved := range resolvedSchemas {
+		db := c.db.WithContext(ctx).Table(resolved.Table)
+		model := resolved.dynamicModel()
+		if !db.Migrator().HasTable(resolved.Table) {
+			return fmt.Errorf("database schema table %q is missing", resolved.Table)
+		}
+		for _, field := range resolved.Fields {
+			if !db.Migrator().HasColumn(model, field.Name) {
+				return fmt.Errorf("database schema column %q.%q is missing", resolved.Table, field.Column)
+			}
+		}
+		for _, index := range resolved.Indexes {
+			if !db.Migrator().HasIndex(model, index.Name) {
+				return fmt.Errorf("database schema index %q is missing", index.Name)
+			}
+		}
+		for _, reference := range resolved.References {
+			constraint := "fk_" + resolved.Table + "_" + resolved.fields[reference.Field].Column
+			if !db.Migrator().HasConstraint(resolved.Table, constraint) {
+				return fmt.Errorf("database schema constraint %q is missing", constraint)
+			}
+		}
+	}
+	return nil
+}
+
 func addReference(db *gorm.DB, schema resolvedSchema, reference Reference, schemas map[string]resolvedSchema) error {
 	field, exists := schema.fields[reference.Field]
 	if !exists {

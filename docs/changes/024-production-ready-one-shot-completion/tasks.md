@@ -3,22 +3,22 @@
 ## 1. 门禁状态
 
 - 024 研究门禁：已通过，证据见 `R001..R003`。
-- 024 计划状态：**待确认**。
+- 024 计划状态：**已确认，实施中**。
 - 当前标签：`Foundation-closed(current synchronous HTTP/CLI profile)`；Production HTTP API-ready 未通过。
-- 当前授权：只允许研究、计划、文档验证与本次文档提交；不允许非文档实施、进程/容器/数据库变更或外部发布。
-- 后续实施：用户在本计划报告之后一次明确确认 `ONE-001..025` 后，可按依赖连续施工与检查点提交；外部副作用仍须同一消息单独授权。
+- 当前授权：连续实施 `ONE-001..025`、本地与 CI 验证、检查点提交，以及临时本地容器/测试数据库。
+- 当前禁止：push、tag、GitHub Release、GHCR、外部 attestation、真实部署与真实数据迁移。
 
 ## 2. 单轨任务账本
 
 | ID | 工作量 | 依赖 | 内容 | 完成条件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
-| `ONE-001` | S | 用户确认 | 仲裁 023/024 与工作区 authority，固定 HEAD、用户修改和实施范围 | 只有 024 为当前施工 authority；可复用成果有 Commit/证据映射；用户修改不混入 | 待确认 |
-| `ONE-002` | M | `ONE-001` | 升级 Go 1.26.5、固定 LF 与 Windows/Linux validation manifest | go.mod/CI/builder/release 同版；两平台 tidy 语义一致；无 CRLF 漂移 | 待确认 |
-| `ONE-003` | M | `ONE-002` | 固定新增依赖、工具、Action、许可证与安全基线 | 版本与 checksum/commit SHA 可追踪；无未使用依赖；选型符合 ADR-003 | 待确认 |
-| `ONE-004` | L | `ONE-003` | 建立稳定 file candidate、全 owner Validate/Build 与补偿账本 | 候选读取稳定；任何副作用前完成严格校验；部分构造无资源遗忘 | 待确认 |
-| `ONE-005` | XL | `ONE-004` | 实现 typed immutable `ApplicationGeneration` 与完整资源 owner | 同 Snapshot 构造现有七节及 auth/management/observability；无 locator/全局可变资源 | 待确认 |
-| `ONE-006` | XL | `ONE-005` | 实现 process-level `ListenerHub` 和 request/connection generation lease | Windows/Linux admission、切换、pending connection、drain、shutdown 测试通过 | 待确认 |
-| `ONE-007` | L | `ONE-006` | 迁移 reload/Host/Service/CLI 并删除旧 restart/server swap authority | candidate reject 保旧代；commit 后 cleanup debt 可诊断；旧路径/符号/文档无残留 | 待确认 |
+| `ONE-001` | S | 用户确认 | 仲裁 023/024 与工作区 authority，固定 HEAD、用户修改和实施范围 | 只有 024 为当前施工 authority；可复用成果有 Commit/证据映射；用户修改不混入 | 已完成（C2） |
+| `ONE-002` | M | `ONE-001` | 升级 Go 1.26.5、固定 LF 与 Windows/Linux validation manifest | go.mod/CI/builder/release 同版；两平台 tidy 语义一致；无 CRLF 漂移 | 进行中（C1 基线完成） |
+| `ONE-003` | M | `ONE-002` | 固定新增依赖、工具、Action、许可证与安全基线 | 版本与 checksum/commit SHA 可追踪；无未使用依赖；选型符合 ADR-003 | 进行中（基线 Action 已固定） |
+| `ONE-004` | L | `ONE-003` | 建立稳定 file candidate、全 owner Validate/Build 与补偿账本 | 候选读取稳定；任何副作用前完成严格校验；部分构造无资源遗忘 | 已完成（C2/Windows） |
+| `ONE-005` | XL | `ONE-004` | 实现 typed immutable `ApplicationGeneration` 与完整资源 owner | 同 Snapshot 构造现有七节及 auth/management/observability；无 locator/全局可变资源 | 进行中（七节基础完成） |
+| `ONE-006` | XL | `ONE-005` | 实现 process-level `ListenerHub` 和 request/connection generation lease | Windows/Linux admission、切换、pending connection、drain、shutdown 测试通过 | 进行中（Windows 契约完成） |
+| `ONE-007` | L | `ONE-006` | 迁移 reload/Host/Service/CLI 并删除旧 restart/server swap authority | candidate reject 保旧代；commit 后 cleanup debt 可诊断；旧路径/符号/文档无残留 | 已完成（C2 当前 profile） |
 | `ONE-008` | L | `ONE-007` | 建立 OpenAPI 3.0.3 spec、oapi-codegen strict Chi 与 operation inventory | Todo contract 完整；生成物可重复；每个 operation security/Problem/operationId 完整 | 待确认 |
 | `ONE-009` | XL | `ONE-008` | 迁移 strict handler/Router/DTO mapping，删除 `module.Route` | 所有 HTTP 调用方只走生成 binding；core 无 transport/第三方类型；旧 authority 搜索为零 | 待确认 |
 | `ONE-010` | L | `ONE-009` | 实现 RFC 9457 presenter 与 strict request/response protocol | validation/404/405/panic/middleware/auth/dependency 统一；协议负向 contract 通过 | 待确认 |
@@ -100,17 +100,15 @@ go test ./... -run 'Contract|Protocol|Problem|JWT|JWKS|Authorization|Audit'
 
 | 轮次 | 日期 | 完成任务 | 证据 | Commit | 剩余风险 |
 | --- | --- | --- | --- | --- | --- |
-| 1 | 2026-08-15 | `RES-001..003`、024 requirements/design/tasks | HEAD `e251b73518a457ec97c529d067ddfffe77be203a`；代码/配置/CI/平台审计；官方主源；ADR-003 | 本次文档提交 | 非文档 `ONE-001..025` 待确认；本机无 Docker/可运行 WSL；远端发布未授权 |
+| 1 | 2026-08-15 | `RES-001..003`、024 requirements/design/tasks | HEAD `e251b73518a457ec97c529d067ddfffe77be203a`；代码/配置/CI/平台审计；官方主源；ADR-003 | `97d081c` | 本机无 Docker/可运行 WSL；远端发布未授权 |
+| 2 | 2026-08-15 | C1：Go 1.26.5、LF policy、Action SHA | Windows `go mod tidy -diff`、`go test ./... -count=1`、`go vet ./...`、`go build ./cmd/app`、`git diff --check` 通过 | `d587a2f` | builder/release 与 Linux 同义门禁在后续检查点补齐 |
+| 3 | 2026-08-15 | C2 基础：`ONE-001/004/007`，`ONE-005/006` 当前七节与 Windows 契约 | stable file、七节单改、Todo/HTTP 同进程生效、资源复用、Schema/bind reject、watcher 恢复、旧请求固定、graceful/force 与 targeted race 通过 | 本检查点提交 | auth/management/observability 将在后续任务进入同一 generation；Linux runtime 留待 C8 真验收 |
 
 后续每个检查点必须补充命令、平台、退出码、artifact/digest、Commit 与未通过项。只有最终总验收可以把任务状态改为完成。
 
-## 6. 后续确认格式
+## 6. 当前授权边界
 
-如果接受当前计划，可在后续消息中明确：
-
-> 确认 024 当前计划，连续实施 `ONE-001..025`、本地与 CI 验证和检查点提交；允许使用临时本地容器与测试数据库。是否允许 push、tag、GitHub Release、GHCR 和外部 attestation 在本消息中单独写明。
-
-若不授权外部发布，施工终点是验证通过的 local `v1.0.0-rc.1` release candidate 和 clean 024 worktree；不会声称远端已发布。
+用户已经确认连续实施全部任务并允许临时本地容器与测试数据库。施工无需在检查点间重复确认；只有命中 ADR-003 的实质变更触发器才退回研究。push、tag、GitHub Release、GHCR、外部 attestation、真实部署与真实数据迁移保持禁止。未获远端发布授权时，施工终点是验证通过的 local `v1.0.0-rc.1` 与 clean 024 worktree。
 
 ## 7. 停止条件
 

@@ -266,7 +266,7 @@ func (s fileSource) Load(ctx context.Context) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	data, err := os.ReadFile(s.path)
+	data, err := readStableFile(ctx, s.path)
 	if err != nil {
 		return nil, err
 	}

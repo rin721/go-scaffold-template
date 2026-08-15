@@ -1,0 +1,41 @@
+schema_version: 1
+id: R002
+title: "不可变应用代际与 Listener Handoff 模式"
+question: "在 Go net/http 和当前跨平台目标下，怎样让完整候选先准备、同地址 HTTP transport 无中断交接、在途请求固定旧代，并避免引入大型运行时框架或进程重启？"
+research_type: comparative
+topics: ["immutable generation", "zero-downtime reload", "listener handoff", "graceful drain", "resource reuse"]
+keywords: ["net/http Server.Shutdown", "Caddy reload", "listener pool", "virtual listener", "application generation"]
+languages: ["Go"]
+frameworks: ["net/http", "Caddy"]
+technologies: ["net.Listener", "HTTP keep-alive", "immutable configuration", "usage pool"]
+applicable_scenarios: ["023 目标架构", "同进程 HTTP 配置切换", "Windows/Linux listener 交接"]
+non_applicable_scenarios: ["二进制热升级", "多进程负载均衡", "TLS/HTTP3", "WebSocket/hijacked connection"]
+status: active
+summary: "Go net/http 能排空普通连接但不提供配置代际或 listener 复用；Caddy 证明不可变全配置、先启动新代和跨平台 listener 复用可行。当前仓库应复用该原则而非引入 Caddy：用进程级 TCP ListenerHub 与每代虚拟 Listener/http.Server 建立单一切换点。"
+evidence:
+  types: ["official-documentation", "official-source", "current-project-source", "comparative-analysis"]
+  primary_sources:
+    - title: "Go net/http Server lifecycle"
+      locator: "https://pkg.go.dev/net/http#Server.Serve; https://pkg.go.dev/net/http#Server.Shutdown"
+      snapshot: "Go 1.25.7, verified 2026-08-15"
+    - title: "Go 1.25.7 net/http source"
+      locator: "GOROOT/src/net/http/server.go"
+      snapshot: "go1.25.7 windows/amd64"
+    - title: "Caddy immutable configuration reload architecture"
+      locator: "https://caddyserver.com/docs/architecture"
+      snapshot: "verified 2026-08-15"
+    - title: "Caddy listener overlap and platform implementations"
+      locator: "https://github.com/caddyserver/caddy/blob/master/listeners.go; https://github.com/caddyserver/caddy/blob/master/listen.go"
+      snapshot: "master inspected 2026-08-15; drifting source"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["Go net/http lifecycle changes", "Caddy listener implementation changes", "项目增加 TLS/HTTP2 明确配置", "项目增加 WebSocket/hijacked connection", "支持平台集合变化"]
+relations:
+  extends: ["022-R003", "022-R005"]
+  related: ["023-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

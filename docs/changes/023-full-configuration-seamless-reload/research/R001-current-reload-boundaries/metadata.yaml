@@ -1,0 +1,38 @@
+schema_version: 1
+id: R001
+title: "当前全配置重载边界与失败链路"
+question: "当前服务为何只能热换部分 Kernel Capability，HTTP、Todo、Cache 和普通文件保存分别被什么所有权、代际与并发边界阻止，现有契约能否表达全配置无感重载？"
+research_type: current-project
+topics: ["configuration reload", "application generation", "HTTP handoff", "cache generation", "file stability"]
+keywords: ["RestartRequired", "Coordinator", "KernelInstanceSwap", "Listener", "Todo Policy", "L1 cache", "sharing violation"]
+languages: ["Go", "PowerShell"]
+frameworks: ["net/http", "chi"]
+technologies: ["Kernel Lease", "fsnotify", "GORM", "Redis", "Windows file locking"]
+applicable_scenarios: ["023 全配置无感重载", "长期 Service 配置文件变更", "跨组件原子候选"]
+non_applicable_scenarios: ["二进制热升级", "跨进程滚动发布", "WebSocket 或 hijacked connection", "外部数据迁移"]
+status: active
+summary: "当前只支持 Kernel 组件级换代；HTTP 与 Todo 位于事务外，Cache typed Client 的 L1 可跨后端残留，FileSource 还会在 Windows 原地写期间读到 sharing violation。真正全配置无感重载需要完整 Application Generation、进程级 listener 所有权、稳定候选读取和跨层单一提交点。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "local-validation"]
+  primary_sources:
+    - title: "当前配置、Kernel、composition、HTTP、Todo 与 Cache 调用链"
+      locator: "internal/kernel; internal/composition; internal/module/todo; pkg/httpx; pkg/cache"
+      snapshot: "e251b73518a457ec97c529d067ddfffe77be203a"
+    - title: "当前重载策略与资源终结研究"
+      locator: "docs/research/002-kernel-app-manual-composition; docs/changes/022-http-api-template-readiness/research/R005-resource-finalization-policy; docs/changes/022-http-api-template-readiness/research/R008-remaining-foundation-closure"
+      snapshot: "verified 2026-08-15"
+    - title: "Windows watcher 恢复测试"
+      locator: "go test ./internal/kernel -run ^TestWatchRecoversAfterRestartRequiredCandidateIsRestored$ -count=10"
+      snapshot: "Go 1.25.7 windows/amd64; failed with sharing violation 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["Coordinator 或 Kernel reload 契约变化", "HTTP Server 所有权变化", "Cache 出现生产消费者", "新增后台任务或长连接", "Go 或 fsnotify 升级"]
+relations:
+  extends: ["002-RUNTIME-RELOAD", "022-R005", "022-R008"]
+  related: ["017-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

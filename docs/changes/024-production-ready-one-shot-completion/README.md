@@ -5,8 +5,9 @@
 - 任务类型：研究与非文档实施计划。
 - 代码基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
 - 研究门禁：已通过，见 [R001](research/R001-current-one-shot-baseline/report.md)、[R002](research/R002-api-security-stack-selection/report.md) 与 [R003](research/R003-delivery-release-stack-selection/report.md)。
-- 计划状态：**待确认**。当前请求只授权形成新方案，没有授权修改 Go、配置、测试、依赖、CI、运行环境、Git 远端或外部系统。
-- 工作区并行事实：未跟踪的 `023-full-configuration-seamless-reload/` 属于其他工作，不在本变更提交范围。024 吸收其“完整 Application Generation + ListenerHub”目标，但实施开始时必须按 [tasks.md](tasks.md) 的 `ONE-001` 消除双重施工 authority。
+- 计划状态：**已确认，实施中**。用户于 2026-08-15 明确确认连续实施 `ONE-001..025`、本地与 CI 验证和检查点提交，并允许临时本地容器与测试数据库。
+- 外部授权边界：不允许 push、tag、GitHub Release、GHCR 或外部 attestation。
+- Authority：023 的研究与实现目标已由本变更吸收；024 是当前唯一施工 authority。C1 工具链检查点已提交，C2 Application Generation/ListenerHub 正在收口。
 
 ## 一句话结论
 
@@ -53,10 +54,6 @@
 5. [任务与验证账本](tasks.md)
 6. [022 当前 Foundation 结论](../022-http-api-template-readiness/README.md)
 
-## 后续一次性授权格式
+## 已确认授权
 
-计划报告之后，若用户接受当前目标、技术栈、API/安全语义、数据迁移和外部副作用边界，可在后续消息中明确：
-
-> 确认 024 当前计划，连续实施 `ONE-001..025`、本地与 CI 验证和检查点提交；允许使用临时本地容器与测试数据库。是否允许 push、tag、GitHub Release、GHCR 和外部 attestation 必须在同一消息中单独写明。
-
-没有这条后续确认，不得开始非文档实施。没有外部发布授权时，最多完成本地 `release-candidate` 验收，不能把远端 release 或 provenance 描述为已完成。
+本轮施工已经获得上述一次性授权。没有外部发布授权，因此终点是经过验证的本地 `v1.0.0-rc.1` release candidate 与 clean 024 worktree；不得把远端 release、registry image 或外部 provenance 描述为已完成。

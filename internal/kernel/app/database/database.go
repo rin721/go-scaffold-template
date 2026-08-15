@@ -26,6 +26,7 @@ type Access interface {
 	Ping(context.Context) error
 	Use(context.Context, func(Client) error) error
 	WithinTx(context.Context, func(context.Context, Client, pkgdatabase.Tx) error) error
+	CheckSchemas(context.Context, ...pkgdatabase.Schema) error
 }
 
 // Config 是 Database App 的 typed 配置契约。
@@ -112,6 +113,11 @@ func (a *access) WithinTx(ctx context.Context, use func(context.Context, Client,
 			return use(txCtx, client, tx)
 		})
 	})
+}
+
+// CheckSchemas 在当前资源租约内执行只读 Schema readiness，不执行 DDL。
+func (a *access) CheckSchemas(ctx context.Context, schemas ...pkgdatabase.Schema) error {
+	return a.Use(ctx, func(client Client) error { return client.CheckSchemas(ctx, schemas...) })
 }
 
 func build(ctx context.Context, cfg Config, _ struct{}) (pkgdatabase.Resource, error) {

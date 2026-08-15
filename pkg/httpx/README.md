@@ -171,14 +171,18 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	go func() {
-		if err := server.Start(); err != nil {
-			panic(err)
-		}
-	}()
+	if err := server.Start(ctx); err != nil {
+		panic(err)
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- server.Run(context.Background()) }()
+	<-server.Running()
 
 	<-ctx.Done()
-	if err := server.Shutdown(context.Background()); err != nil {
+	if err := server.Stop(context.Background()); err != nil {
+		panic(err)
+	}
+	if err := <-runDone; err != nil {
 		panic(err)
 	}
 }
@@ -216,5 +220,7 @@ func (g *Gateway) Find(ctx context.Context, id string, out any) error {
 ```
 
 `Server.Stop(ctx)` 只执行 `http.Server.Shutdown` 并等待 Serve 完成，不会在超时后暗中强关连接。进程 owner 只有在 graceful 失败且预算仍允许时，才通过 `Server.ForceStop(ctx)` 显式调用 `Close`；forced 会作为有损结果上报。当前 Server 不治理 hijacked/WebSocket 连接，出现真实升级协议时必须增加独立 owner。
+
+长期 Service 使用 `ListenerHub` 独占物理 TCP listener。每个不可变 Application Generation 创建自己的 `Server` 和虚拟 listener route；候选先通过 `StartWithListener` 进入 Serve-ready，commit 再把新连接 dispatch 到新 route。旧 route 的 pending connection 先交付旧 Server，然后 `Shutdown` 排空 active connection/request。`ListenerHub` 是 composition owner 的基础设施，不应进入业务模块或作为运行时查询入口。
 
 首版不实现熔断、链路追踪、OpenAPI、TLS 证书管理、HTTP/2 特化配置或服务发现。需要这些能力时，应在明确场景后单独扩展，并继续保持业务侧只依赖 `httpx` 的项目契约。

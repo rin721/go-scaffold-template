@@ -93,6 +93,15 @@ func (c *borrowedClient) Migrate(ctx context.Context, schemas ...Schema) error {
 	return c.delegate.Migrate(operationCtx, schemas...)
 }
 
+func (c *borrowedClient) CheckSchemas(ctx context.Context, schemas ...Schema) error {
+	operationCtx, cancel, err := c.state.operationContext(ctx)
+	if err != nil {
+		return err
+	}
+	defer cancel()
+	return c.delegate.CheckSchemas(operationCtx, schemas...)
+}
+
 func (c *borrowedClient) databaseSession(ctx context.Context) (any, error) {
 	if isNilProvider(c.provider) {
 		return nil, ErrClientUnavailable
