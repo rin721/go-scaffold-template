@@ -177,7 +177,7 @@ func (k *Kernel) startCandidate(ctx context.Context, snapshot config.Snapshot) e
 	k.snapshot = snapshot
 	k.state = kernelRunning
 	k.mu.Unlock()
-	k.options.Logging.Info("kernel started", pkglogger.Int("components", len(components)))
+	k.options.Logging.Debug("kernel started", pkglogger.Int("components", len(components)))
 	return nil
 }
 
@@ -365,7 +365,7 @@ func (k *Kernel) Stop(ctx context.Context) error {
 	if joined != nil {
 		return joined
 	}
-	k.options.Logging.Info("kernel stopped")
+	k.options.Logging.Debug("kernel stopped")
 	return nil
 }
 

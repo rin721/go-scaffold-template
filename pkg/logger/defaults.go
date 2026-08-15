@@ -3,8 +3,10 @@ package logger
 const (
 	// DefaultEnvironment 是未显式配置环境时使用的默认环境。
 	DefaultEnvironment Environment = EnvironmentDevelopment
-	// DefaultLevel 是未显式配置级别时使用的默认日志级别。
-	DefaultLevel Level = LevelInfo
+	// DefaultLevel 是默认 development 配置使用的日志级别。
+	DefaultLevel Level = LevelDebug
+	// defaultProductionLevel 避免 production 在未显式配置时输出高频诊断日志。
+	defaultProductionLevel Level = LevelInfo
 )
 
 // DefaultConfig 返回一份可修改的默认配置副本。
@@ -21,9 +23,13 @@ func DefaultConfig() Config {
 }
 
 func defaultConfigFor(environment Environment) resolvedConfig {
+	level := DefaultLevel
+	if environment == EnvironmentProduction {
+		level = defaultProductionLevel
+	}
 	cfg := resolvedConfig{
 		Environment:      environment,
-		Level:            DefaultLevel,
+		Level:            level,
 		OutputPaths:      []string{outputPathStdout},
 		ErrorOutputPaths: []string{outputPathStderr},
 		AddCaller:        true,

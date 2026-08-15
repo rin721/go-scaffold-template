@@ -62,7 +62,46 @@ func TestEnvironmentDefaultEncoding(t *testing.T) {
 	}
 }
 
-func TestDefaultConfigCanUseProductionDefaults(t *testing.T) {
+func TestEnvironmentDefaultLevel(t *testing.T) {
+	tests := []struct {
+		name        string
+		environment Environment
+		wantLevels  []string
+	}{
+		{name: "development emits debug and above", environment: EnvironmentDevelopment, wantLevels: []string{"debug", "info", "warn", "error"}},
+		{name: "production emits info and above", environment: EnvironmentProduction, wantLevels: []string{"info", "warn", "error"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			addCaller := false
+			output := captureStdout(t, func() {
+				log, err := New(&Config{Environment: tt.environment, AddCaller: &addCaller})
+				if err != nil {
+					t.Fatalf("New() error = %v", err)
+				}
+				log.Debug("debug")
+				log.Info("info")
+				log.Warn("warn")
+				log.Error("error")
+				if err := log.Close(); err != nil {
+					t.Fatalf("Close() error = %v", err)
+				}
+			})
+			lines := logLines(output)
+			if len(lines) != len(tt.wantLevels) {
+				t.Fatalf("log lines = %v, want levels %v", lines, tt.wantLevels)
+			}
+			for index, level := range tt.wantLevels {
+				if !strings.Contains(lines[index], level) {
+					t.Fatalf("line %d = %q, want level %q", index, lines[index], level)
+				}
+			}
+		})
+	}
+}
+
+func TestDefaultConfigEnvironmentSwitchUsesProductionEncoding(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Environment = EnvironmentProduction
 

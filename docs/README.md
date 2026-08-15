@@ -5,6 +5,7 @@
 ## 当前主题入口
 
 - [应用模块开发](development/application-module-development.md)
+- [开发日志规范](development/logging.md)
 - [底层能力库](../pkg/README.md)
 - [Kernel 运行与配置](../internal/kernel/README.md)
 - [Kernel App 组件](../internal/kernel/app/README.md)

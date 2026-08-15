@@ -93,6 +93,22 @@ func TestReplacementCannotBeAddedAsOrdinaryDefinition(t *testing.T) {
 	}
 }
 
+func TestDecodeUsesEnvironmentLevelWhenLevelIsMissing(t *testing.T) {
+	snapshot, err := config.New(config.MapSource("logger", map[string]any{
+		"logger": map[string]any{"environment": "production"},
+	})).Load(t.Context())
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	decoded, err := decode(snapshot)
+	if err != nil {
+		t.Fatalf("decode() error = %v", err)
+	}
+	if decoded.Environment != pkglogger.EnvironmentProduction || decoded.Level != "" {
+		t.Fatalf("decode() = %#v, want production with environment-derived level", decoded)
+	}
+}
+
 func TestReplacementReloadSwitchesOnlyAfterCommit(t *testing.T) {
 	baseline := pkglogger.NewTestLogger()
 	manager, err := kernellogging.New(baseline)

@@ -63,6 +63,8 @@ logger := builtin.Output // 对普通消费者仅暴露 pkg/logger.Logger。
 
 未选择 replacement 时，Logger 从配置加载前开始始终委托 baseline，也不生成 `logger` 默认配置。选择后，配置化 Logger 只有在候选成功提交时才替换 Manager 当前目标；失败继续使用原目标，Stop 先恢复 baseline 再关闭配置化 Resource。`Capabilities.Logger` 始终是同一个稳定只读 facade；其动态类型也不具备 `Replace`、`Restore` 或 `Close`，typed target 只留在 Kernel composition。
 
+development 未显式配置 level 时使用 `debug`，production 使用 `info`。Application Generation 以结构化事件记录 load、prepare、ready、commit、build/reuse、业务与 management 地址、reload 和 shutdown；健康路径只产生 Debug/Info，可恢复候选拒绝为 Warn，cleanup debt 或 Service 失败为 Error。开发者必须遵守 [开发日志规范](../../docs/development/logging.md)，不能在下层重复打印完整错误链。
+
 ## Plan 与 typed Input
 
 `app.NewPlan -> app.Add/app.Replace -> app.InputOf -> app.Freeze -> Kernel.Install` 是唯一装配流程：

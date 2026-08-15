@@ -76,7 +76,7 @@ func Recovery(log logger.Logger) Middleware {
 			defer func() {
 				if recovered := recover(); recovered != nil {
 					if log != nil {
-						log.Error("http panic recovered", logger.Any("panic", recovered))
+						log.Error("http panic recovered", logger.String("panic_type", fmt.Sprintf("%T", recovered)))
 					}
 					err = &StatusError{StatusCode: http.StatusInternalServerError, Code: errorCodeInternalServer, Message: "internal server error", Err: fmt.Errorf("%v", recovered)}
 				}
@@ -128,9 +128,21 @@ func AccessLog(log logger.Logger) Middleware {
 				if traceID, ok := TraceIDFromContext(ctx.Request.Context()); ok {
 					fields = append(fields, logger.String("trace_id", traceID))
 				}
-				if err != nil {
-					fields = append(fields, logger.Error(err))
-					log.Error("http request failed", fields...)
+				status, code, recoverable, failed := classifyHTTPLogOutcome(ctx.ResponseWriter, err)
+				if failed {
+					fields = append(fields,
+						logger.Int("status", status),
+						logger.String("status_class", fmt.Sprintf("%dxx", status/100)),
+						logger.String("error_code", code),
+					)
+					if err != nil {
+						fields = append(fields, logger.String("error_type", fmt.Sprintf("%T", err)))
+					}
+					if recoverable {
+						log.Warn("http request rejected", fields...)
+					} else {
+						log.Error("http request failed", fields...)
+					}
 				} else {
 					log.Info("http request completed", fields...)
 				}
@@ -138,6 +150,33 @@ func AccessLog(log logger.Logger) Middleware {
 			return err
 		}
 	}
+}
+
+func classifyHTTPLogOutcome(writer http.ResponseWriter, err error) (status int, code string, recoverable bool, failed bool) {
+	if responseStatus, problemCode, ok := responseOutcome(writer); ok {
+		status = responseStatus
+		code = problemCode
+		failed = status >= http.StatusBadRequest
+	}
+	if err == nil && !failed {
+		return status, code, false, false
+	}
+	if status == 0 {
+		status = http.StatusInternalServerError
+	}
+	if code == "" {
+		code = errorCodeInternalServer
+	}
+	var statusErr *StatusError
+	if errors.As(err, &statusErr) {
+		status = statusErrorStatusCode(statusErr)
+		code = statusErr.Code
+	}
+	recoverable = status >= http.StatusBadRequest && status < http.StatusInternalServerError
+	if status == http.StatusServiceUnavailable && code == "server_overloaded" {
+		recoverable = true
+	}
+	return status, code, recoverable, true
 }
 
 // SecureHeaders 写入常用安全响应头。

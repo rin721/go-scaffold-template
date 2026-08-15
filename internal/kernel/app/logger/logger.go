@@ -82,6 +82,11 @@ func decode(snapshot config.Snapshot) (Config, error) {
 	if err := snapshot.DecodeSection(ConfigPath, &cfg); err != nil {
 		return Config{}, err
 	}
+	if _, exists := snapshot.Value(ConfigPath + ".level"); !exists {
+		// 缺失 level 继续由 Environment 决定；不能把 development 的默认值
+		// 预填后误当成 production 的显式 debug 配置。
+		cfg.Level = ""
+	}
 	packageConfig := cfg.packageConfig()
 	if err := pkglogger.ValidateConfig(&packageConfig); err != nil {
 		return Config{}, err

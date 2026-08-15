@@ -47,8 +47,37 @@ func TestApplicationLifecycleUsesInjectedLogger(t *testing.T) {
 		t.Fatalf("Stop() error = %v", err)
 	}
 	entries := log.Entries()
-	if len(entries) != 2 || entries[0].Message != "application started" || entries[1].Message != "application stopping" {
+	if len(entries) != 2 || entries[0].Message != "application ready" || entries[1].Message != "application draining" {
 		t.Fatalf("entries = %#v", entries)
+	}
+}
+
+func TestApplicationServiceFailureUsesSingleStructuredBoundary(t *testing.T) {
+	log := logger.NewTestLogger()
+	manager, err := kernellogging.New(log)
+	if err != nil {
+		t.Fatalf("logging.New() error = %v", err)
+	}
+	application, err := New(Config{
+		Name: "test-app", Description: "test application",
+		ConfigPath: filepath.Join(t.TempDir(), "missing.yaml"), EnvironmentPrefix: "TEST_LOGGING_",
+		Logging: manager,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if err := application.runService(t.Context()); err == nil {
+		t.Fatal("runService() error = nil")
+	}
+	entries := log.Entries()
+	var failures int
+	for _, entry := range entries {
+		if entry.Level == "error" && entry.Message == "application service failed" {
+			failures++
+		}
+	}
+	if failures != 1 {
+		t.Fatalf("structured service failures = %d, entries = %#v", failures, entries)
 	}
 }
 
@@ -103,8 +132,8 @@ func TestReloadErrorReporterClassifiesAndRedacts(t *testing.T) {
 		message string
 		fields  int
 	}{
-		{errors.New("candidate failed"), "error", "application generation reload rejected; previous generation remains active", 1},
-		{&kernel.GenerationOperationError{Phase: "prepare", Owner: "application-generation", Generation: 2, Err: errors.New("candidate failed")}, "error", "application generation reload rejected; previous generation remains active", 5},
+		{errors.New("candidate failed"), "warn", "application generation reload rejected; previous generation remains active", 1},
+		{&kernel.GenerationOperationError{Phase: "prepare", Owner: "application-generation", Generation: 2, Err: errors.New("candidate failed")}, "warn", "application generation reload rejected; previous generation remains active", 5},
 		{&kernel.CommittedCleanupError{Err: &kernel.GenerationOperationError{Phase: "retire", Owner: "application-generation", Generation: 1, Err: errors.New("close failed")}}, "error", "application generation reload applied with cleanup debt", 5},
 	}
 	for _, test := range tests {
@@ -135,6 +164,52 @@ func TestReloadErrorReporterClassifiesAndRedacts(t *testing.T) {
 	}
 	if bytes.Contains(payload, []byte(secret)) || bytes.Contains(payload, []byte("top-secret")) {
 		t.Fatalf("reload log leaked secret: %s", payload)
+	}
+}
+
+func TestReportServiceFailureClassifiesWithoutErrorText(t *testing.T) {
+	log := logger.NewTestLogger()
+	sensitiveDetail := errors.New("unsafe detail UNSAFE_ERROR_DETAIL_SENTINEL")
+	reportServiceFailure(log, "run", &kernel.GenerationOperationError{
+		Phase: "prepare", Owner: "application-generation", Generation: 2, Err: sensitiveDetail,
+	})
+	entries := log.Entries()
+	if len(entries) != 1 || entries[0].Level != "error" || entries[0].Message != "application service failed" || len(entries[0].Fields) != 7 {
+		t.Fatalf("entries = %#v", entries)
+	}
+
+	path := filepath.Join(t.TempDir(), "service-failure.log")
+	addCaller := false
+	resource, err := logger.New(&logger.Config{
+		Environment: logger.EnvironmentProduction,
+		OutputPaths: []string{path}, ErrorOutputPaths: []string{path}, AddCaller: &addCaller,
+	})
+	if err != nil {
+		t.Fatalf("logger.New() error = %v", err)
+	}
+	reportServiceFailure(resource, "run", &kernel.GenerationOperationError{
+		Phase: "prepare", Owner: "application-generation", Generation: 2, Err: sensitiveDetail,
+	})
+	if err := resource.Close(); err != nil {
+		t.Fatalf("logger.Close() error = %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if bytes.Contains(payload, []byte("UNSAFE_ERROR_DETAIL_SENTINEL")) || !bytes.Contains(payload, []byte("cause_type")) {
+		t.Fatalf("service failure log is not safely classified: %s", payload)
+	}
+}
+
+func TestExpectedServiceShutdownRequiresCancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if !expectedServiceShutdown(ctx, context.Canceled) {
+		t.Fatal("cancelled service shutdown was not recognized")
+	}
+	if expectedServiceShutdown(t.Context(), context.Canceled) {
+		t.Fatal("active context treated cancellation error as expected shutdown")
 	}
 }
 

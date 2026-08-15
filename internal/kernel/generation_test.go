@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 type testGenerationFactory struct {
@@ -70,8 +72,11 @@ func (g *testGeneration) ID() uint64                { return g.id }
 func (g *testGeneration) Snapshot() config.Snapshot { return g.snapshot }
 func (*testGeneration) ConfiguredAddress() string   { return "127.0.0.1:8080" }
 func (*testGeneration) BoundAddress() string        { return "127.0.0.1:8080" }
-func (*testGeneration) ActiveConnections() int64    { return 0 }
-func (*testGeneration) ActiveRequests() int64       { return 0 }
+func (*testGeneration) ManagementBoundAddress() string {
+	return "127.0.0.1:9090"
+}
+func (*testGeneration) ActiveConnections() int64 { return 0 }
+func (*testGeneration) ActiveRequests() int64    { return 0 }
 func (*testGeneration) ResourceStats() GenerationResourceStats {
 	return GenerationResourceStats{Built: []string{"test"}}
 }
@@ -119,6 +124,70 @@ func TestGenerationCoordinatorNoOpDoesNotPrepare(t *testing.T) {
 	}
 	if diagnostics := coordinator.Diagnostics(); diagnostics.Phase != "no-op" || !diagnostics.Ready {
 		t.Fatalf("Diagnostics() = %+v", diagnostics)
+	}
+}
+
+func TestGenerationCoordinatorLogsLifecycleMilestones(t *testing.T) {
+	log := pkglogger.NewTestLogger()
+	manager, err := kernellogging.New(log)
+	if err != nil {
+		t.Fatalf("logging.New() error = %v", err)
+	}
+	coordinator, _, _ := newTestGenerationCoordinatorWithLogging(t, manager)
+	if err := coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := coordinator.Reload(t.Context()); err != nil {
+		t.Fatalf("Reload() error = %v", err)
+	}
+	if err := coordinator.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+	entries := log.Entries()
+	want := []struct{ level, message string }{
+		{"debug", "application generation load started"},
+		{"debug", "application generation prepare started"},
+		{"debug", "application generation candidate ready"},
+		{"debug", "application generation committed"},
+		{"info", "application generation started"},
+		{"debug", "application generation reload load started"},
+		{"debug", "application generation reload unchanged"},
+		{"debug", "application generation stopping"},
+		{"debug", "application generation stopped"},
+	}
+	if len(entries) != len(want) {
+		t.Fatalf("entries = %#v", entries)
+	}
+	for index := range want {
+		if entries[index].Level != want[index].level || entries[index].Message != want[index].message {
+			t.Fatalf("entry %d = %#v, want %#v", index, entries[index], want[index])
+		}
+	}
+}
+
+func TestGenerationCoordinatorLogsSuccessfulReload(t *testing.T) {
+	log := pkglogger.NewTestLogger()
+	manager, err := kernellogging.New(log)
+	if err != nil {
+		t.Fatalf("logging.New() error = %v", err)
+	}
+	coordinator, source, _ := newTestGenerationCoordinatorWithLogging(t, manager)
+	if err := coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := coordinator.Stop(t.Context()); err != nil {
+			t.Errorf("Stop() error = %v", err)
+		}
+	})
+	source.set(map[string]any{"app": map[string]any{"version": "v2"}})
+	result, err := coordinator.Reload(t.Context())
+	if err != nil || !result.Applied {
+		t.Fatalf("Reload() = %#v, %v", result, err)
+	}
+	entries := log.Entries()
+	if len(entries) == 0 || entries[len(entries)-1].Level != "info" || entries[len(entries)-1].Message != "application generation reload completed" {
+		t.Fatalf("entries = %#v", entries)
 	}
 }
 
@@ -198,6 +267,11 @@ func TestGenerationCoordinatorForceStopFinishesFailedShutdown(t *testing.T) {
 
 func newTestGenerationCoordinator(t *testing.T) (*GenerationCoordinator, *mutableSource, *testGenerationFactory) {
 	t.Helper()
+	return newTestGenerationCoordinatorWithLogging(t, newTestLoggingManager(t))
+}
+
+func newTestGenerationCoordinatorWithLogging(t *testing.T, logging *kernellogging.Manager) (*GenerationCoordinator, *mutableSource, *testGenerationFactory) {
+	t.Helper()
 	source := &mutableSource{values: map[string]any{"app": map[string]any{"version": "v1"}}}
 	factory := &testGenerationFactory{}
 	coordinator, err := NewGenerationCoordinator(
@@ -213,7 +287,7 @@ func newTestGenerationCoordinator(t *testing.T) (*GenerationCoordinator, *mutabl
 			},
 		}},
 		factory,
-		Options{Logging: newTestLoggingManager(t), ReloadTimeout: time.Second, Debounce: time.Millisecond},
+		Options{Logging: logging, ReloadTimeout: time.Second, Debounce: time.Millisecond},
 	)
 	if err != nil {
 		t.Fatalf("NewGenerationCoordinator() error = %v", err)

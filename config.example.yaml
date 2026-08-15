@@ -12,9 +12,9 @@ logger:
   environment: development
   # environment: production
 
-  # 最低日志级别：debug、info、warn 或 error。
-  level: info
-  # level: debug
+  # 最低日志级别：debug、info、warn 或 error。删除本项时 development 默认 debug、production 默认 info；切换 production 时建议显式使用 info。
+  level: debug
+  # level: info
   # level: warn
   # level: error
 

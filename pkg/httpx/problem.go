@@ -31,7 +31,8 @@ type Problem struct {
 
 type responseStateWriter struct {
 	http.ResponseWriter
-	status int
+	status      int
+	problemCode string
 }
 
 func (w *responseStateWriter) WriteHeader(status int) {
@@ -57,6 +58,14 @@ func ResponseCommitted(writer http.ResponseWriter) bool {
 	return ok && state.status != 0
 }
 
+func responseOutcome(writer http.ResponseWriter) (status int, problemCode string, ok bool) {
+	state, ok := writer.(*responseStateWriter)
+	if !ok || state.status == 0 {
+		return 0, "", false
+	}
+	return state.status, state.problemCode, true
+}
+
 // WriteProblem 把项目错误写成 RFC 9457 响应；响应已提交时不会写第二份响应。
 func WriteProblem(writer http.ResponseWriter, request *http.Request, err error) {
 	if writer == nil || ResponseCommitted(writer) {
@@ -66,6 +75,9 @@ func WriteProblem(writer http.ResponseWriter, request *http.Request, err error) 
 	writer.Header().Set("Content-Type", problemContentType)
 	if retryAfter > 0 {
 		writer.Header().Set("Retry-After", fmt.Sprintf("%d", retryAfter))
+	}
+	if state, ok := writer.(*responseStateWriter); ok {
+		state.problemCode = problem.Code
 	}
 	writer.WriteHeader(problem.Status)
 	_ = json.NewEncoder(writer).Encode(problem)

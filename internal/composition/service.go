@@ -22,13 +22,29 @@ import (
 )
 
 func (a *Application) runService(ctx context.Context) error {
+	logging := a.config.Logging.Logger()
+	logging.Debug("application service selected",
+		logger.String("application", a.config.Name),
+		logger.String("mode", "service"),
+		logger.String("phase", "compose"),
+	)
 	runtime, err := a.newServiceRuntime()
 	if err != nil {
+		reportServiceFailure(logging, "compose", err)
 		return err
 	}
+	logging.Debug("application service runtime composed",
+		logger.String("application", a.config.Name),
+		logger.String("mode", "service"),
+		logger.String("phase", "start"),
+	)
 	if err := runtime.supervisor.Run(ctx); err != nil {
+		if !expectedServiceShutdown(ctx, err) {
+			reportServiceFailure(logging, "run", err)
+		}
 		return fmt.Errorf("run application supervisor: %w", err)
 	}
+	logging.Info("application stopped", logger.String("application", a.config.Name))
 	return nil
 }
 
@@ -164,8 +180,36 @@ func reloadErrorReporter(logging logger.Logger) func(error) {
 			logging.Error("application generation reload applied with cleanup debt", fields...)
 			return
 		}
-		logging.Error("application generation reload rejected; previous generation remains active", fields...)
+		logging.Warn("application generation reload rejected; previous generation remains active", fields...)
 	}
+}
+
+func reportServiceFailure(logging logger.Logger, phase string, err error) {
+	if logging == nil || err == nil {
+		return
+	}
+	fields := []logger.Field{
+		logger.String("owner", "application"),
+		logger.String("phase", phase),
+		logger.String("error_type", fmt.Sprintf("%T", err)),
+	}
+	var operation *kernel.GenerationOperationError
+	if errors.As(err, &operation) {
+		fields = append(fields,
+			logger.String("generation_phase", operation.Phase),
+			logger.String("generation_owner", operation.Owner),
+			logger.Any("generation", operation.Generation),
+			logger.String("cause_type", fmt.Sprintf("%T", operation.Err)),
+		)
+	}
+	logging.Error("application service failed", fields...)
+}
+
+func expectedServiceShutdown(ctx context.Context, err error) bool {
+	if ctx == nil || ctx.Err() == nil {
+		return false
+	}
+	return errors.Is(err, ctx.Err()) || errors.Is(err, context.Canceled)
 }
 
 type applicationLifecycle struct {
@@ -176,11 +220,11 @@ type applicationLifecycle struct {
 func (applicationLifecycle) Name() string { return "application" }
 
 func (l applicationLifecycle) Start(ctx context.Context) error {
-	return l.write(ctx, "application started")
+	return l.write(ctx, "application ready")
 }
 
 func (l applicationLifecycle) Stop(ctx context.Context) error {
-	return l.write(ctx, "application stopping")
+	return l.write(ctx, "application draining")
 }
 
 func (l applicationLifecycle) write(ctx context.Context, message string) error {

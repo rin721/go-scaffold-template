@@ -42,7 +42,7 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		t.Fatalf("read generated config: %v", err)
 	}
 	for _, expected := range []string{
-		"logger:", "environment: development", "level: info",
+		"logger:", "environment: development", "level: debug",
 		"database:", "driver: sqlite", "dsn: .data/app.db", "pingTimeout: 5s",
 		"cache:", "driver: disabled", "i18n:", "defaultLanguage: zh-CN",
 		"storage:", "basePath: .data/storage",
@@ -81,11 +81,16 @@ func TestProcessServiceModeStartsDefaultCapabilitiesWithoutExternalServices(t *t
 	directory := t.TempDir()
 	databasePath := filepath.Join(directory, "app.db")
 	storagePath := filepath.Join(directory, "storage")
+	logPath := filepath.Join(directory, "application.log")
 	configPath := filepath.Join(directory, "config.yaml")
 	httpAddress := reserveLoopbackAddress(t)
 	payload := fmt.Sprintf(`logger:
   environment: development
-  level: info
+  level: debug
+  outputPaths:
+    - %q
+  errorOutputPaths:
+    - %q
 database:
   driver: sqlite
   dsn: %q
@@ -105,7 +110,7 @@ todo:
   maxListLimit: 100
 http:
   addr: %q
-`, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), httpAddress)
+`, filepath.ToSlash(logPath), filepath.ToSlash(logPath), filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), httpAddress)
 	if err := os.WriteFile(configPath, []byte(payload), 0o600); err != nil {
 		t.Fatalf("write service config: %v", err)
 	}
@@ -199,6 +204,18 @@ http:
 					}
 					assertAddressCanBeRebound(t, httpAddress)
 					assertFileCanBeRenamed(t, databasePath)
+					payload, readErr := os.ReadFile(logPath)
+					if readErr != nil {
+						t.Fatalf("read service log: %v", readErr)
+					}
+					for _, message := range []string{"application generation committed", "application generation started", "application ready", "http request completed", "http request rejected", "application draining"} {
+						if !bytes.Contains(payload, []byte(message)) {
+							t.Fatalf("service log misses %q:\n%s", message, payload)
+						}
+					}
+					if bytes.Contains(payload, []byte("application service failed")) {
+						t.Fatalf("healthy service log contains failure:\n%s", payload)
+					}
 				case <-time.After(5 * time.Second):
 					t.Fatal("service did not stop after cancellation")
 				}

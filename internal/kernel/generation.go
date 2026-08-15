@@ -17,6 +17,7 @@ type ActiveGeneration interface {
 	Snapshot() config.Snapshot
 	ConfiguredAddress() string
 	BoundAddress() string
+	ManagementBoundAddress() string
 	ActiveConnections() int64
 	ActiveRequests() int64
 	ResourceStats() GenerationResourceStats
@@ -157,7 +158,13 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 		return fmt.Errorf("generation coordinator cannot start from state %s", state)
 	}
 	c.beginAttemptLocked(LifecycleStarting, "load")
+	attempt := c.diagnostics.Attempt
 	c.mu.Unlock()
+	c.options.Logging.Debug("application generation load started",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "load"),
+		pkglogger.Any("attempt", attempt),
+	)
 
 	snapshot, err := c.loadCandidate(ctx)
 	if err != nil {
@@ -165,6 +172,11 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 		c.fail(LifecycleFailed, "load", wrapped)
 		return wrapped
 	}
+	c.options.Logging.Debug("application generation prepare started",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "prepare"),
+		pkglogger.Any("attempt", attempt),
+	)
 	prepared, err := c.prepare(ctx, snapshot, nil)
 	if err != nil {
 		wrapped := generationOperationError("prepare", 0, err)
@@ -172,6 +184,12 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 		return wrapped
 	}
 	c.setCandidate(prepared.ID())
+	c.options.Logging.Debug("application generation candidate ready",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "ready"),
+		pkglogger.Any("attempt", attempt),
+		pkglogger.Any("generation", prepared.ID()),
+	)
 	active, err := prepared.Commit(nil)
 	if err != nil {
 		abortErr := c.abortPrepared(ctx, prepared)
@@ -183,9 +201,20 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 	c.current = active
 	c.publishLocked(active, nil)
 	c.mu.Unlock()
+	c.options.Logging.Debug("application generation committed",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "commit"),
+		pkglogger.Any("attempt", attempt),
+		pkglogger.Any("generation", active.ID()),
+		pkglogger.Any("built_resources", active.ResourceStats().Built),
+		pkglogger.Any("reused_resources", active.ResourceStats().Reused),
+	)
 	c.options.Logging.Info("application generation started",
 		pkglogger.Any("generation", active.ID()),
 		pkglogger.String("bound_address", active.BoundAddress()),
+		pkglogger.String("management_bound_address", active.ManagementBoundAddress()),
+		pkglogger.Any("built_resources", active.ResourceStats().Built),
+		pkglogger.Any("reused_resources", active.ResourceStats().Reused),
 	)
 	return nil
 }
@@ -212,7 +241,14 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 	}
 	previous := c.current
 	c.beginAttemptLocked(LifecycleReloading, "load")
+	attempt := c.diagnostics.Attempt
 	c.mu.Unlock()
+	c.options.Logging.Debug("application generation reload load started",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "load"),
+		pkglogger.Any("attempt", attempt),
+		pkglogger.Any("generation", previous.ID()),
+	)
 
 	snapshot, err := c.loadCandidate(ctx)
 	if err != nil {
@@ -244,10 +280,22 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 		c.diagnostics.LastFailureType = ""
 		c.diagnostics.Since = time.Now()
 		c.mu.Unlock()
+		c.options.Logging.Debug("application generation reload unchanged",
+			pkglogger.String("owner", c.Name()),
+			pkglogger.String("phase", "no-op"),
+			pkglogger.Any("attempt", attempt),
+			pkglogger.Any("generation", previous.ID()),
+		)
 		return result, nil
 	}
 
 	c.setPhase("prepare", changed)
+	c.options.Logging.Debug("application generation reload prepare started",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "prepare"),
+		pkglogger.Any("attempt", attempt),
+		pkglogger.Any("changed_sections", changed),
+	)
 	prepared, err := c.prepare(ctx, snapshot, previous)
 	if err != nil {
 		wrapped := generationOperationError("prepare", 0, err)
@@ -303,6 +351,9 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 		pkglogger.Any("generation", active.ID()),
 		pkglogger.Any("changed_sections", changed),
 		pkglogger.String("bound_address", active.BoundAddress()),
+		pkglogger.String("management_bound_address", active.ManagementBoundAddress()),
+		pkglogger.Any("built_resources", active.ResourceStats().Built),
+		pkglogger.Any("reused_resources", active.ResourceStats().Reused),
 	)
 	return result, nil
 }
@@ -326,6 +377,10 @@ func (c *GenerationCoordinator) Stop(ctx context.Context) error {
 	c.diagnostics.Phase = "shutdown"
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
+	c.options.Logging.Debug("application generation stopping",
+		pkglogger.String("owner", c.Name()),
+		pkglogger.String("phase", "shutdown"),
+	)
 	var joined error
 	if current != nil {
 		joined = errors.Join(joined, current.Stop(ctx))
@@ -355,6 +410,12 @@ func (c *GenerationCoordinator) Stop(ctx context.Context) error {
 	}
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
+	if joined == nil {
+		c.options.Logging.Debug("application generation stopped",
+			pkglogger.String("owner", c.Name()),
+			pkglogger.String("phase", "stopped"),
+		)
+	}
 	return joined
 }
 

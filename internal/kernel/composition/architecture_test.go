@@ -55,6 +55,9 @@ func TestProductionPackageGraphRespectsCompositionBoundaries(t *testing.T) {
 	if err := validateModuleExportBoundaries(root); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateLoggingSourceOwnership(root); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
@@ -95,10 +98,49 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{{ImportPath: modulePath + "/internal/module/example/service", Imports: []string{"github.com/example/sdk"}}},
 		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{"github.com/example/sdk"}}},
 		{{ImportPath: modulePath + "/internal/composition", Imports: []string{modulePath + "/internal/module/example/adapter/sdk"}}},
+		{{ImportPath: modulePath + "/internal/composition", Imports: []string{"go.uber.org/zap"}}},
 	} {
 		if err := validatePackageGraph(fixture); err == nil {
 			t.Fatalf("invalid fixture %#v passed", fixture)
 		}
+	}
+}
+
+func TestLoggingSourceRulesRejectProductionBypasses(t *testing.T) {
+	legalRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, legalRoot, "pkg/logger/adapter.go", `package logger
+import "go.uber.org/zap"
+func build() *zap.Logger { return zap.NewNop() }
+`)
+	if err := validateLoggingSourceOwnership(legalRoot); err != nil {
+		t.Fatalf("legal logger implementation fixture error = %v", err)
+	}
+
+	noopRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, noopRoot, "internal/example/example.go", `package example
+import projectlogger "github.com/rin721/go-scaffold-template/pkg/logger"
+func build() projectlogger.Logger { return projectlogger.Noop() }
+`)
+	if err := validateLoggingSourceOwnership(noopRoot); err == nil {
+		t.Fatal("production logger.Noop fixture passed")
+	}
+
+	zapRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, zapRoot, "internal/example/example.go", `package example
+import "go.uber.org/zap"
+func build() *zap.Logger { return zap.NewNop() }
+`)
+	if err := validateLoggingSourceOwnership(zapRoot); err == nil {
+		t.Fatal("direct zap fixture passed")
+	}
+
+	globalRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, globalRoot, "internal/example/example.go", `package example
+import "log"
+func report() { log.Print("bypass") }
+`)
+	if err := validateLoggingSourceOwnership(globalRoot); err == nil {
+		t.Fatal("global standard logger fixture passed")
 	}
 }
 
@@ -147,6 +189,9 @@ func writeModuleBoundaryFixture(t *testing.T, root, relative, content string) {
 func validatePackageGraph(graph []packageNode) error {
 	for _, node := range graph {
 		for _, imported := range node.Imports {
+			if strings.HasPrefix(imported, "go.uber.org/zap") && node.ImportPath != modulePath+"/pkg/logger" {
+				return fmt.Errorf("package %s bypasses pkg/logger through %s", node.ImportPath, imported)
+			}
 			if sourceOwner, sourceIsModule := applicationModuleOwner(node.ImportPath); sourceIsModule &&
 				thirdPartyImport(imported) && !moduleAdapterPackage(node.ImportPath) {
 				return fmt.Errorf("application module %s package %s imports third-party package outside its adapter: %s", sourceOwner, node.ImportPath, imported)
@@ -193,6 +238,61 @@ func validatePackageGraph(graph []packageNode) error {
 		}
 	}
 	return nil
+}
+
+func validateLoggingSourceOwnership(root string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") || strings.HasSuffix(path, ".gen.go") {
+			return walkErr
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return fmt.Errorf("resolve logging source %s: %w", path, err)
+		}
+		parts := strings.Split(filepath.ToSlash(relative), "/")
+		if len(parts) == 0 || parts[0] != "cmd" && parts[0] != "internal" && parts[0] != "pkg" {
+			return nil
+		}
+		loggerImplementation := len(parts) >= 2 && parts[0] == "pkg" && parts[1] == "logger"
+		fileset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileset, path, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse logging source %s: %w", path, err)
+		}
+		imports := make(map[string]string, len(parsed.Imports))
+		for _, spec := range parsed.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return fmt.Errorf("decode logging import in %s: %w", path, err)
+			}
+			name := filepath.Base(importPath)
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			imports[name] = importPath
+			if strings.HasPrefix(importPath, "go.uber.org/zap") && !loggerImplementation {
+				return fmt.Errorf("production source %s bypasses pkg/logger through %s", path, importPath)
+			}
+			if importPath == "log" && (parts[0] == "cmd" || parts[0] == "internal") {
+				return fmt.Errorf("production source %s imports global standard logger", path)
+			}
+		}
+		var violation error
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "Noop" || selectorImportPath(selector, imports) != modulePath+"/pkg/logger" {
+				return true
+			}
+			position := fileset.Position(selector.Pos())
+			violation = fmt.Errorf("production source %s:%d uses logger.Noop", path, position.Line)
+			return false
+		})
+		return violation
+	})
 }
 
 func validateModuleExportBoundaries(root string) error {

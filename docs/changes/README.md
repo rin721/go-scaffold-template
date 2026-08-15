@@ -30,5 +30,6 @@
 - [025 业务模块边界收口](025-business-module-boundary-closure/README.md)：已完成；Todo 手写 HTTP Adapter 已收回模块，Auth/Todo 通过窄端口连接，入口与跨模块导入门禁已加固，OpenAPI 与运行行为保持不变。
 - [026 Handler-first HTTP 路由绑定](026-handler-first-http-route-binding/README.md)：研究与计划已完成，待确认；拟把模块 operation Handler、应用静态 aggregate、单一生成 route binding 与外层 Router 分责，消除当前单模块假设。
 - [027 第三方封装与分轨装配](027-business-module-third-party-isolation/README.md)：已确认并实施；新增业务能力先完整收口到模块，专属第三方留在模块 Adapter 并零泄漏，只有跨业务复用且由进程统一选择的资源才进入完整底层链。
+- [028 开发日志基线与启动可见性](028-required-development-logging/README.md)：已完成；development 默认输出 Debug 及以上，production 默认保持 Info，Service/Generation/HTTP 已形成分级低敏事件链并由开发规范和架构测试守护。
 
-下一个任务序号为 `028`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `029`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

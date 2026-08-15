@@ -477,6 +477,13 @@ func (g *applicationGeneration) BoundAddress() string {
 	return g.route.BoundAddress().String()
 }
 
+func (g *applicationGeneration) ManagementBoundAddress() string {
+	if g.managementRoute == nil || g.managementRoute.BoundAddress() == nil {
+		return ""
+	}
+	return g.managementRoute.BoundAddress().String()
+}
+
 func (g *applicationGeneration) ActiveRequests() int64 { return g.activeRequests.Load() }
 
 func (g *applicationGeneration) ActiveConnections() int64 {

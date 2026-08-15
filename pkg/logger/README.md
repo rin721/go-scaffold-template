@@ -2,6 +2,8 @@
 
 `pkg/logger` 是项目内通用日志库封装。它使用 `go.uber.org/zap` 作为内部实现，但业务代码只依赖本包暴露的 `Logger`、`Config`、`Field` 和字段构造函数，不直接接触 zap 类型。创建方通过 `Resource` 独占 Sync、Close 和文件 sink，业务调用方不能关闭共享 logger。
 
+何时必须记录、级别如何选择、唯一错误 owner、结构化字段和敏感信息要求统一见 [开发日志规范](../../docs/development/logging.md)；本页只说明 Logger API 与资源用法。
+
 ## 技术选型
 
 - `zap` 是成熟的高性能结构化日志库，适合服务端长期运行、高频输出和 JSON 日志采集场景。
@@ -34,7 +36,7 @@ pkg/logger/
 | 字段 | 说明 | 默认值 |
 | --- | --- | --- |
 | `Environment` | 运行环境，支持 `logger.EnvironmentDevelopment` 和 `logger.EnvironmentProduction` | `development` |
-| `Level` | 日志级别，支持 `debug`、`info`、`warn`、`error` | `info` |
+| `Level` | 日志级别，支持 `debug`、`info`、`warn`、`error` | development 为 `debug`，production 为 `info` |
 | `Encoding` | 输出格式，支持 `console` 和 `json` | 开发环境为 `console`，生产环境为 `json` |
 | `OutputPaths` | 普通日志输出位置，例如 `stdout` 或文件路径 | `stdout` |
 | `ErrorOutputPaths` | logger 内部错误输出位置 | `stderr` |

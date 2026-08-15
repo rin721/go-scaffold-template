@@ -1,13 +1,20 @@
 package httpx
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 )
 
 func TestProductionMiddlewareSetsRequestIDAndSecurityHeaders(t *testing.T) {
@@ -208,5 +215,82 @@ func TestRecoveryMapsPanicToStatusError(t *testing.T) {
 	statusErr, ok := asStatusError(err)
 	if !ok || statusErr.StatusCode != http.StatusInternalServerError {
 		t.Fatalf("err = %#v", err)
+	}
+}
+
+func TestRecoveryDoesNotLogPanicValue(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "panic.log")
+	addCaller := false
+	resource, err := logger.New(&logger.Config{
+		Environment: logger.EnvironmentProduction,
+		OutputPaths: []string{path}, ErrorOutputPaths: []string{path}, AddCaller: &addCaller,
+	})
+	if err != nil {
+		t.Fatalf("logger.New() error = %v", err)
+	}
+	sensitiveDetail := "UNSAFE_PANIC_DETAIL_SENTINEL"
+	handler := Recovery(resource)(func(*Context) error { panic(sensitiveDetail) })
+	_ = handler(&Context{ResponseWriter: httptest.NewRecorder(), Request: httptest.NewRequest(http.MethodGet, "/", nil)})
+	if err := resource.Close(); err != nil {
+		t.Fatalf("logger.Close() error = %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if bytes.Contains(payload, []byte(sensitiveDetail)) || !bytes.Contains(payload, []byte("panic_type")) {
+		t.Fatalf("panic log is not safely classified: %s", payload)
+	}
+}
+
+func TestAccessLogClassifiesRequestOutcome(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantLevel   string
+		wantMessage string
+	}{
+		{name: "success", wantLevel: "info", wantMessage: "http request completed"},
+		{name: "client rejection", err: &StatusError{StatusCode: http.StatusBadRequest, Code: "invalid_request"}, wantLevel: "warn", wantMessage: "http request rejected"},
+		{name: "rate limit", err: &StatusError{StatusCode: http.StatusTooManyRequests, Code: "rate_limited"}, wantLevel: "warn", wantMessage: "http request rejected"},
+		{name: "overload", err: &StatusError{StatusCode: http.StatusServiceUnavailable, Code: "server_overloaded"}, wantLevel: "warn", wantMessage: "http request rejected"},
+		{name: "server failure", err: &StatusError{StatusCode: http.StatusInternalServerError, Code: "internal_error"}, wantLevel: "error", wantMessage: "http request failed"},
+		{name: "unknown failure", err: errors.New("unknown"), wantLevel: "error", wantMessage: "http request failed"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			log := logger.NewTestLogger()
+			request := httptest.NewRequest(http.MethodGet, "/private?detail=UNSAFE_QUERY_DETAIL_SENTINEL", nil)
+			request = request.WithContext(WithOperationID(request.Context(), "testOperation"))
+			request = request.WithContext(context.WithValue(request.Context(), requestIDContextKey{}, "request-123"))
+			request = request.WithContext(WithTraceID(request.Context(), "trace-123"))
+			err := AccessLog(log)(func(*Context) error { return test.err })(
+				&Context{ResponseWriter: httptest.NewRecorder(), Request: request},
+			)
+			if !errors.Is(err, test.err) {
+				t.Fatalf("AccessLog() error = %v, want %v", err, test.err)
+			}
+			entries := log.Entries()
+			if len(entries) != 1 || entries[0].Level != test.wantLevel || entries[0].Message != test.wantMessage {
+				t.Fatalf("entries = %#v", entries)
+			}
+		})
+	}
+}
+
+func TestAccessLogUsesCommittedProblemOutcome(t *testing.T) {
+	log := logger.NewTestLogger()
+	router := NewRouter(nil)
+	router.Use(AccessLog(log))
+	router.Handle(MethodGet, "/failure", func(*Context) error {
+		return &StatusError{StatusCode: http.StatusInternalServerError, Code: "internal_failure"}
+	})
+
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/missing", nil))
+	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/failure", nil))
+	entries := log.Entries()
+	if len(entries) != 2 || entries[0].Level != "warn" || entries[0].Message != "http request rejected" ||
+		entries[1].Level != "error" || entries[1].Message != "http request failed" {
+		t.Fatalf("entries = %#v", entries)
 	}
 }

@@ -1,0 +1,44 @@
+schema_version: 1
+id: R001
+title: "当前日志能力、启动可见性与开发门禁复核"
+question: "项目已经具备 Logger，为什么启动时仍很少看到日志，如何让开发环境可见 debug 至 error 并把日志使用变成开发要求？"
+research_type: current-project
+topics: ["logging", "startup visibility", "application lifecycle", "development governance", "error boundary"]
+keywords: ["pkg/logger", "logging.Manager", "DefaultLevel", "application generation", "applicationLifecycle", "AccessLog", "Noop"]
+languages: ["Go"]
+frameworks: ["zap"]
+technologies: ["structured logging", "Kernel baseline logger", "Application Generation"]
+applicable_scenarios: ["028 设计计划", "Service 启动日志", "日志级别默认值", "新增模块日志规范", "运行失败诊断"]
+non_applicable_scenarios: ["日志采集平台选型", "日志轮转", "OTLP Logs", "远程日志存储", "审计数据持久化"]
+status: active
+summary: "Logger、强制 baseline 和配置化 replacement 已实现；当前开发默认 level=info 会过滤 debug，生产调用点只有一个真实 Debug 且没有 Warn，启动链只记录少数成功里程碑，开发文档也未规定必须记录哪些事件。应保留现有封装，改为 development=debug、production=info，补齐阶段化低敏事件与唯一错误记录边界，并建立权威开发规范和回归门禁。"
+evidence:
+  types: ["source-code", "tests", "configuration", "authoritative-project-documentation", "existing-change-records"]
+  primary_sources:
+    - title: "Logger 契约、默认值与级别过滤"
+      locator: "pkg/logger/logger.go; pkg/logger/defaults.go; pkg/logger/level.go; pkg/logger/logger_test.go"
+      snapshot: "a700d25248b483bb5cb844ee235d4e9bbb6b37d4"
+    - title: "入口、Service、Kernel 与应用代际日志链"
+      locator: "cmd/app/main.go; internal/composition/application.go; internal/composition/service.go; internal/kernel/kernel.go; internal/kernel/generation.go; internal/composition/generation_resources.go"
+      snapshot: "a700d25248b483bb5cb844ee235d4e9bbb6b37d4"
+    - title: "当前日志消费者与测试"
+      locator: "pkg/httpx/production_middleware.go; internal/module/auth/adapter/audit/logger.go; internal/composition/service_test.go; internal/kernel/logging/manager_test.go"
+      snapshot: "a700d25248b483bb5cb844ee235d4e9bbb6b37d4"
+    - title: "当前配置与文档"
+      locator: "config.example.yaml; README.md; docs/README.md; docs/development/application-module-development.md; pkg/logger/README.md; AGENTS.md"
+      snapshot: "a700d25248b483bb5cb844ee235d4e9bbb6b37d4"
+    - title: "既有 Logger 注入与替换历史"
+      locator: "docs/changes/004-logger-capability-injection; docs/changes/007-app-component-logger-injection"
+      snapshot: "verified 2026-08-16"
+researched_at: "2026-08-16"
+verified_at: "2026-08-16"
+validity:
+  mode: snapshot
+  review_after: "2026-09-16"
+  refresh_triggers: ["Logger contract or backend changes", "application startup or Generation lifecycle changes", "default configuration semantics change", "a new runtime owner or module logging policy is introduced"]
+relations:
+  extends: ["004 logger capability injection", "007 app component logger injection"]
+  related: ["023 full configuration seamless reload", "024 production ready completion"]
+  supersedes: []
+  superseded_by: []
+report: report.md

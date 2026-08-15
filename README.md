@@ -24,6 +24,7 @@
 
 - [docs/README.md](docs/README.md)：项目文档入口与任务级变更记录。
 - [应用模块开发指南](docs/development/application-module-development.md)：新增模块前的用例、Capability、资源 owner、生命周期和契约适配评估。
+- [开发日志规范](docs/development/logging.md)：日志必记边界、级别、结构化字段、脱敏、去重和验证要求。
 - [pkg/README.md](pkg/README.md)：底层能力库封装规范、当前能力清单和暂缓路线。
 - [internal/kernel/README.md](internal/kernel/README.md)：显式组合、配置事务、租约排空和运行方式。
 - [internal/kernel/app/README.md](internal/kernel/app/README.md)：组件 Definition、Direct/Leased、Plan、typed Input 和接入步骤。
