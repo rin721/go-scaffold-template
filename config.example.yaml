@@ -72,7 +72,8 @@ database:
 
 cache:
   # 默认显式禁用，因此本地启动不依赖 Redis。启用后只允许 redis。
-  # Cache 后端配置变化需要重启，避免既有 typed Client 的 L1 状态跨后端迁移。
+  # 长期 Service 在完整 Application Generation 中重建 typed Client、L1 与 tag index；
+  # backend 或 namespace 变化只影响新 generation，旧请求排空后再释放旧代。
   driver: disabled
   # driver: redis
 

@@ -3,7 +3,7 @@
 ## 1. 状态与授权
 
 - 研究门禁：已通过。
-- 计划状态：**已确认，实施验收中**。
+- 计划状态：**已确认并完成本地实施验收**。
 - 实施授权：用户于 2026-08-15 明确确认 023 当前计划，授权实施 `RLD-001..015`，并明确禁止 push。
 - 基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
 - 实现落点：主体为 `56ce851`；后续加固随 `86c2aca` 落盘。验收状态以 [acceptance.md](acceptance.md) 为准。
@@ -37,7 +37,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-002 ListenerHub 可证伪原型与契约
 
-- 状态：**已实施、部分验收**；Windows 与 race 自动化通过；用户批准跳过 Linux 真实 runtime，保持未验证。
+- 状态：**已完成**；Windows 外部进程与 race 通过；用户批准跳过 Linux 真实 runtime，保持未验证。
 - 工作量：L
 - 依据：R002、ADR-002、`HTTP-001/002`
 - 内容：先在 `pkg/httpx` 证明 physical listener、虚拟 route、Serve-ready、pending dispatch barrier、背压、Stop 唤醒、地址迁移和错误传播。
@@ -77,7 +77,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-007 HTTP generation handoff
 
-- 状态：**已实施、跨平台验收未闭环**；用户批准跳过 Linux 真实 runtime，保持未验证。
+- 状态：**已完成**；Windows 外部进程完成同 PID 地址迁移；用户批准跳过 Linux 真实 runtime，保持未验证。
 - 工作量：L
 - 依赖：RLD-006
 - 内容：把 Service HTTP 生命周期迁到 ListenerHub；实现同地址 route commit、地址变更先 bind、旧 `http.Server.Shutdown` 排空和进程 Stop。
@@ -93,7 +93,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-009 Cache 客户端代际隔离
 
-- 状态：**已实施、真实 Redis 验收未闭环**；用户批准跳过真实 Redis，保持未验证。
+- 状态：**已完成（带批准的未验证项）**；代际实现与 disabled backend 验收通过，用户批准跳过真实 Redis 并保持未验证。
 - 工作量：L
 - 依赖：RLD-006
 - 内容：typed Client、L1、tag index 和 cleanup goroutine 归 generation 所有；底层 remote resource 可按 digest 复用。
@@ -133,7 +133,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-014 完整验证与运行验收
 
-- 状态：**未完成**；Linux 真实 runtime 与真实 Redis 已按用户指示跳过并标记未验证；当前全量测试受 024 未提交 Todo/API 改动和 Go 临时目录空间不足影响。
+- 状态：**已完成（带批准的未验证项）**；独立 HEAD 的 Windows 外部进程、定向/全量 test、race、vet、build 通过；Linux 真实 runtime 与真实 Redis 按用户指示跳过并标记未验证。
 - 工作量：XL
 - 依赖：RLD-013
 - 内容：执行七节单改/组合改、失败注入、并发、长请求、地址变化、cleanup debt、Windows/Linux 真实进程验收以及 test/race/vet/build。
@@ -141,7 +141,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-015 文档、Diff 与提交闭环
 
-- 状态：**进行中**；依赖 `RLD-014`，本轮不得声明整项完成。
+- 状态：**已完成**；权威文档、验收台账、旧语义清理、Diff 审阅与本地 Conventional Commit 已闭环，未 push。
 - 工作量：M
 - 依赖：RLD-014
 - 内容：同步 README、架构、配置、组件开发、运行与故障说明；更新 023 状态、逐轮证据和 Commit；审阅完整 Diff，只暂存本任务文件并创建 Conventional Commit。
@@ -174,9 +174,11 @@ git diff --check
 - `56ce851 feat(runtime): switch immutable application generations`：稳定读取、Application Generation、typed resource pools、ListenerHub、七节配置接线、测试与当前说明主体。
 - `86c2aca feat(api): establish strict OpenAPI transport`：包含后续 ListenerHub pending ownership/背压、Generation 结构化错误与动态诊断、Windows sharing violation 测试等加固；该提交同时包含 024 API 工作，不作为 023 的独立纯净提交证明。
 - Windows 真实进程：PID `60468` 内 Todo reload 后 generation `1 -> 2`，请求结果 `201 -> 400`，随后 Ctrl+C 走 application stopping 与资源停止链。
-- 定向 test、race、vet、build 和 Linux cross-compile 已通过；Linux cross-compile 不替代真实 runtime。
+- Windows 七节组合进程：PID `52696` 内一次提交 generation `2`，`changed_sections` 为七节，HTTP `50611 -> 50612`，新端口按新 Todo Policy 返回 `400`，旧端口停止接受连接，随后 graceful stop。
+- 在 detached HEAD `3d363d5` 的独立 worktree 中，定向 test、`go test ./... -count=1`、race、vet、build 全部通过；Linux cross-compile 不替代真实 runtime。
 - 完整逐项状态、命令和未执行项见 [acceptance.md](acceptance.md)。
 - 用户于 2026-08-15 批准跳过 Linux 真实 runtime 与真实 Redis backend/tag namespace 验证；两项必须永久保留“未验证”表述，除非后续补跑成功。
+- 本地验收记录提交为 `3d363d5 docs(reload): record acceptance status`；最终状态由包含本段更新的本地提交闭环，不执行 push。
 
 ## 7. 重新确认条件
 

@@ -5,9 +5,9 @@
 - 任务类型：已确认的非文档实施与验收闭环。
 - 基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
 - 研究门禁：已通过，见 [R001](research/R001-current-reload-boundaries/report.md) 与 [R002](research/R002-generation-listener-patterns/report.md)。
-- 计划状态：**已确认，实施验收中**；用户于 2026-08-15 明确确认 023 当前计划，授权实施 `RLD-001..015`，并明确禁止 push。
+- 计划状态：**已确认并完成本地实施验收**；用户于 2026-08-15 明确确认 023 当前计划，授权实施 `RLD-001..015`，并明确禁止 push。
 - 当前实现：稳定读取、Application Generation、ListenerHub 与七节配置重载主体落在本地提交 `56ce851`；后续并发、诊断和 Windows 文件读取加固随当前本地提交 `86c2aca` 落盘。两者均未由本任务推送。
-- 当前缺口：Windows 真实进程验收已通过；用户已批准跳过 Linux 真实 runtime 与真实 Redis backend/tag namespace 切换，两项保持“未验证”，不再等待环境。当前全量测试仍受到 024 未提交 Todo/API 改动和本机 Go 临时目录空间不足影响，因此 `RLD-014`、`RLD-015` 尚不能标记完成，详见 [验收台账](acceptance.md)。
+- 验收结论：Windows 外部进程七节组合重载、同 PID/单 generation、HTTP 地址迁移与 graceful stop 已通过；独立 HEAD 的定向 test、全量 test、race、vet、build 均通过。用户批准跳过 Linux 真实 runtime 与真实 Redis backend/tag namespace 切换，两项保持“未验证”，不以 cross-compile/mock 冒充通过。详见 [验收台账](acceptance.md)。
 
 ## 一句话结论
 
