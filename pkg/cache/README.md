@@ -146,4 +146,4 @@ if err := profiles.InvalidateTags(ctx, "profile"); err != nil {
 
 推荐在 composition 完成后通过 `cacheapp.NewClient[T](capabilities.Cache, cfg)` 创建 `cache.Client[T]`，再通过构造函数注入业务组件。typed Client 拥有自己的 L1 状态和清理 goroutine，创建方必须调用 `Close`；它不拥有 Kernel 的 Redis 连接。业务组件不要自行创建 Redis client，也不要绕过 `pkg/cache` 直接散写 Redis key、tag 索引或序列化格式。
 
-Cache App 默认 `disabled`，启用 Redis 后会在启动 Ready 阶段 Ping。Redis 配置变化采用 `RestartRequired`，不会在运行期替换后端；这避免已有 typed Client 的 L1 状态与远端命名空间在单个进程中跨代混用。
+Cache App 默认 `disabled`，启用 Redis 后会在启动 Ready 阶段 Ping。底层 App 的独立 Kernel reload 策略仍是 `RestartRequired`，因为它不能替调用方迁移已有 typed Client 的 L1；长期 Service 不调用这条局部 reload，而是在完整 Application Generation 中按 Cache section digest 构造或复用后端。模块若拥有 typed Client，其 Client、L1、tag index 与清理 goroutine 必须归对应 generation 的终结 journal，不能跨代复用。

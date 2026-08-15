@@ -19,10 +19,10 @@
 | `ONE-005` | XL | `ONE-004` | 实现 typed immutable `ApplicationGeneration` 与完整资源 owner | 同 Snapshot 构造现有七节及 auth/management/observability；无 locator/全局可变资源 | 进行中（七节基础完成） |
 | `ONE-006` | XL | `ONE-005` | 实现 process-level `ListenerHub` 和 request/connection generation lease | Windows/Linux admission、切换、pending connection、drain、shutdown 测试通过 | 进行中（Windows 契约完成） |
 | `ONE-007` | L | `ONE-006` | 迁移 reload/Host/Service/CLI 并删除旧 restart/server swap authority | candidate reject 保旧代；commit 后 cleanup debt 可诊断；旧路径/符号/文档无残留 | 已完成（C2 当前 profile） |
-| `ONE-008` | L | `ONE-007` | 建立 OpenAPI 3.0.3 spec、oapi-codegen strict Chi 与 operation inventory | Todo contract 完整；生成物可重复；每个 operation security/Problem/operationId 完整 | 待确认 |
-| `ONE-009` | XL | `ONE-008` | 迁移 strict handler/Router/DTO mapping，删除 `module.Route` | 所有 HTTP 调用方只走生成 binding；core 无 transport/第三方类型；旧 authority 搜索为零 | 待确认 |
-| `ONE-010` | L | `ONE-009` | 实现 RFC 9457 presenter 与 strict request/response protocol | validation/404/405/panic/middleware/auth/dependency 统一；协议负向 contract 通过 | 待确认 |
-| `ONE-011` | L | `ONE-010` | 完成 trusted proxy、budget、limits、CORS、rate/overload | 安全默认、429/503/Retry-After、取消与低敏诊断测试通过 | 待确认 |
+| `ONE-008` | L | `ONE-007` | 建立 OpenAPI 3.0.3 spec、oapi-codegen strict Chi 与 operation inventory | Todo contract 完整；生成物可重复；每个 operation security/Problem/operationId 完整 | 已完成（C3） |
+| `ONE-009` | XL | `ONE-008` | 迁移 strict handler/Router/DTO mapping，删除 `module.Route` | 所有 HTTP 调用方只走生成 binding；core 无 transport/第三方类型；旧 authority 搜索为零 | 已完成（C3） |
+| `ONE-010` | L | `ONE-009` | 实现 RFC 9457 presenter 与 strict request/response protocol | validation/404/405/panic/middleware/auth/dependency 统一；协议负向 contract 通过 | 已完成（C3；auth 场景随 C4 接入） |
+| `ONE-011` | L | `ONE-010` | 完成 trusted proxy、budget、limits、CORS、rate/overload | 安全默认、429/503/Retry-After、取消与低敏诊断测试通过 | 已完成（C3） |
 | `ONE-012` | XL | `ONE-008`、`ONE-005` | 实现安全契约、operation policy 与 jwx v4 JWT/JWKS Adapter | issuer/audience/alg/time/key refresh/fail-closed 测试通过；无第三方类型泄漏 | 待确认 |
 | `ONE-013` | XL | `ONE-010`、`ONE-012`、`ONE-016` | Todo `owner_subject`、对象授权、CLI actor 与 audit | expand/backfill/contract 完成；跨 actor 拒绝；HTTP/CLI 同 policy；敏感信息不泄露 | 待确认 |
 | `ONE-014` | L | `ONE-007`、`ONE-012` | 实现独立 management listener 与 probes/build/diagnostics | startup/live/ready 分离；management budget/scope 生效；pprof 默认不存在 | 待确认 |
@@ -102,7 +102,8 @@ go test ./... -run 'Contract|Protocol|Problem|JWT|JWKS|Authorization|Audit'
 | --- | --- | --- | --- | --- | --- |
 | 1 | 2026-08-15 | `RES-001..003`、024 requirements/design/tasks | HEAD `e251b73518a457ec97c529d067ddfffe77be203a`；代码/配置/CI/平台审计；官方主源；ADR-003 | `97d081c` | 本机无 Docker/可运行 WSL；远端发布未授权 |
 | 2 | 2026-08-15 | C1：Go 1.26.5、LF policy、Action SHA | Windows `go mod tidy -diff`、`go test ./... -count=1`、`go vet ./...`、`go build ./cmd/app`、`git diff --check` 通过 | `d587a2f` | builder/release 与 Linux 同义门禁在后续检查点补齐 |
-| 3 | 2026-08-15 | C2 基础：`ONE-001/004/007`，`ONE-005/006` 当前七节与 Windows 契约 | stable file、七节单改、Todo/HTTP 同进程生效、资源复用、Schema/bind reject、watcher 恢复、旧请求固定、graceful/force 与 targeted race 通过 | 本检查点提交 | auth/management/observability 将在后续任务进入同一 generation；Linux runtime 留待 C8 真验收 |
+| 3 | 2026-08-15 | C2 基础：`ONE-001/004/007`，`ONE-005/006` 当前七节与 Windows 契约 | stable file、七节单改、Todo/HTTP 同进程生效、资源复用、Schema/bind reject、watcher 恢复、旧请求固定、graceful/force 与 targeted race 通过 | `56ce851` | auth/management/observability 将在后续任务进入同一 generation；Linux runtime 留待 C8 真验收 |
+| 4 | 2026-08-15 | C3：`ONE-008..011` 与 C2 diagnostics/listener 加固 | OpenAPI 3.0.3、oapi-codegen v2.8.0、oasdiff v1.22.0、strict Chi、operation inventory、RFC 9457、旧 Route 零引用；生成 hash 不变，Windows 全量 test/race/vet/build、protocol/edge contract、oasdiff self baseline、Diff 检查通过 | 本检查点提交 | JWT/JWKS、operation authorization/audit 与真实 base breaking diff 在 C4/C7 接入；Linux runtime 留待 C8 |
 
 后续每个检查点必须补充命令、平台、退出码、artifact/digest、Commit 与未通过项。只有最终总验收可以把任务状态改为完成。
 

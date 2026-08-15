@@ -3,37 +3,23 @@ package module
 
 import (
 	"fmt"
-	"net/url"
-	"path"
 	"reflect"
-	"strings"
 
-	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 // ID 是应用模块在单个进程内的稳定唯一标识。
 type ID string
 
-// Route 是已经绑定 Handler 的 HTTP 路由贡献。
-type Route struct {
-	Method      httpx.Method
-	Path        string
-	Handler     httpx.Handler
-	Middlewares []httpx.Middleware
-}
-
 // Contribution 是应用模块交给组合根集中安装的完成品。
 type Contribution struct {
 	ID           ID
-	Routes       []Route
 	Participants []supervisor.Participant
 }
 
 // ValidateContributions 在任何 listener 或 participant 启动前校验模块贡献。
 func ValidateContributions(contributions ...Contribution) error {
 	modules := make(map[ID]struct{}, len(contributions))
-	routes := make(map[string]ID)
 	owners := make(map[string]ID)
 	for index, contribution := range contributions {
 		if contribution.ID == "" {
@@ -43,16 +29,6 @@ func ValidateContributions(contributions ...Contribution) error {
 			return fmt.Errorf("module %q is duplicated", contribution.ID)
 		}
 		modules[contribution.ID] = struct{}{}
-		for routeIndex, route := range contribution.Routes {
-			key, err := routeKey(route)
-			if err != nil {
-				return fmt.Errorf("module %s route %d: %w", contribution.ID, routeIndex, err)
-			}
-			if owner, exists := routes[key]; exists {
-				return fmt.Errorf("module route %s is shared by modules %s and %s", key, owner, contribution.ID)
-			}
-			routes[key] = contribution.ID
-		}
 		for participantIndex, participant := range contribution.Participants {
 			if nilInterface(participant) {
 				return fmt.Errorf("module %s participant %d is nil", contribution.ID, participantIndex)
@@ -68,42 +44,6 @@ func ValidateContributions(contributions ...Contribution) error {
 		}
 	}
 	return nil
-}
-
-func routeKey(route Route) (string, error) {
-	if !supportedMethod(route.Method) {
-		return "", fmt.Errorf("unsupported HTTP method %q", route.Method)
-	}
-	if route.Handler == nil {
-		return "", fmt.Errorf("HTTP handler is nil")
-	}
-	if route.Path == "" || !strings.HasPrefix(route.Path, "/") {
-		return "", fmt.Errorf("HTTP path %q must be absolute", route.Path)
-	}
-	parsed, err := url.ParseRequestURI(route.Path)
-	if err != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return "", fmt.Errorf("HTTP path %q is invalid", route.Path)
-	}
-	canonical := path.Clean(route.Path)
-	if canonical != route.Path {
-		return "", fmt.Errorf("HTTP path %q is not canonical; want %q", route.Path, canonical)
-	}
-	for index, middleware := range route.Middlewares {
-		if middleware == nil {
-			return "", fmt.Errorf("HTTP middleware %d is nil", index)
-		}
-	}
-	return string(route.Method) + " " + route.Path, nil
-}
-
-func supportedMethod(method httpx.Method) bool {
-	switch method {
-	case httpx.MethodGet, httpx.MethodPost, httpx.MethodPut, httpx.MethodPatch,
-		httpx.MethodDelete, httpx.MethodHead, httpx.MethodOptions:
-		return true
-	default:
-		return false
-	}
 }
 
 func nilInterface(value any) bool {

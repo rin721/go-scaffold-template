@@ -88,7 +88,7 @@ PATCH /api/v1/todos/{id}/complete
 Invoke-RestMethod -Method Post -Uri http://127.0.0.1:8080/api/v1/todos -ContentType application/json -Body '{"title":"学习 Go"}'
 ```
 
-创建路由绑定了 Todo 模块级 `RequireJSONContentType` middleware：必须显式发送 `Content-Type: application/json`，允许 `charset` 等合法参数；缺失、格式非法或非 JSON media type 返回 `415 todo_unsupported_media_type`。全局 middleware 仍按 `Recovery -> RequestID -> AccessLog -> SecureHeaders` 执行，并包裹该 route middleware。
+[`api/openapi.yaml`](api/openapi.yaml) 是 HTTP operation、路径、DTO、响应、security 与兼容性的唯一权威。`oapi-codegen` 生成 strict Chi server interface，`internal/transport/http` 只负责把生成 DTO 映射到 Todo UseCases；缺失或不支持的 `Content-Type` 返回 RFC 9457 `415 unsupported_media_type`，未知字段、非法参数和尾随 JSON 返回稳定 Problem Details。旧 `module.Route`、Todo 手写 HTTP handler 和 route middleware 已删除。
 
 同一套 UseCases 也通过 one-shot Application CLI 提供。CLI 会按 `Coordinator -> Todo migration -> operation -> reverse Stop` 完整管理资源，但不会启动 HTTP listener 或配置 watcher：
 
@@ -99,11 +99,11 @@ go run ./cmd/app todo get --id <todo-id>
 go run ./cmd/app todo complete --id <todo-id>
 ```
 
-目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
+目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)。业务垂直切片与旧 route middleware 的历史证据仍保存在 [014](docs/changes/014-todo-business-vertical-slice/README.md) 和 [015](docs/changes/015-todo-route-middleware-example/README.md)，当前 HTTP 契约只以 OpenAPI 与生成物为准。
 
 无参数 Service 默认监听 `config.yaml`。FileSource 对 Windows sharing violation、atomic rename 的短暂不存在和仍在变化的内容执行有界稳定双采样；watcher 使用容量一的 latest-wins 通知串行触发完整 reload。`logger/database/cache/i18n/storage/http/todo` 七节都可在同一 PID 生效，不再要求重启：未变化的底层资源按 section digest 引用复用，变化资源先 Build/Ready；Todo Policy、Handler、Router 和 `http.Server` 每代重建。ListenerHub 独占物理 TCP listener，同地址切虚拟 route，已接受连接固定旧代并 graceful drain；地址变化先 bind 新地址。稳定非法候选、资源 Ready、Schema readiness 或 bind 失败均保留旧代并继续监听；提交后清理失败进入 degraded 并阻断后续 reload。环境变量仍高于文件，进程不会读取另一个 shell 在启动后新增的环境值。Database/Storage 目标变化不自动迁移数据，旧 keep-alive 连接也会在排空前继续使用旧代。
 
-GenerationCoordinator 提供 attempt、current/retiring generation、Snapshot digest、changed sections、phase、bound address、active requests、cleanup debt 和脱敏 error type；Supervisor 继续记录 Participant/Task 与 shutdown 预算。默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
+GenerationCoordinator 提供 attempt、candidate/current/retiring generation、Snapshot digest、changed sections、phase、configured/bound/retiring address、active connections/requests、typed resource build/reuse、空 restart policy、cleanup debt 和脱敏 failure phase/owner/error type；Supervisor 继续记录 Participant/Task 与 shutdown 预算。默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
 
 本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，底层组件生命周期见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。当前生产竣工与完整 Service 重载的唯一施工 authority 是 [024 生产就绪模板一次性竣工](docs/changes/024-production-ready-one-shot-completion/README.md)；[023 全配置无感重载](docs/changes/023-full-configuration-seamless-reload/README.md) 只保留历史研究证据。
 

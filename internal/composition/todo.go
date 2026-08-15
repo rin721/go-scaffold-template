@@ -57,7 +57,7 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	}
 	module, err := todo.New(todo.Dependencies{
 		Database: databaseAccess, Clock: capabilities.Clock, IDGenerator: capabilities.IDGenerator,
-		I18n: capabilities.I18n, Config: todoConfig,
+		Config: todoConfig,
 	})
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("compose todo module: %w", err)

@@ -52,6 +52,22 @@ func (httpDefaults) Defaults(ctx context.Context) (config.Object, config.Control
 	if err != nil {
 		return nil, config.Continue, err
 	}
+	maxBodyBytes, err := config.Number(fmt.Sprintf("%d", value.MaxRequestBodyBytes))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	maxInFlight, err := config.Number(fmt.Sprintf("%d", value.MaxInFlight))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	requestsPerSecond, err := config.Number(fmt.Sprintf("%d", value.RateLimit.RequestsPerSecond))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	burst, err := config.Number(fmt.Sprintf("%d", value.RateLimit.Burst))
+	if err != nil {
+		return nil, config.Continue, err
+	}
 	return config.Object{
 		config.FieldOf("addr", config.String(value.Addr)),
 		config.FieldOf("readHeaderTimeout", config.Duration(value.ReadHeaderTimeout)),
@@ -59,7 +75,28 @@ func (httpDefaults) Defaults(ctx context.Context) (config.Object, config.Control
 		config.FieldOf("writeTimeout", config.Duration(value.WriteTimeout)),
 		config.FieldOf("idleTimeout", config.Duration(value.IdleTimeout)),
 		config.FieldOf("maxHeaderBytes", maxHeaderBytes),
+		config.FieldOf("requestTimeout", config.Duration(value.RequestTimeout)),
+		config.FieldOf("maxRequestBodyBytes", maxBodyBytes),
+		config.FieldOf("maxInFlight", maxInFlight),
+		config.FieldOf("trustedProxyCIDRs", httpStringList(value.TrustedProxyCIDRs)),
+		config.FieldOf("rateLimit", config.ObjectValue(config.Object{
+			config.FieldOf("requestsPerSecond", requestsPerSecond),
+			config.FieldOf("burst", burst),
+		})),
+		config.FieldOf("cors", config.ObjectValue(config.Object{
+			config.FieldOf("allowedOrigins", httpStringList(value.CORS.AllowedOrigins)),
+			config.FieldOf("allowedMethods", httpStringList(value.CORS.AllowedMethods)),
+			config.FieldOf("allowedHeaders", httpStringList(value.CORS.AllowedHeaders)),
+		})),
 	}, config.Continue, nil
+}
+
+func httpStringList(values []string) config.Value {
+	items := make([]config.Value, 0, len(values))
+	for _, value := range values {
+		items = append(items, config.String(value))
+	}
+	return config.List(items...)
 }
 
 var _ config.DefaultContract = httpDefaults{}

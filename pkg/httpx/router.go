@@ -11,6 +11,7 @@ type Router interface {
 	Use(middlewares ...Middleware)
 	UseHTTP(middlewares ...func(http.Handler) http.Handler)
 	Handle(method Method, pattern string, handler Handler, middlewares ...Middleware)
+	Mount(pattern string, handler http.Handler)
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
 
@@ -23,7 +24,18 @@ type standardRouter struct {
 func NewRouter(cfg *RouterConfig) Router {
 	resolved := resolveRouterConfig(cfg)
 	router := chi.NewRouter()
-	return &standardRouter{router: router, errorHandle: resolved.ErrorHandler}
+	result := &standardRouter{router: router, errorHandle: resolved.ErrorHandler}
+	router.NotFound(func(w http.ResponseWriter, request *http.Request) {
+		result.errorHandle(&Context{ResponseWriter: w, Request: request}, &StatusError{
+			StatusCode: http.StatusNotFound, Code: "route_not_found", Message: "route not found",
+		})
+	})
+	router.MethodNotAllowed(func(w http.ResponseWriter, request *http.Request) {
+		result.errorHandle(&Context{ResponseWriter: w, Request: request}, &StatusError{
+			StatusCode: http.StatusMethodNotAllowed, Code: "method_not_allowed", Message: "method not allowed",
+		})
+	})
+	return result
 }
 
 func (r *standardRouter) Use(middlewares ...Middleware) {
@@ -64,21 +76,21 @@ func (r *standardRouter) Handle(method Method, pattern string, handler Handler, 
 	})
 }
 
+func (r *standardRouter) Mount(pattern string, handler http.Handler) {
+	if handler == nil {
+		return
+	}
+	r.router.Mount(pattern, handler)
+}
+
 func (r *standardRouter) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	if _, ok := w.(*responseStateWriter); !ok {
+		w = &responseStateWriter{ResponseWriter: w}
+	}
 	r.router.ServeHTTP(w, req)
 }
 
 // DefaultErrorHandler 是默认统一错误处理函数。
 func DefaultErrorHandler(ctx *Context, err error) {
-	if statusErr, ok := asStatusError(err); ok {
-		_ = ctx.JSON(statusErrorStatusCode(statusErr), map[string]string{
-			"error":   statusErrorCode(statusErr),
-			"message": statusErrorMessage(statusErr),
-		})
-		return
-	}
-
-	_ = ctx.JSON(http.StatusInternalServerError, map[string]string{
-		"error": errorCodeInternalServer,
-	})
+	WriteProblem(ctx.ResponseWriter, ctx.Request, err)
 }

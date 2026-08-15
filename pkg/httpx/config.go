@@ -24,13 +24,32 @@ type RouterConfig struct {
 
 // ServerConfig 定义 HTTP 服务端构造参数。
 type ServerConfig struct {
-	Addr              string
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	MaxHeaderBytes    int
-	ErrorLog          *log.Logger
+	Addr                string
+	ReadHeaderTimeout   time.Duration
+	ReadTimeout         time.Duration
+	WriteTimeout        time.Duration
+	IdleTimeout         time.Duration
+	MaxHeaderBytes      int
+	RequestTimeout      time.Duration
+	MaxRequestBodyBytes int64
+	MaxInFlight         int
+	TrustedProxyCIDRs   []string
+	RateLimit           RateLimitConfig
+	CORS                CORSConfig
+	ErrorLog            *log.Logger
+}
+
+// RateLimitConfig 定义单进程入口令牌桶；跨副本配额不在本契约范围。
+type RateLimitConfig struct {
+	RequestsPerSecond int
+	Burst             int
+}
+
+// CORSConfig 定义显式跨域 allowlist；空 origin 列表表示拒绝跨域。
+type CORSConfig struct {
+	AllowedOrigins []string
+	AllowedMethods []string
+	AllowedHeaders []string
 }
 
 type resolvedClientConfig struct {
@@ -48,11 +67,17 @@ type resolvedRouterConfig struct {
 }
 
 type resolvedServerConfig struct {
-	Addr              string
-	ReadHeaderTimeout time.Duration
-	ReadTimeout       time.Duration
-	WriteTimeout      time.Duration
-	IdleTimeout       time.Duration
-	MaxHeaderBytes    int
-	ErrorLog          *log.Logger
+	Addr                string
+	ReadHeaderTimeout   time.Duration
+	ReadTimeout         time.Duration
+	WriteTimeout        time.Duration
+	IdleTimeout         time.Duration
+	MaxHeaderBytes      int
+	RequestTimeout      time.Duration
+	MaxRequestBodyBytes int64
+	MaxInFlight         int
+	TrustedProxyCIDRs   []string
+	RateLimit           RateLimitConfig
+	CORS                CORSConfig
+	ErrorLog            *log.Logger
 }

@@ -15,11 +15,20 @@ import (
 type ActiveGeneration interface {
 	ID() uint64
 	Snapshot() config.Snapshot
+	ConfiguredAddress() string
 	BoundAddress() string
+	ActiveConnections() int64
 	ActiveRequests() int64
+	ResourceStats() GenerationResourceStats
 	Retire(context.Context) error
 	Stop(context.Context) error
 	ForceStop(context.Context) error
+}
+
+// GenerationResourceStats 描述当前代际显式复用和新建的 typed owner。
+type GenerationResourceStats struct {
+	Reused []string
+	Built  []string
 }
 
 // PreparedGeneration 是全部 Build/Ready 完成、但尚未发布的应用候选。
@@ -45,20 +54,31 @@ type generationFailureSource interface {
 
 // GenerationDiagnostics 是完整应用代际的脱敏运行状态。
 type GenerationDiagnostics struct {
-	State              LifecycleState
-	Ready              bool
-	Attempt            uint64
-	CurrentGeneration  uint64
-	RetiringGeneration uint64
-	ConfigDigest       string
-	ConfigProvenance   []string
-	ChangedSections    []string
-	Phase              string
-	BoundAddress       string
-	ActiveRequests     int64
-	CleanupRequired    bool
-	LastFailureType    string
-	Since              time.Time
+	State               LifecycleState
+	Ready               bool
+	Attempt             uint64
+	CurrentGeneration   uint64
+	CandidateGeneration uint64
+	RetiringGeneration  uint64
+	ConfigDigest        string
+	ConfigProvenance    []string
+	ChangedSections     []string
+	Phase               string
+	ConfiguredAddress   string
+	BoundAddress        string
+	RetiringAddress     string
+	ActiveConnections   int64
+	RetiringConnections int64
+	ActiveRequests      int64
+	RetiringRequests    int64
+	ResourceReused      []string
+	ResourceBuilt       []string
+	RestartPolicy       string
+	CleanupRequired     bool
+	LastFailurePhase    string
+	LastFailureOwner    string
+	LastFailureType     string
+	Since               time.Time
 }
 
 // GenerationReloadResult 描述一次完整应用候选的提交结果。
@@ -141,19 +161,21 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 
 	snapshot, err := c.loadCandidate(ctx)
 	if err != nil {
-		wrapped := fmt.Errorf("prepare application configuration: %w", err)
+		wrapped := generationOperationError("load", 0, err)
 		c.fail(LifecycleFailed, "load", wrapped)
 		return wrapped
 	}
 	prepared, err := c.prepare(ctx, snapshot, nil)
 	if err != nil {
-		c.fail(LifecycleFailed, "prepare", err)
-		return err
+		wrapped := generationOperationError("prepare", 0, err)
+		c.fail(LifecycleFailed, "prepare", wrapped)
+		return wrapped
 	}
+	c.setCandidate(prepared.ID())
 	active, err := prepared.Commit(nil)
 	if err != nil {
-		abortErr := prepared.Abort(context.WithoutCancel(ctx))
-		joined := errors.Join(fmt.Errorf("commit initial application generation: %w", err), abortErr)
+		abortErr := c.abortPrepared(ctx, prepared)
+		joined := generationOperationError("commit", prepared.ID(), errors.Join(err, abortErr))
 		c.fail(LifecycleFailed, "commit", joined)
 		return joined
 	}
@@ -194,14 +216,16 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 
 	snapshot, err := c.loadCandidate(ctx)
 	if err != nil {
-		c.reject("load", err)
-		return GenerationReloadResult{}, err
+		wrapped := generationOperationError("load", 0, err)
+		c.reject("load", wrapped)
+		return GenerationReloadResult{}, wrapped
 	}
 	previousSnapshot := previous.Snapshot()
 	changed, err := changedConfigSections(previousSnapshot, snapshot, c.bindings)
 	if err != nil {
-		c.reject("diff", err)
-		return GenerationReloadResult{}, err
+		wrapped := generationOperationError("diff", previous.ID(), err)
+		c.reject("diff", wrapped)
+		return GenerationReloadResult{}, wrapped
 	}
 	result := GenerationReloadResult{
 		PreviousGeneration: previous.ID(), CurrentGeneration: previous.ID(),
@@ -213,7 +237,11 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 		c.diagnostics.State = LifecycleRunning
 		c.diagnostics.Ready = true
 		c.diagnostics.Phase = "no-op"
+		c.diagnostics.CandidateGeneration = 0
 		c.diagnostics.ChangedSections = nil
+		c.diagnostics.LastFailurePhase = ""
+		c.diagnostics.LastFailureOwner = ""
+		c.diagnostics.LastFailureType = ""
 		c.diagnostics.Since = time.Now()
 		c.mu.Unlock()
 		return result, nil
@@ -222,13 +250,15 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 	c.setPhase("prepare", changed)
 	prepared, err := c.prepare(ctx, snapshot, previous)
 	if err != nil {
-		c.reject("prepare", err)
-		return result, err
+		wrapped := generationOperationError("prepare", 0, err)
+		c.reject("prepare", wrapped)
+		return result, wrapped
 	}
+	c.setCandidate(prepared.ID())
 	active, err := prepared.Commit(previous)
 	if err != nil {
-		abortErr := prepared.Abort(context.WithoutCancel(ctx))
-		joined := errors.Join(fmt.Errorf("commit application generation: %w", err), abortErr)
+		abortErr := c.abortPrepared(ctx, prepared)
+		joined := generationOperationError("commit", prepared.ID(), errors.Join(err, abortErr))
 		c.reject("commit", joined)
 		return result, joined
 	}
@@ -247,11 +277,13 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 	err = previous.Retire(retireCtx)
 	cancelRetire()
 	if err != nil {
-		committed := &CommittedCleanupError{Err: fmt.Errorf("retire application generation %d: %w", previous.ID(), err)}
+		committed := &CommittedCleanupError{Err: generationOperationError("retire", previous.ID(), err)}
 		c.mu.Lock()
 		c.diagnostics.State = LifecycleDegraded
 		c.diagnostics.Ready = false
 		c.diagnostics.CleanupRequired = true
+		c.diagnostics.LastFailurePhase = "retire"
+		c.diagnostics.LastFailureOwner = "application-generation"
 		c.diagnostics.LastFailureType = fmt.Sprintf("%T", err)
 		c.diagnostics.Phase = "cleanup-debt"
 		c.diagnostics.Since = time.Now()
@@ -261,6 +293,9 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 	c.mu.Lock()
 	c.retiring = nil
 	c.diagnostics.RetiringGeneration = 0
+	c.diagnostics.RetiringAddress = ""
+	c.diagnostics.RetiringConnections = 0
+	c.diagnostics.RetiringRequests = 0
 	c.diagnostics.Phase = "active"
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
@@ -307,14 +342,17 @@ func (c *GenerationCoordinator) Stop(ctx context.Context) error {
 	if joined != nil {
 		c.diagnostics.State = LifecycleFailed
 		c.diagnostics.CleanupRequired = true
+		c.diagnostics.LastFailurePhase = "shutdown"
+		c.diagnostics.LastFailureOwner = "application-generation"
 		c.diagnostics.LastFailureType = fmt.Sprintf("%T", joined)
+		c.diagnostics.Phase = "shutdown-failed"
 	} else {
 		c.current = nil
 		c.retiring = nil
 		c.diagnostics.State = LifecycleStopped
 		c.diagnostics.CleanupRequired = false
+		c.diagnostics.Phase = "stopped"
 	}
-	c.diagnostics.Phase = "stopped"
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
 	return joined
@@ -345,14 +383,17 @@ func (c *GenerationCoordinator) ForceStop(ctx context.Context) error {
 	if joined != nil {
 		c.diagnostics.State = LifecycleFailed
 		c.diagnostics.CleanupRequired = true
+		c.diagnostics.LastFailurePhase = "force-stop"
+		c.diagnostics.LastFailureOwner = "application-generation"
 		c.diagnostics.LastFailureType = fmt.Sprintf("%T", joined)
+		c.diagnostics.Phase = "force-stop-failed"
 	} else {
 		c.current = nil
 		c.retiring = nil
 		c.diagnostics.State = LifecycleStopped
 		c.diagnostics.CleanupRequired = false
+		c.diagnostics.Phase = "stopped"
 	}
-	c.diagnostics.Phase = "stopped"
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
 	return joined
@@ -441,9 +482,21 @@ func (c *GenerationCoordinator) Diagnostics() GenerationDiagnostics {
 	result := c.diagnostics
 	result.ConfigProvenance = append([]string(nil), result.ConfigProvenance...)
 	result.ChangedSections = append([]string(nil), result.ChangedSections...)
+	result.ResourceReused = append([]string(nil), result.ResourceReused...)
+	result.ResourceBuilt = append([]string(nil), result.ResourceBuilt...)
 	if c.current != nil {
 		result.ActiveRequests = c.current.ActiveRequests()
+		result.ActiveConnections = c.current.ActiveConnections()
+		result.ConfiguredAddress = c.current.ConfiguredAddress()
 		result.BoundAddress = c.current.BoundAddress()
+		stats := c.current.ResourceStats()
+		result.ResourceReused = append([]string(nil), stats.Reused...)
+		result.ResourceBuilt = append([]string(nil), stats.Built...)
+	}
+	if c.retiring != nil {
+		result.RetiringAddress = c.retiring.BoundAddress()
+		result.RetiringConnections = c.retiring.ActiveConnections()
+		result.RetiringRequests = c.retiring.ActiveRequests()
 	}
 	return result
 }
@@ -464,6 +517,12 @@ func (c *GenerationCoordinator) prepare(ctx context.Context, snapshot config.Sna
 	return c.factory.Prepare(operationCtx, snapshot, previous)
 }
 
+func (c *GenerationCoordinator) abortPrepared(ctx context.Context, prepared PreparedGeneration) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), c.options.ReloadTimeout)
+	defer cancel()
+	return prepared.Abort(cleanupCtx)
+}
+
 func (c *GenerationCoordinator) beginAttemptLocked(state LifecycleState, phase string) {
 	c.diagnostics.Attempt++
 	c.diagnostics.State = state
@@ -477,15 +536,30 @@ func (c *GenerationCoordinator) publishLocked(active ActiveGeneration, changed [
 	c.diagnostics.State = LifecycleRunning
 	c.diagnostics.Ready = true
 	c.diagnostics.CurrentGeneration = active.ID()
+	c.diagnostics.CandidateGeneration = 0
 	c.diagnostics.ConfigDigest = snapshot.Digest()
 	c.diagnostics.ConfigProvenance = snapshot.Provenance()
 	c.diagnostics.ChangedSections = append([]string(nil), changed...)
+	c.diagnostics.ConfiguredAddress = active.ConfiguredAddress()
 	c.diagnostics.BoundAddress = active.BoundAddress()
+	c.diagnostics.ActiveConnections = active.ActiveConnections()
 	c.diagnostics.ActiveRequests = active.ActiveRequests()
+	stats := active.ResourceStats()
+	c.diagnostics.ResourceReused = append([]string(nil), stats.Reused...)
+	c.diagnostics.ResourceBuilt = append([]string(nil), stats.Built...)
+	c.diagnostics.RestartPolicy = ""
 	c.diagnostics.CleanupRequired = false
+	c.diagnostics.LastFailurePhase = ""
+	c.diagnostics.LastFailureOwner = ""
 	c.diagnostics.LastFailureType = ""
 	c.diagnostics.Phase = "active"
 	c.diagnostics.Since = time.Now()
+}
+
+func (c *GenerationCoordinator) setCandidate(id uint64) {
+	c.mu.Lock()
+	c.diagnostics.CandidateGeneration = id
+	c.mu.Unlock()
 }
 
 func (c *GenerationCoordinator) setPhase(phase string, changed []string) {
@@ -501,6 +575,9 @@ func (c *GenerationCoordinator) reject(phase string, err error) {
 	c.diagnostics.State = LifecycleRunning
 	c.diagnostics.Ready = true
 	c.diagnostics.Phase = "rejected:" + phase
+	c.diagnostics.CandidateGeneration = 0
+	c.diagnostics.LastFailurePhase = phase
+	c.diagnostics.LastFailureOwner = "application-generation"
 	c.diagnostics.LastFailureType = fmt.Sprintf("%T", err)
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
@@ -511,6 +588,9 @@ func (c *GenerationCoordinator) fail(state LifecycleState, phase string, err err
 	c.diagnostics.State = state
 	c.diagnostics.Ready = false
 	c.diagnostics.Phase = phase
+	c.diagnostics.CandidateGeneration = 0
+	c.diagnostics.LastFailurePhase = phase
+	c.diagnostics.LastFailureOwner = "application-generation"
 	c.diagnostics.LastFailureType = fmt.Sprintf("%T", err)
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
@@ -537,6 +617,15 @@ func changedConfigSections(previous, candidate config.Snapshot, bindings []confi
 		}
 	}
 	return changed, nil
+}
+
+func generationOperationError(phase string, generation uint64, err error) error {
+	if err == nil {
+		return nil
+	}
+	return &GenerationOperationError{
+		Phase: phase, Owner: "application-generation", Generation: generation, Err: err,
+	}
 }
 
 var _ interface {

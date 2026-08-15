@@ -140,14 +140,17 @@ http:
 					continue
 				}
 				var missingTypePayload struct {
-					Error   string `json:"error"`
-					Message string `json:"message"`
+					Type   string `json:"type"`
+					Status int    `json:"status"`
+					Code   string `json:"code"`
+					Detail string `json:"detail"`
 				}
 				decodeErr := json.NewDecoder(missingTypeResponse.Body).Decode(&missingTypePayload)
 				missingTypeResponse.Body.Close()
 				if missingTypeResponse.StatusCode != http.StatusUnsupportedMediaType || decodeErr != nil ||
-					missingTypePayload.Error != "todo_unsupported_media_type" ||
-					missingTypePayload.Message != "Todo 创建请求必须使用 application/json" {
+					missingTypePayload.Status != missingTypeResponse.StatusCode ||
+					missingTypePayload.Code != "unsupported_media_type" ||
+					missingTypePayload.Type != "urn:go-scaffold-template:problem:unsupported_media_type" {
 					cancel()
 					<-done
 					t.Fatalf("missing Content-Type response = %d %#v, decodeErr=%v", missingTypeResponse.StatusCode, missingTypePayload, decodeErr)

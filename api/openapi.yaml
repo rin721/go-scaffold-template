@@ -1,0 +1,275 @@
+openapi: 3.0.3
+info:
+  title: go-scaffold-template HTTP API
+  version: 1.0.0-rc.1
+  description: |
+    当前模板的公开 HTTP 契约。所有失败使用 RFC 9457 Problem Details；
+    Todo operation 在安全检查点完成前明确标记为 public，后续会单轨切换为 protected policy。
+tags:
+  - name: Todo
+    description: Todo 示例资源。
+paths:
+  /api/v1/todos:
+    post:
+      operationId: createTodo
+      summary: 创建 Todo
+      tags: [Todo]
+      security: []
+      x-policy: public
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateTodoRequest'
+      responses:
+        '201':
+          description: Todo 已创建。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '415':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '504':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+    get:
+      operationId: listTodos
+      summary: 查询 Todo 列表
+      tags: [Todo]
+      security: []
+      x-policy: public
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/TodoStatus'
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        '200':
+          description: Todo 列表。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TodoList'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '504':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/v1/todos/{id}:
+    parameters:
+      - $ref: '#/components/parameters/TodoID'
+    get:
+      operationId: getTodo
+      summary: 读取 Todo
+      tags: [Todo]
+      security: []
+      x-policy: public
+      responses:
+        '200':
+          description: Todo 详情。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '504':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+  /api/v1/todos/{id}/complete:
+    parameters:
+      - $ref: '#/components/parameters/TodoID'
+    patch:
+      operationId: completeTodo
+      summary: 完成 Todo
+      tags: [Todo]
+      security: []
+      x-policy: public
+      responses:
+        '200':
+          description: 已完成的 Todo。
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Todo'
+        '400':
+          $ref: '#/components/responses/Problem'
+        '404':
+          $ref: '#/components/responses/Problem'
+        '409':
+          $ref: '#/components/responses/Problem'
+        '429':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '500':
+          $ref: '#/components/responses/Problem'
+        '503':
+          $ref: '#/components/responses/ProblemWithRetryAfter'
+        '504':
+          $ref: '#/components/responses/Problem'
+        default:
+          $ref: '#/components/responses/Problem'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    TodoID:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        minLength: 1
+        maxLength: 128
+  responses:
+    Problem:
+      description: RFC 9457 Problem Details。
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+    ProblemWithRetryAfter:
+      description: 可重试的 RFC 9457 Problem Details。
+      headers:
+        Retry-After:
+          description: 建议客户端等待的秒数。
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    CreateTodoRequest:
+      type: object
+      additionalProperties: false
+      required: [title]
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 200
+    TodoStatus:
+      type: string
+      enum: [pending, completed]
+    Todo:
+      type: object
+      additionalProperties: false
+      required: [id, title, status, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/TodoStatus'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+          nullable: true
+    TodoList:
+      type: object
+      additionalProperties: false
+      required: [items, offset, limit, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Todo'
+        offset:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        total:
+          type: integer
+          format: int64
+          minimum: 0
+    Problem:
+      type: object
+      additionalProperties: false
+      required: [type, title, status, code]
+      properties:
+        type:
+          type: string
+          format: uri-reference
+        title:
+          type: string
+        status:
+          type: integer
+          minimum: 400
+          maximum: 599
+        detail:
+          type: string
+        instance:
+          type: string
+          format: uri-reference
+        code:
+          type: string
+          pattern: '^[a-z][a-z0-9_]{0,63}$'
+        violations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Violation'
+    Violation:
+      type: object
+      additionalProperties: false
+      required: [field, reason]
+      properties:
+        field:
+          type: string
+        reason:
+          type: string

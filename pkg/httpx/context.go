@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -49,6 +50,10 @@ func (c *Context) BindJSON(out any) error {
 		return &StatusError{StatusCode: http.StatusBadRequest, Code: errorCodeInvalidJSON, Message: "json decode target is nil"}
 	}
 	if err := json.NewDecoder(c.Request.Body).Decode(out); err != nil {
+		var maxBytes *http.MaxBytesError
+		if errors.As(err, &maxBytes) {
+			return &StatusError{StatusCode: http.StatusRequestEntityTooLarge, Code: "request_body_too_large", Message: "request body exceeds the configured limit", Err: err}
+		}
 		return &StatusError{StatusCode: http.StatusBadRequest, Code: errorCodeInvalidJSON, Message: "invalid json request body", Err: err}
 	}
 	return nil

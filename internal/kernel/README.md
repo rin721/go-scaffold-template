@@ -136,6 +136,8 @@ Service 使用 `GenerationCoordinator -> GenerationFactory -> typed resource poo
 5. commit 切换 route 与 process logger target，旧 route 停止接收新连接；旧 Server 排空后按 Storage、I18n、Cache、Database、Logger 反向释放引用；
 6. candidate 失败反向 Abort 且 current 不变；提交后清理失败形成 cleanup debt、撤销 readiness 并 fail-closed。
 
+`GenerationDiagnostics` 动态读取 current/retiring generation 的 configured、bound 与 retiring address、active connections/requests，并记录 typed resource 的 build/reuse、changed sections、failure phase/owner/type。长期 Service 的 `RestartPolicy` 恒为空；诊断不保存配置值、原始错误文本或凭据。
+
 `WatchFiles` 监听配置文件父目录，Write/Create/Rename/Remove 经防抖后只投递容量一的 latest-wins 通知。GenerationCoordinator 串行加载和提交；非法候选上报后 watcher 继续工作。普通同步 HTTP 连接固定一个 generation；当前没有 TLS/HTTP3、WebSocket、SSE 或 hijacked connection 的跨代保证。
 
 Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。每个 object scope 的大小写等价 key 必须唯一；object/object 递归合并，scalar/array/null 组成的 non-object 由高优先级 Source 整体替换，object 与 non-object 任一方向改形状都会在 Snapshot 产生前失败。同一 EnvSource 还会确定性拒绝重复逻辑路径、大小写别名、空 segment 和祖先/后代路径，错误只携带 Source、路径与类别，不输出配置值。

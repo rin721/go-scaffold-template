@@ -66,10 +66,15 @@ type testGeneration struct {
 	abortCalls     int
 }
 
-func (g *testGeneration) ID() uint64                                        { return g.id }
-func (g *testGeneration) Snapshot() config.Snapshot                         { return g.snapshot }
-func (*testGeneration) BoundAddress() string                                { return "127.0.0.1:8080" }
-func (*testGeneration) ActiveRequests() int64                               { return 0 }
+func (g *testGeneration) ID() uint64                { return g.id }
+func (g *testGeneration) Snapshot() config.Snapshot { return g.snapshot }
+func (*testGeneration) ConfiguredAddress() string   { return "127.0.0.1:8080" }
+func (*testGeneration) BoundAddress() string        { return "127.0.0.1:8080" }
+func (*testGeneration) ActiveConnections() int64    { return 0 }
+func (*testGeneration) ActiveRequests() int64       { return 0 }
+func (*testGeneration) ResourceStats() GenerationResourceStats {
+	return GenerationResourceStats{Built: []string{"test"}}
+}
 func (g *testGeneration) Commit(ActiveGeneration) (ActiveGeneration, error) { return g, nil }
 
 func (g *testGeneration) Abort(context.Context) error {
@@ -126,6 +131,11 @@ func TestGenerationCoordinatorPrepareFailurePreservesCurrent(t *testing.T) {
 	source.set(map[string]any{"app": map[string]any{"version": "v2"}})
 	if _, err := coordinator.Reload(t.Context()); err == nil {
 		t.Fatal("Reload() error = nil, want prepare failure")
+	} else {
+		var operationErr *GenerationOperationError
+		if !errors.As(err, &operationErr) || operationErr.Phase != "prepare" || operationErr.Owner != "application-generation" || !errors.Is(err, factory.prepareErr) {
+			t.Fatalf("Reload() error = %#v", err)
+		}
 	}
 	diagnostics := coordinator.Diagnostics()
 	if diagnostics.CurrentGeneration != 1 || diagnostics.ConfigDigest != factory.generation(0).snapshot.Digest() {
@@ -153,7 +163,8 @@ func TestGenerationCoordinatorRetireFailureCreatesCleanupDebt(t *testing.T) {
 		t.Fatalf("Reload() result = %+v", result)
 	}
 	diagnostics := coordinator.Diagnostics()
-	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.CleanupRequired || diagnostics.RetiringGeneration != 1 {
+	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.CleanupRequired || diagnostics.RetiringGeneration != 1 ||
+		diagnostics.RetiringAddress == "" || diagnostics.LastFailurePhase != "retire" || diagnostics.LastFailureOwner != "application-generation" {
 		t.Fatalf("Diagnostics() = %+v", diagnostics)
 	}
 	if _, err := coordinator.Reload(t.Context()); err == nil {

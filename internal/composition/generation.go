@@ -23,6 +23,7 @@ import (
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
 	"github.com/rin721/go-scaffold-template/pkg/idgen"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 	"github.com/rin721/go-scaffold-template/pkg/validation"
 )
 
@@ -51,20 +52,24 @@ type applicationGeneration struct {
 	i18n     *resourceHandle[i18n.Translator]
 	storage  *resourceHandle[storageapp.Access]
 
-	module  todo.Module
-	route   *httpx.PreparedRoute
-	server  *httpx.Server
-	runDone chan struct{}
-	runErr  error
+	module       todo.Module
+	participants []supervisor.Participant
+	route        *httpx.PreparedRoute
+	server       *httpx.Server
+	runDone      chan struct{}
+	runErr       error
 
-	activeRequests atomic.Int64
-	stopping       atomic.Bool
-	settleMu       sync.Mutex
-	mu             sync.Mutex
-	committed      bool
-	current        bool
-	settled        bool
-	terminalErr    error
+	activeRequests      atomic.Int64
+	resourceStats       kernel.GenerationResourceStats
+	stopping            atomic.Bool
+	settleMu            sync.Mutex
+	participantStopDone bool
+	participantStopErr  error
+	mu                  sync.Mutex
+	committed           bool
+	current             bool
+	settled             bool
+	terminalErr         error
 }
 
 func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicationGenerationFactory, error) {
@@ -108,7 +113,8 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
-	generation.logger, _, err = f.loggerPool.acquire(ctx, loggerDigest, func(ctx context.Context) (logger.Logger, func(context.Context) error, error) {
+	var reused bool
+	generation.logger, reused, err = f.loggerPool.acquire(ctx, loggerDigest, func(ctx context.Context) (logger.Logger, func(context.Context) error, error) {
 		component, buildErr := startImmutableLogger(ctx, snapshot, f.logging)
 		if buildErr != nil {
 			return nil, nil, buildErr
@@ -118,12 +124,13 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.recordResource("logger", reused)
 
 	databaseDigest, err := snapshot.SectionDigest("database")
 	if err != nil {
 		return abort(err)
 	}
-	generation.database, _, err = f.databasePool.acquire(ctx, databaseDigest, func(ctx context.Context) (databaseapp.Access, func(context.Context) error, error) {
+	generation.database, reused, err = f.databasePool.acquire(ctx, databaseDigest, func(ctx context.Context) (databaseapp.Access, func(context.Context) error, error) {
 		definition, buildErr := databaseDefinition()
 		if buildErr != nil {
 			return nil, nil, buildErr
@@ -137,12 +144,13 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.recordResource("database", reused)
 
 	cacheDigest, err := snapshot.SectionDigest("cache")
 	if err != nil {
 		return abort(err)
 	}
-	generation.cache, _, err = f.cachePool.acquire(ctx, cacheDigest, func(ctx context.Context) (cacheapp.Access, func(context.Context) error, error) {
+	generation.cache, reused, err = f.cachePool.acquire(ctx, cacheDigest, func(ctx context.Context) (cacheapp.Access, func(context.Context) error, error) {
 		definition, buildErr := cacheDefinition()
 		if buildErr != nil {
 			return nil, nil, buildErr
@@ -156,12 +164,13 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.recordResource("cache", reused)
 
 	i18nDigest, err := snapshot.SectionDigest("i18n")
 	if err != nil {
 		return abort(err)
 	}
-	generation.i18n, _, err = f.i18nPool.acquire(ctx, i18nDigest, func(ctx context.Context) (i18n.Translator, func(context.Context) error, error) {
+	generation.i18n, reused, err = f.i18nPool.acquire(ctx, i18nDigest, func(ctx context.Context) (i18n.Translator, func(context.Context) error, error) {
 		definition, buildErr := i18nDefinition()
 		if buildErr != nil {
 			return nil, nil, buildErr
@@ -175,12 +184,13 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.recordResource("i18n", reused)
 
 	storageDigest, err := snapshot.SectionDigest("storage")
 	if err != nil {
 		return abort(err)
 	}
-	generation.storage, _, err = f.storagePool.acquire(ctx, storageDigest, func(ctx context.Context) (storageapp.Access, func(context.Context) error, error) {
+	generation.storage, reused, err = f.storagePool.acquire(ctx, storageDigest, func(ctx context.Context) (storageapp.Access, func(context.Context) error, error) {
 		definition, buildErr := storageDefinition()
 		if buildErr != nil {
 			return nil, nil, buildErr
@@ -194,6 +204,7 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.recordResource("storage", reused)
 
 	todoConfig, err := configbinding.Decode(snapshot)
 	if err != nil {
@@ -210,16 +221,18 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.module, err = todo.New(todo.Dependencies{
 		Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
-		I18n: generation.i18n.value(), Config: todoConfig,
+		Config: todoConfig,
 	})
 	if err != nil {
 		return abort(err)
 	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "todo")
 	if previous == nil {
 		for _, participant := range generation.module.Contribution.Participants {
 			if err := participant.Start(ctx); err != nil {
 				return abort(fmt.Errorf("start initial generation participant %s: %w", participant.Name(), err))
 			}
+			generation.participants = append(generation.participants, participant)
 		}
 	}
 
@@ -231,7 +244,7 @@ func (f *applicationGenerationFactory) Prepare(
 		Logger: generation.logger.value(), Clock: clock.System(), IDGenerator: idgen.UUID(), Validator: validation.New(),
 		Database: generation.database.value(), Cache: generation.cache.value(),
 		I18n: generation.i18n.value(), Storage: generation.storage.value(),
-	}, generation.module.Contribution)
+	}, httpConfig, generation.module.Service)
 	if err != nil {
 		return abort(err)
 	}
@@ -243,6 +256,7 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "http")
 	if err := generation.server.StartWithListener(ctx, generation.route.Listener()); err != nil {
 		return abort(err)
 	}
@@ -278,6 +292,13 @@ func (g *applicationGeneration) ID() uint64 { return g.id }
 
 func (g *applicationGeneration) Snapshot() config.Snapshot { return g.snapshot }
 
+func (g *applicationGeneration) ConfiguredAddress() string {
+	if g.route == nil {
+		return ""
+	}
+	return g.route.ConfiguredAddress()
+}
+
 func (g *applicationGeneration) BoundAddress() string {
 	if g.route == nil || g.route.BoundAddress() == nil {
 		return ""
@@ -286,6 +307,28 @@ func (g *applicationGeneration) BoundAddress() string {
 }
 
 func (g *applicationGeneration) ActiveRequests() int64 { return g.activeRequests.Load() }
+
+func (g *applicationGeneration) ActiveConnections() int64 {
+	if g.route == nil {
+		return 0
+	}
+	return g.route.ActiveConnections()
+}
+
+func (g *applicationGeneration) ResourceStats() kernel.GenerationResourceStats {
+	return kernel.GenerationResourceStats{
+		Reused: append([]string(nil), g.resourceStats.Reused...),
+		Built:  append([]string(nil), g.resourceStats.Built...),
+	}
+}
+
+func (g *applicationGeneration) recordResource(owner string, reused bool) {
+	if reused {
+		g.resourceStats.Reused = append(g.resourceStats.Reused, owner)
+		return
+	}
+	g.resourceStats.Built = append(g.resourceStats.Built, owner)
+}
 
 func (g *applicationGeneration) Commit(previous kernel.ActiveGeneration) (kernel.ActiveGeneration, error) {
 	g.mu.Lock()
@@ -350,6 +393,7 @@ func (g *applicationGeneration) abort(ctx context.Context) error {
 	if g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Abort(g.route))
 	}
+	joined = errors.Join(joined, g.stopParticipants(ctx))
 	joined = errors.Join(joined, releaseGenerationResources(
 		ctx, g.storage, g.i18n, g.cache, g.database, g.logger,
 	))
@@ -400,6 +444,9 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 	if joined == nil && g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Release(g.route))
 	}
+	if joined == nil {
+		joined = errors.Join(joined, g.stopParticipants(ctx))
+	}
 	terminal := false
 	if joined == nil {
 		terminal = true
@@ -443,6 +490,9 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 	}
 	if joined == nil && g.route != nil {
 		joined = errors.Join(joined, g.factory.hub.Release(g.route))
+	}
+	if joined == nil {
+		joined = errors.Join(joined, g.stopParticipants(ctx))
 	}
 	terminal := false
 	if joined == nil {
@@ -488,6 +538,25 @@ func (g *applicationGeneration) serverRunError() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.runErr
+}
+
+func (g *applicationGeneration) stopParticipants(ctx context.Context) error {
+	if g.participantStopDone {
+		return g.participantStopErr
+	}
+	g.participantStopDone = true
+	var joined error
+	for index := len(g.participants) - 1; index >= 0; index-- {
+		participant := g.participants[index]
+		if participant == nil {
+			continue
+		}
+		if err := participant.Stop(ctx); err != nil {
+			joined = errors.Join(joined, fmt.Errorf("stop generation participant %s: %w", participant.Name(), err))
+		}
+	}
+	g.participantStopErr = joined
+	return g.participantStopErr
 }
 
 func (g *applicationGeneration) trackRequests(next http.Handler) http.Handler {

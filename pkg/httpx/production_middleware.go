@@ -2,8 +2,12 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -14,6 +18,9 @@ import (
 const headerRequestID = "X-Request-ID"
 
 type requestIDContextKey struct{}
+type operationIDContextKey struct{}
+
+var requestIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 
 // RequestIDFromContext 读取 RequestID 中间件写入的 request id。
 func RequestIDFromContext(ctx context.Context) (string, bool) {
@@ -21,6 +28,23 @@ func RequestIDFromContext(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	value, ok := ctx.Value(requestIDContextKey{}).(string)
+	return value, ok && value != ""
+}
+
+// WithOperationID 把生成 inventory 中的稳定 operationId 写入请求上下文。
+func WithOperationID(ctx context.Context, operationID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, operationIDContextKey{}, operationID)
+}
+
+// OperationIDFromContext 读取 strict transport 写入的稳定 operationId。
+func OperationIDFromContext(ctx context.Context) (string, bool) {
+	if ctx == nil {
+		return "", false
+	}
+	value, ok := ctx.Value(operationIDContextKey{}).(string)
 	return value, ok && value != ""
 }
 
@@ -49,7 +73,7 @@ func RequestID(generator idgen.Generator) Middleware {
 	return func(next Handler) Handler {
 		return func(ctx *Context) error {
 			requestID := ctx.Request.Header.Get(headerRequestID)
-			if requestID == "" {
+			if !requestIDPattern.MatchString(requestID) {
 				generated, err := generator.New()
 				if err != nil {
 					return err
@@ -63,7 +87,7 @@ func RequestID(generator idgen.Generator) Middleware {
 	}
 }
 
-// AccessLog 记录请求方法、路径、耗时和 request id。
+// AccessLog 记录稳定 operation、请求方法、耗时和 request id，不记录原始 URL。
 func AccessLog(log logger.Logger) Middleware {
 	return func(next Handler) Handler {
 		return func(ctx *Context) error {
@@ -72,8 +96,10 @@ func AccessLog(log logger.Logger) Middleware {
 			if log != nil {
 				fields := []logger.Field{
 					logger.String("method", ctx.Request.Method),
-					logger.String("path", ctx.Request.URL.Path),
 					logger.Duration("duration", time.Since(startedAt)),
+				}
+				if operationID, ok := OperationIDFromContext(ctx.Request.Context()); ok {
+					fields = append(fields, logger.String("operation", operationID))
 				}
 				if requestID, ok := RequestIDFromContext(ctx.Request.Context()); ok {
 					fields = append(fields, logger.String("request_id", requestID))
@@ -103,36 +129,55 @@ func SecureHeaders() Middleware {
 	}
 }
 
-// CORSConfig 定义 CORS 策略。
-type CORSConfig struct {
-	AllowOrigin  string
-	AllowMethods string
-	AllowHeaders string
-}
-
-// CORS 写入受控 CORS 响应头。
+// CORS 只允许显式 origin/method/header；空 origin allowlist 表示拒绝跨域。
 func CORS(cfg CORSConfig) Middleware {
-	if cfg.AllowOrigin == "" {
-		cfg.AllowOrigin = "*"
-	}
-	if cfg.AllowMethods == "" {
-		cfg.AllowMethods = "GET,POST,PUT,PATCH,DELETE,OPTIONS"
-	}
-	if cfg.AllowHeaders == "" {
-		cfg.AllowHeaders = "Content-Type,Authorization,X-Request-ID"
-	}
+	origins := stringSet(cfg.AllowedOrigins, false)
+	methods := stringSet(cfg.AllowedMethods, true)
+	headers := stringSet(cfg.AllowedHeaders, true)
 	return func(next Handler) Handler {
 		return func(ctx *Context) error {
+			origin := ctx.Request.Header.Get("Origin")
+			if origin == "" {
+				return next(ctx)
+			}
+			if _, allowed := origins[origin]; !allowed {
+				return &StatusError{StatusCode: http.StatusForbidden, Code: "cors_origin_denied", Message: "cross-origin request is not allowed"}
+			}
 			header := ctx.ResponseWriter.Header()
-			header.Set("Access-Control-Allow-Origin", cfg.AllowOrigin)
-			header.Set("Access-Control-Allow-Methods", cfg.AllowMethods)
-			header.Set("Access-Control-Allow-Headers", cfg.AllowHeaders)
+			header.Add("Vary", "Origin")
+			header.Set("Access-Control-Allow-Origin", origin)
 			if ctx.Request.Method == string(MethodOptions) {
+				requestedMethod := strings.ToUpper(ctx.Request.Header.Get("Access-Control-Request-Method"))
+				if _, allowed := methods[requestedMethod]; !allowed {
+					return &StatusError{StatusCode: http.StatusForbidden, Code: "cors_method_denied", Message: "cross-origin method is not allowed"}
+				}
+				for _, requestedHeader := range strings.Split(ctx.Request.Header.Get("Access-Control-Request-Headers"), ",") {
+					requestedHeader = strings.ToUpper(strings.TrimSpace(requestedHeader))
+					if requestedHeader == "" {
+						continue
+					}
+					if _, allowed := headers[requestedHeader]; !allowed {
+						return &StatusError{StatusCode: http.StatusForbidden, Code: "cors_header_denied", Message: "cross-origin header is not allowed"}
+					}
+				}
+				header.Set("Access-Control-Allow-Methods", strings.Join(cfg.AllowedMethods, ","))
+				header.Set("Access-Control-Allow-Headers", strings.Join(cfg.AllowedHeaders, ","))
 				return ctx.NoContent(http.StatusNoContent)
 			}
 			return next(ctx)
 		}
 	}
+}
+
+func stringSet(values []string, uppercase bool) map[string]struct{} {
+	result := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if uppercase {
+			value = strings.ToUpper(value)
+		}
+		result[value] = struct{}{}
+	}
+	return result
 }
 
 // BodyLimit 限制请求体大小。
@@ -143,6 +188,115 @@ func BodyLimit(maxBytes int64) Middleware {
 				return next(ctx)
 			}
 			ctx.Request.Body = http.MaxBytesReader(ctx.ResponseWriter, ctx.Request.Body, maxBytes)
+			return next(ctx)
+		}
+	}
+}
+
+// RequestTimeout 为每个请求建立有界 application deadline。
+func RequestTimeout(timeout time.Duration) Middleware {
+	return func(next Handler) Handler {
+		return func(ctx *Context) error {
+			if timeout <= 0 {
+				return next(ctx)
+			}
+			requestCtx, cancel := context.WithTimeout(ctx.Request.Context(), timeout)
+			defer cancel()
+			ctx.Request = ctx.Request.WithContext(requestCtx)
+			err := next(ctx)
+			if errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+				return &StatusError{StatusCode: http.StatusGatewayTimeout, Code: "request_timeout", Message: "request deadline exceeded", Err: errors.Join(err, requestCtx.Err())}
+			}
+			return err
+		}
+	}
+}
+
+type clientIPContextKey struct{}
+
+// ClientIPFromContext 返回经过 trusted proxy policy 解析的客户端地址。
+func ClientIPFromContext(ctx context.Context) (net.IP, bool) {
+	if ctx == nil {
+		return nil, false
+	}
+	value, ok := ctx.Value(clientIPContextKey{}).(net.IP)
+	return append(net.IP(nil), value...), ok && value != nil
+}
+
+// TrustedProxy 只在直连 peer 命中显式 CIDR 时采用 X-Forwarded-For 首地址。
+func TrustedProxy(cidrs []string) (Middleware, error) {
+	networks := make([]*net.IPNet, 0, len(cidrs))
+	for _, value := range cidrs {
+		_, network, err := net.ParseCIDR(value)
+		if err != nil {
+			return nil, fmt.Errorf("parse trusted proxy CIDR %q: %w", value, err)
+		}
+		networks = append(networks, network)
+	}
+	return func(next Handler) Handler {
+		return func(ctx *Context) error {
+			peer := remoteIP(ctx.Request.RemoteAddr)
+			client := peer
+			if containsIP(networks, peer) {
+				forwarded := strings.Split(ctx.Request.Header.Get("X-Forwarded-For"), ",")[0]
+				if parsed := net.ParseIP(strings.TrimSpace(forwarded)); parsed != nil {
+					client = parsed
+				}
+			}
+			ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), clientIPContextKey{}, client))
+			return next(ctx)
+		}
+	}, nil
+}
+
+func remoteIP(address string) net.IP {
+	host, _, err := net.SplitHostPort(address)
+	if err == nil {
+		return net.ParseIP(host)
+	}
+	return net.ParseIP(address)
+}
+
+func containsIP(networks []*net.IPNet, value net.IP) bool {
+	for _, network := range networks {
+		if value != nil && network.Contains(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// AcceptJSON 拒绝无法接收 JSON 或 Problem Details 的显式 Accept。
+func AcceptJSON() Middleware {
+	return func(next Handler) Handler {
+		return func(ctx *Context) error {
+			accept := ctx.Request.Header.Get("Accept")
+			if accept == "" || acceptsJSON(accept) {
+				return next(ctx)
+			}
+			return &StatusError{StatusCode: http.StatusNotAcceptable, Code: "not_acceptable", Message: "response representation is not acceptable"}
+		}
+	}
+}
+
+func acceptsJSON(value string) bool {
+	for _, item := range strings.Split(value, ",") {
+		mediaType := strings.TrimSpace(strings.SplitN(item, ";", 2)[0])
+		switch mediaType {
+		case "*/*", "application/*", "application/json", problemContentType:
+			return true
+		}
+	}
+	return false
+}
+
+// RejectUpgrade 确定性拒绝当前同步 HTTP profile 未治理的升级连接。
+func RejectUpgrade() Middleware {
+	return func(next Handler) Handler {
+		return func(ctx *Context) error {
+			if ctx.Request.Header.Get("Upgrade") != "" || strings.Contains(strings.ToLower(ctx.Request.Header.Get("Connection")), "upgrade") {
+				return &StatusError{StatusCode: http.StatusUpgradeRequired, Code: "upgrade_not_supported", Message: "connection upgrade is not supported"}
+			}
 			return next(ctx)
 		}
 	}
@@ -159,13 +313,21 @@ type RateLimiter struct {
 
 // NewRateLimiter 创建不持有后台 goroutine 的入口限流器。
 func NewRateLimiter(tokensPerSecond int) *RateLimiter {
+	return NewRateLimiterWithBurst(tokensPerSecond, tokensPerSecond)
+}
+
+// NewRateLimiterWithBurst 创建显式速率和突发容量的无 goroutine 令牌桶。
+func NewRateLimiterWithBurst(tokensPerSecond, burst int) *RateLimiter {
 	if tokensPerSecond <= 0 {
 		tokensPerSecond = 1
 	}
+	if burst <= 0 {
+		burst = tokensPerSecond
+	}
 	rate := float64(tokensPerSecond)
 	return &RateLimiter{
-		tokens:          rate,
-		capacity:        rate,
+		tokens:          float64(burst),
+		capacity:        float64(burst),
 		tokensPerSecond: rate,
 		lastRefill:      time.Now(),
 	}
@@ -200,9 +362,38 @@ func (r *RateLimiter) Middleware() Middleware {
 				return ctx.Request.Context().Err()
 			}
 			if !r.allow(time.Now()) {
-				return &StatusError{StatusCode: http.StatusTooManyRequests, Code: "rate_limited", Message: "too many requests"}
+				return &StatusError{StatusCode: http.StatusTooManyRequests, Code: "rate_limited", Message: "request quota exceeded", RetryAfter: 1}
 			}
 			return next(ctx)
+		}
+	}
+}
+
+// OverloadLimiter 以非阻塞 semaphore 限制单进程 in-flight 请求。
+type OverloadLimiter struct{ slots chan struct{} }
+
+// NewOverloadLimiter 创建不启动后台 goroutine 的并发门禁。
+func NewOverloadLimiter(maxInFlight int) *OverloadLimiter {
+	if maxInFlight <= 0 {
+		maxInFlight = 1
+	}
+	return &OverloadLimiter{slots: make(chan struct{}, maxInFlight)}
+}
+
+// Middleware 在容量耗尽时返回 503，不排队占用未知预算。
+func (l *OverloadLimiter) Middleware() Middleware {
+	if l == nil {
+		l = NewOverloadLimiter(1)
+	}
+	return func(next Handler) Handler {
+		return func(ctx *Context) error {
+			select {
+			case l.slots <- struct{}{}:
+				defer func() { <-l.slots }()
+				return next(ctx)
+			default:
+				return &StatusError{StatusCode: http.StatusServiceUnavailable, Code: "server_overloaded", Message: "server is overloaded", RetryAfter: 1}
+			}
 		}
 	}
 }

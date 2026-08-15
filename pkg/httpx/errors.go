@@ -11,6 +11,7 @@ type StatusError struct {
 	StatusCode  int
 	Code        string
 	Message     string
+	RetryAfter  int
 	BodySnippet string
 	Err         error
 }

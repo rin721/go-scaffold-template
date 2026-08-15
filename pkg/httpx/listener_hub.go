@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"sync/atomic"
 )
 
 const defaultListenerRouteCapacity = 64
@@ -49,8 +50,10 @@ type listenerEntry struct {
 type generationListener struct {
 	address net.Addr
 	queue   chan net.Conn
+	active  atomic.Int64
 
 	mu          sync.Mutex
+	pending     int
 	retiring    bool
 	closed      bool
 	drained     chan struct{}
@@ -286,6 +289,18 @@ func (h *ListenerHub) Stop(ctx context.Context) error {
 	entries := make([]*listenerEntry, 0, len(h.entries))
 	for _, entry := range h.entries {
 		entries = append(entries, entry)
+		entry.mu.Lock()
+		active := entry.active
+		retiring := entry.retiring
+		entry.active = nil
+		entry.retiring = nil
+		entry.mu.Unlock()
+		if active != nil {
+			_ = active.Close()
+		}
+		if retiring != nil && retiring != active {
+			_ = retiring.Close()
+		}
 		entry.stopEntry()
 	}
 	h.entries = make(map[string]*listenerEntry)
@@ -358,13 +373,13 @@ func (e *listenerEntry) run() {
 			target = e.retiring
 		}
 		e.mu.Unlock()
-		if target == nil {
+		reserved := target != nil && target.reserve()
+		e.dispatchMu.Unlock()
+		if !reserved {
 			_ = connection.Close()
-			e.dispatchMu.Unlock()
 			continue
 		}
-		err = target.dispatch(connection, e.stop)
-		e.dispatchMu.Unlock()
+		err = target.dispatchReserved(connection)
 		if err != nil {
 			_ = connection.Close()
 		}
@@ -388,8 +403,8 @@ func (l *generationListener) Accept() (net.Conn, error) {
 	for {
 		select {
 		case connection := <-l.queue:
-			l.markDrainedIfNeeded()
-			return connection, nil
+			l.completePending()
+			return l.track(connection), nil
 		default:
 		}
 		l.mu.Lock()
@@ -400,8 +415,8 @@ func (l *generationListener) Accept() (net.Conn, error) {
 		}
 		select {
 		case connection := <-l.queue:
-			l.markDrainedIfNeeded()
-			return connection, nil
+			l.completePending()
+			return l.track(connection), nil
 		case <-l.closeSignal:
 		}
 	}
@@ -410,13 +425,14 @@ func (l *generationListener) Accept() (net.Conn, error) {
 func (l *generationListener) Close() error {
 	l.mu.Lock()
 	l.closed = true
+	l.mu.Unlock()
+	l.closeOnce.Do(func() { close(l.closeSignal) })
 	for {
 		select {
 		case connection := <-l.queue:
 			_ = connection.Close()
+			l.completePending()
 		default:
-			l.mu.Unlock()
-			l.closeOnce.Do(func() { close(l.closeSignal) })
 			l.markDrainedIfNeeded()
 			return nil
 		}
@@ -425,21 +441,41 @@ func (l *generationListener) Close() error {
 
 func (l *generationListener) Addr() net.Addr { return l.address }
 
-func (l *generationListener) dispatch(connection net.Conn, hubStop <-chan struct{}) error {
+func (l *generationListener) reserve() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	closed := l.closed || l.retiring
-	if closed {
-		return net.ErrClosed
+	if l.closed || l.retiring {
+		return false
 	}
+	l.pending++
+	return true
+}
+
+func (l *generationListener) dispatchReserved(connection net.Conn) error {
 	select {
 	case l.queue <- connection:
 		return nil
-	case <-hubStop:
+	case <-l.closeSignal:
+		l.completePending()
 		return net.ErrClosed
-	default:
-		return fmt.Errorf("listener generation queue is full")
 	}
+}
+
+func (l *generationListener) track(connection net.Conn) net.Conn {
+	l.active.Add(1)
+	return &trackedConnection{Conn: connection, onClose: func() { l.active.Add(-1) }}
+}
+
+type trackedConnection struct {
+	net.Conn
+	closeOnce sync.Once
+	onClose   func()
+}
+
+func (c *trackedConnection) Close() error {
+	err := c.Conn.Close()
+	c.closeOnce.Do(c.onClose)
+	return err
 }
 
 func (l *generationListener) retire() {
@@ -451,7 +487,19 @@ func (l *generationListener) retire() {
 
 func (l *generationListener) markDrainedIfNeeded() {
 	l.mu.Lock()
-	drained := l.retiring && len(l.queue) == 0
+	drained := l.retiring && l.pending == 0
+	l.mu.Unlock()
+	if drained {
+		l.drainedOnce.Do(func() { close(l.drained) })
+	}
+}
+
+func (l *generationListener) completePending() {
+	l.mu.Lock()
+	if l.pending > 0 {
+		l.pending--
+	}
+	drained := l.retiring && l.pending == 0
 	l.mu.Unlock()
 	if drained {
 		l.drainedOnce.Do(func() { close(l.drained) })
@@ -476,6 +524,14 @@ func (p *PreparedRoute) WaitDrained(ctx context.Context) error {
 		return nil
 	}
 	return p.route.waitDrained(ctx)
+}
+
+// ActiveConnections 返回已经交给该 generation Server 且尚未关闭的连接数。
+func (p *PreparedRoute) ActiveConnections() int64 {
+	if p == nil || p.route == nil {
+		return 0
+	}
+	return p.route.active.Load()
 }
 
 var _ net.Listener = (*generationListener)(nil)

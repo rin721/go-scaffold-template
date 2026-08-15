@@ -102,15 +102,17 @@ func TestReloadErrorReporterClassifiesAndRedacts(t *testing.T) {
 		err     error
 		level   string
 		message string
+		fields  int
 	}{
-		{errors.New("candidate failed"), "error", "application generation reload rejected; previous generation remains active"},
-		{&kernel.CommittedCleanupError{Err: errors.New("close failed")}, "error", "application generation reload applied with cleanup debt"},
+		{errors.New("candidate failed"), "error", "application generation reload rejected; previous generation remains active", 1},
+		{&kernel.GenerationOperationError{Phase: "prepare", Owner: "application-generation", Generation: 2, Err: errors.New("candidate failed")}, "error", "application generation reload rejected; previous generation remains active", 5},
+		{&kernel.CommittedCleanupError{Err: &kernel.GenerationOperationError{Phase: "retire", Owner: "application-generation", Generation: 1, Err: errors.New("close failed")}}, "error", "application generation reload applied with cleanup debt", 5},
 	}
 	for _, test := range tests {
 		log := logger.NewTestLogger()
 		reloadErrorReporter(log)(test.err)
 		entries := log.Entries()
-		if len(entries) != 1 || entries[0].Level != test.level || entries[0].Message != test.message {
+		if len(entries) != 1 || entries[0].Level != test.level || entries[0].Message != test.message || len(entries[0].Fields) != test.fields {
 			t.Fatalf("entries = %#v", entries)
 		}
 	}
