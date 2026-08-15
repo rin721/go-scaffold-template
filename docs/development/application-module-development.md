@@ -53,11 +53,15 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 
 ### 3.2 模块专属 Adapter 或运行单元
 
-只服务单个业务语义、没有跨模块稳定契约价值的协议转换留在模块 Adapter。模块专属第三方 SDK、Client、cache、goroutine、migration、消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；拥有这些技术对象本身不构成 Kernel Capability 升级理由。
+只服务单个业务语义、没有跨模块稳定契约价值的第三方 SDK、Client 或协议转换，留在 `internal/module/<name>/adapter/<technology>`。Adapter 依赖并实现模块调用方定义的窄 port；第三方类型、错误、配置对象、Option、Client 和关闭权不得越过 Adapter package。模块的 Model、Service、binding、`Dependencies`、`Module` 与 contribution 只暴露标准库或项目自有类型，composition 不得穿透模块根导入其私有 Adapter。
+
+模块专属 cache、goroutine、migration、消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；拥有第三方 SDK 或 goroutine 本身不构成 Kernel Capability 升级理由。
 
 ### 3.3 新的通用或进程级底层 Capability
 
-跨业务域复用、需要项目稳定契约的能力先在 `pkg/<name>` 定义最小接口、错误和资源边界。凡由当前进程统一选择和注入的底层能力，再按 [Kernel App 组件开发](../../internal/kernel/app/README.md) 进入 `internal/kernel/app/<name>` 与 production composition。
+非业务、跨业务域复用，或由进程统一选择实现、配置和资源的第三方能力，先在 `pkg/<name>` 定义最小项目接口、错误和资源边界，再按 [Kernel App 组件开发](../../internal/kernel/app/README.md) 进入 `internal/kernel/app/<name>` 与 production composition。上层模块和 application composition 只消费项目自有 facade/Access，不得直接持有第三方或底层具体 Adapter。
+
+业务专属与进程级是互斥分类：不能因为第三方实现放进了某个模块目录，就把实际服务整个进程的 registry、exporter、通用 middleware 或共享 Client 解释成业务专属。当前 Ops 内 Prometheus/OTel 实现与导出泄漏是 [027](../changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，新模块不得复制。
 
 ### 3.4 证据不足
 
@@ -71,6 +75,7 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 internal/module/<capability>/
 ├── model/          # 业务状态、值与不变量
 ├── service/        # 用例与调用方拥有的窄 port
+├── adapter/        # 仅模块专属第三方实现；不得向外泄漏技术类型
 ├── repo/           # 持久化 Adapter；仅在真实需要时建立
 ├── middleware/     # 模块拥有的 HTTP 横切策略
 ├── binding/
@@ -95,7 +100,7 @@ model <- service <- repo
 1. 用 Model 表达业务状态与不变量；没有独立领域行为时不制造空领域层。
 2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
 3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
-4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换和资源边界。
+4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换、exported 类型、配置和资源边界；非业务或进程级能力先走底层 Capability 路径。
 5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 只返回本模块 operation Handler，不创建 Router 或绑定整份 OpenAPI；不同入口复用同一 Service，不互相回环。
 6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回窄 Handler/Service 与完成品 contribution。
 7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、静态聚合所有 HTTP operation、合并 contribution 并建立 Host；`internal/transport/http` 只把完整 aggregate 绑定一次生成路由。
@@ -232,7 +237,7 @@ HTTP 的固定构造顺序是 `module Handler -> application strict aggregate ->
 模块最低验证按实际入口和资源选择，不为目录完整制造无关测试：
 
 - Model/Service 成功、输入、冲突、依赖失败、取消和超时测试；
-- Repository/远程 Adapter 的转换、错误链、资源借用与清理合约；
+- Repository/远程 Adapter 的转换、错误链、第三方类型零泄漏、资源借用与清理合约；
 - HTTP/CLI/后台入口的协议边界和同一 Service 复用；
 - route、command、module ID、Participant owner 和 import 架构检查；
 - startup、ready、运行失败、反向停止、超时和资源泄漏测试；

@@ -37,5 +37,5 @@ relations:
   extends: ["024-R003", "024-R005"]
   related: ["020-R003", "022-R008"]
   supersedes: ["024 design sections 7-8 package ownership only"]
-  superseded_by: []
+  superseded_by: ["027-R001 (ops observability physical placement only)"]
 report: report.md

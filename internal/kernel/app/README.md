@@ -2,7 +2,7 @@
 
 `internal/kernel/app` 是底层能力的统一组件声明层。组件作者只声明“输出什么、怎样构造、需要哪些可选契约、配置变化如何处理”；是否启用以及选择哪个实现由 `internal/kernel/composition` 决定。
 
-本指南只处理已经被 [应用模块开发指南](../../../docs/development/application-module-development.md) 判定为“由当前进程选择并注入的底层 Capability”。模块专属 Adapter、业务对象和长期任务不会因为需要外部系统就自动进入 Kernel App；应先分别确认能力归属、资源 owner 和运行 owner。
+本指南只处理已经被 [应用模块开发指南](../../../docs/development/application-module-development.md) 判定为“由当前进程选择并注入的底层 Capability”。业务模块专属第三方 Adapter 留在 `internal/module/<name>/adapter/<technology>` 并完全封装；非业务、跨模块或进程级第三方能力才优先经过 `pkg` 项目契约进入 Kernel App。拥有 SDK、Client 或 goroutine 本身不会自动决定轨道，应先分别确认业务归属、调用方、资源 owner 和运行 owner。
 
 ## 选择组件形态
 
@@ -137,3 +137,5 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/storage`：配置化对象存储 Manager，Leased Swap；当前 Manager 没有独占 transport/goroutine，因此不声明 finalizer；按 route 借用无 Close Client，文件工具不进入该组件。
 
 当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。
+
+Prometheus/OTel Observability 尚未成为当前 Kernel App 组件。其项目契约、稳定 Metrics identity 与 generation-owned Telemetry 的分裂设计见 [027](../../../docs/changes/027-business-module-third-party-isolation/README.md)，实施确认前不得虚构 `pkg/observability` API，也不得把现有 Ops 具体类型描述成底层输出。

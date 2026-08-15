@@ -13,13 +13,16 @@ model <- service <- repo/binding <- module.go <- internal/composition
 
 - `model` 只表达业务状态与不变量。
 - `service` 定义用例以及调用方拥有的窄 port。
-- `repo`、operation Handler 和各 binding 负责技术/协议转换，并留在拥有该业务语义的模块内；应用级生成 DTO 可以被 Handler 使用，但模块不创建 Router、不绑定整份应用路由，也不满足完整应用 server interface。
+- `adapter` 只封装该业务模块专属的第三方实现，并实现模块调用方定义的窄 port；第三方类型、错误、配置对象、Client 和关闭权不得越过 Adapter package，composition 不得穿透模块根导入私有 Adapter。
+- `repo`、operation Handler 和各 binding 负责业务拥有的技术/协议转换；应用级生成 DTO 可以被 Handler 使用，但模块不创建 Router、不绑定整份应用路由，也不满足完整应用 server interface。
 - `middleware` 只实现所属模块拥有的 HTTP 横切策略；不能放入其他模块的业务不变量、Service、Repository 或事务。
 - `module.go` 只做纯内存局部装配。
 - `internal/composition` 是唯一可以同时知道 Kernel Capability 与应用模块的位置。
 
 HTTP 模块遵循固定的 Handler-first 链路：模块先返回窄 operation Handler，`internal/composition` 静态聚合各模块 operation，`internal/transport/http` 只绑定一次 OpenAPI validator、strict middleware 和生成路由，application Router 最后安装全局 middleware 并挂载唯一 API route tree。新增模块不得复制完整 Router、route binding 或 method/path 表。
 
-目录按真实职责建立，不为对称制造空 Handler、Repository 或 binding。模块专属第三方 SDK、Client、cache、goroutine、migration 或 Adapter 默认仍归模块；只有能力评估证明其跨业务复用、具有稳定项目契约并由进程统一选择和治理时，才进入 `pkg -> internal/kernel/app -> internal/kernel/composition`。
+目录按真实职责建立，不为对称制造空 Handler、Repository 或 binding。业务模块专属第三方 SDK、Client、cache、goroutine、migration 或 Adapter 默认仍归模块，但必须完全封装技术影子。非业务、跨模块或由进程统一选择和治理的第三方能力，必须先形成项目自有契约，再进入 `pkg -> internal/kernel/app -> internal/kernel/composition`；不能为了就近使用而塞进某个业务模块。
+
+当前 Auth/JWT 符合“模块内 Adapter、项目 port 输出”的方向；Ops 中 Prometheus/OTel 具体类型已经进入模块与 composition 装配协议，且 Observability 实际服务整个进程。这是 [027 第三方封装与分轨装配](../../docs/changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，不是新模块示例。源码迁移尚未获得确认，当前运行事实仍以代码为准。
 
 禁止自动扫描、`init` 注册、Service Locator、全局可变 Registry，以及让 Handler 直接访问 Repository。
