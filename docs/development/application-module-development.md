@@ -68,7 +68,7 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 
 只满足跨业务复用但不需要进程选择的普通库，可以评估进入 `pkg`，但不得虚构 Kernel App 组件。只服务一个模块，即使拥有 SDK、Client、cache、连接或 goroutine，也继续收口在该模块并通过 contribution/Participant 管理生命周期。
 
-业务专属与底层 Capability 是互斥分类。当前 Observability 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，且 registry/provider/exporter 由进程统一选择和治理，因此满足双条件；Ops 内 Prometheus/OTel 实现与导出泄漏是 [027](../changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，新模块不得复制。
+业务专属与底层 Capability 是互斥分类。当前 Observability 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，且 registry/provider/exporter 由进程统一选择和治理，因此满足双条件；[027](../changes/027-business-module-third-party-isolation/README.md) 已将具体实现迁到 Kernel App，Ops 与 application composition 只消费项目自有契约。
 
 ### 3.4 证据不足
 

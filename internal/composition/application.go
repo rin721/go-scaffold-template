@@ -144,7 +144,7 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		return fmt.Errorf("compose migration CLI contract: %w", err)
 	}
 	configuration := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	configuration = append(configuration, opsconfig.Bindings()...)
+	configuration = append(configuration, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
 	bootstrap, err := kernelcomposition.ComposeBootstrap(cli.Config{
 		Name:                   a.config.Name,
 		Description:            a.config.Description,

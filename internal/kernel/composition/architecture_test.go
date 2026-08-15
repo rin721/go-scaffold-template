@@ -52,6 +52,9 @@ func TestProductionPackageGraphRespectsCompositionBoundaries(t *testing.T) {
 	if err := validateHTTPSourceOwnership(root); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateModuleExportBoundaries(root); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
@@ -64,6 +67,7 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/kernel/app/database", Imports: []string{modulePath + "/pkg/database"}},
 		{ImportPath: modulePath + "/internal/module/todo/service", Imports: []string{modulePath + "/internal/module/todo/model"}},
 		{ImportPath: modulePath + "/internal/module/todo/repo", Imports: []string{modulePath + "/pkg/database"}},
+		{ImportPath: modulePath + "/internal/module/auth/adapter/jwt", Imports: []string{"github.com/lestrrat-go/jwx/v3/jwt"}},
 		{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{
 			modulePath + "/internal/module/todo/service", modulePath + "/internal/transport/http/api", modulePath + "/pkg/httpx",
 		}},
@@ -88,6 +92,9 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{"github.com/go-chi/chi/v5"}}},
 		{{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{"github.com/oapi-codegen/nethttp-middleware"}}},
 		{{ImportPath: modulePath + "/internal/module/todo", Imports: []string{modulePath + "/internal/kernel/composition"}}},
+		{{ImportPath: modulePath + "/internal/module/example/service", Imports: []string{"github.com/example/sdk"}}},
+		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{"github.com/example/sdk"}}},
+		{{ImportPath: modulePath + "/internal/composition", Imports: []string{modulePath + "/internal/module/example/adapter/sdk"}}},
 	} {
 		if err := validatePackageGraph(fixture); err == nil {
 			t.Fatalf("invalid fixture %#v passed", fixture)
@@ -95,9 +102,58 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 	}
 }
 
+func TestModuleExportRulesAcceptPrivateImplementationAndRejectLeaks(t *testing.T) {
+	legalRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, legalRoot, "internal/module/example/adapter/sdk/adapter.go", `package sdk
+import third "github.com/example/sdk"
+type Adapter struct { client *third.Client }
+type Config struct{}
+func New(Config) (*Adapter, error) { return nil, nil }
+`)
+	if err := validateModuleExportBoundaries(legalRoot); err != nil {
+		t.Fatalf("legal module Adapter fixture error = %v", err)
+	}
+
+	thirdPartyLeak := t.TempDir()
+	writeModuleBoundaryFixture(t, thirdPartyLeak, "internal/module/example/adapter/sdk/adapter.go", `package sdk
+import third "github.com/example/sdk"
+func Client() *third.Client { return nil }
+`)
+	if err := validateModuleExportBoundaries(thirdPartyLeak); err == nil {
+		t.Fatal("third-party exported selector fixture passed")
+	}
+
+	adapterLeak := t.TempDir()
+	writeModuleBoundaryFixture(t, adapterLeak, "internal/module/example/module.go", `package example
+import sdk "github.com/rin721/go-scaffold-template/internal/module/example/adapter/sdk"
+func Adapter() *sdk.Adapter { return nil }
+`)
+	if err := validateModuleExportBoundaries(adapterLeak); err == nil {
+		t.Fatal("module root concrete Adapter fixture passed")
+	}
+}
+
+func writeModuleBoundaryFixture(t *testing.T, root, relative, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(relative))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("create fixture directory: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+}
+
 func validatePackageGraph(graph []packageNode) error {
 	for _, node := range graph {
 		for _, imported := range node.Imports {
+			if sourceOwner, sourceIsModule := applicationModuleOwner(node.ImportPath); sourceIsModule &&
+				thirdPartyImport(imported) && !moduleAdapterPackage(node.ImportPath) {
+				return fmt.Errorf("application module %s package %s imports third-party package outside its adapter: %s", sourceOwner, node.ImportPath, imported)
+			}
+			if node.ImportPath == modulePath+"/internal/composition" && moduleAdapterPackage(imported) {
+				return fmt.Errorf("application composition imports module adapter %s", imported)
+			}
 			if moduleHTTPBindingPackage(node.ImportPath) && forbiddenModuleHTTPBindingImport(imported) {
 				return fmt.Errorf("module HTTP binding %s imports application route infrastructure %s", node.ImportPath, imported)
 			}
@@ -137,6 +193,116 @@ func validatePackageGraph(graph []packageNode) error {
 		}
 	}
 	return nil
+}
+
+func validateModuleExportBoundaries(root string) error {
+	moduleRoot := filepath.Join(root, "internal", "module")
+	return filepath.WalkDir(moduleRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return walkErr
+		}
+		fileset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileset, path, nil, 0)
+		if err != nil {
+			return fmt.Errorf("parse module boundary source %s: %w", path, err)
+		}
+		imports := make(map[string]string, len(parsed.Imports))
+		for _, spec := range parsed.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return fmt.Errorf("decode module import in %s: %w", path, err)
+			}
+			name := filepath.Base(importPath)
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			imports[name] = importPath
+		}
+		for _, declaration := range parsed.Decls {
+			for _, exported := range exportedContractNodes(declaration) {
+				var violation error
+				ast.Inspect(exported, func(node ast.Node) bool {
+					selector, ok := node.(*ast.SelectorExpr)
+					if !ok {
+						return true
+					}
+					importPath := selectorImportPath(selector, imports)
+					if importPath == "" {
+						return true
+					}
+					if thirdPartyImport(importPath) || moduleAdapterPackage(importPath) {
+						position := fileset.Position(selector.Pos())
+						violation = fmt.Errorf("module exported contract %s:%d leaks implementation package %s", path, position.Line, importPath)
+						return false
+					}
+					return true
+				})
+				if violation != nil {
+					return violation
+				}
+			}
+		}
+		return nil
+	})
+}
+
+func exportedContractNodes(declaration ast.Decl) []ast.Node {
+	switch current := declaration.(type) {
+	case *ast.FuncDecl:
+		if current.Name.IsExported() && exportedReceiver(current.Recv) {
+			return []ast.Node{current.Type}
+		}
+	case *ast.GenDecl:
+		var result []ast.Node
+		for _, specification := range current.Specs {
+			switch spec := specification.(type) {
+			case *ast.TypeSpec:
+				if !spec.Name.IsExported() {
+					continue
+				}
+				switch value := spec.Type.(type) {
+				case *ast.StructType:
+					for _, field := range value.Fields.List {
+						if len(field.Names) == 0 || field.Names[0].IsExported() {
+							result = append(result, field.Type)
+						}
+					}
+				case *ast.InterfaceType:
+					for _, method := range value.Methods.List {
+						if len(method.Names) == 0 || method.Names[0].IsExported() {
+							result = append(result, method.Type)
+						}
+					}
+				default:
+					result = append(result, spec.Type)
+				}
+			case *ast.ValueSpec:
+				for _, name := range spec.Names {
+					if name.IsExported() && spec.Type != nil {
+						result = append(result, spec.Type)
+						break
+					}
+				}
+			}
+		}
+		return result
+	}
+	return nil
+}
+
+func exportedReceiver(receiver *ast.FieldList) bool {
+	if receiver == nil {
+		return true
+	}
+	if len(receiver.List) != 1 {
+		return false
+	}
+	typeNode := receiver.List[0].Type
+	if pointer, ok := typeNode.(*ast.StarExpr); ok {
+		typeNode = pointer.X
+	}
+	identifier, ok := typeNode.(*ast.Ident)
+	return ok && identifier.IsExported()
 }
 
 func validateHTTPSourceOwnership(root string) error {
@@ -265,6 +431,23 @@ func applicationModuleOwner(importPath string) (string, bool) {
 	relative := strings.TrimPrefix(importPath, prefix)
 	owner, _, _ := strings.Cut(relative, "/")
 	return owner, owner != ""
+}
+
+func moduleAdapterPackage(importPath string) bool {
+	prefix := modulePath + "/internal/module/"
+	if !strings.HasPrefix(importPath, prefix) {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(importPath, prefix), "/")
+	return len(parts) >= 3 && parts[1] == "adapter"
+}
+
+func thirdPartyImport(importPath string) bool {
+	if strings.HasPrefix(importPath, modulePath+"/") {
+		return false
+	}
+	first, _, _ := strings.Cut(importPath, "/")
+	return strings.Contains(first, ".")
 }
 
 func moduleCorePackage(importPath string) bool {

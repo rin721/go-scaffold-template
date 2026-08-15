@@ -4,7 +4,7 @@
 
 新增模块必须先按 [应用模块开发指南](../../docs/development/application-module-development.md) 完成真实用例、现有能力、新 Capability、资源 owner、生命周期和当前契约适配性评估，再进入目录与接口设计。
 
-当前已有 Auth、[Ops](ops/README.md)、Migration 与 [Todo](todo/README.md) 模块。Auth 拥有认证/授权/审计，Ops 拥有 management/observability，Migration 编排显式 status/up，Todo 拥有业务实体、对象授权 port 与 SQL migration set；composition 只连接完成品：
+当前已有 Auth、[Ops](ops/README.md)、Migration 与 [Todo](todo/README.md) 模块。Auth 拥有认证/授权/审计，Ops 拥有 management、探针和诊断用例，Migration 编排显式 status/up，Todo 拥有业务实体、对象授权 port 与 SQL migration set；composition 只连接完成品：
 
 ```text
 model <- service <- repo/binding <- module.go <- internal/composition
@@ -25,6 +25,6 @@ HTTP 模块遵循固定的 Handler-first 链路：模块先返回窄 operation H
 
 只有能力评估同时证明资源跨业务复用且由进程统一选择，才进入完整 `pkg -> internal/kernel/app -> internal/kernel/composition` 链。只满足跨业务复用的普通库可以评估留在 `pkg`，但不自动获得 Kernel 组件；SDK、Client、cache、连接或 goroutine 本身都不是升级理由。
 
-当前 Auth/JWT 符合“模块内 Adapter、项目 port 输出”的方向；Ops 中 Prometheus/OTel 具体类型已经进入模块与 composition 装配协议，且 Observability 实际服务整个进程。这是 [027 第三方封装与分轨装配](../../docs/changes/027-business-module-third-party-isolation/README.md) 记录的待实施偏差，不是新模块示例。源码迁移尚未获得确认，当前运行事实仍以代码为准。
+当前 Auth/JWT 遵循“模块内 Adapter、项目 port 输出”；Observability 因跨业务复用且由进程统一选择，已经迁移到 `pkg/observability -> internal/kernel/app/observability -> internal/kernel/composition`。Ops 只消费项目契约，不再拥有或导出 Prometheus/OTel 具体实现，详见 [027 第三方封装与分轨装配](../../docs/changes/027-business-module-third-party-isolation/README.md)。
 
 禁止自动扫描、`init` 注册、Service Locator、全局可变 Registry，以及让 Handler 直接访问 Repository。

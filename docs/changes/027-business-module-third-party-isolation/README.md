@@ -2,10 +2,10 @@
 
 ## 状态
 
-- 当前阶段：研究与计划已完成，非文档实施待确认。
+- 当前阶段：实施与验证已完成。
 - 研究门禁：已通过，证据为 `R001`。
-- 计划状态：待确认。
-- 本轮授权：只修订研究、需求、设计、任务和当前权威文档；不修改源码、测试实现、依赖或生成物。
+- 计划状态：已确认。
+- 本轮授权：实施 `CONTRACT-001..VER-001`，不得扩展到计划外能力。
 - 外部副作用：不启动服务、不写数据库，不执行 push、tag、Release 或部署。
 
 ## 问题
@@ -36,7 +36,7 @@
 
 按当前事实，Auth 的 JWT/JWKS 与 audit 只服务 Auth 模块，可以继续留在模块内，但 `auth.Module` 不得暴露 jwx 类型或具体 Adapter。Prometheus、OpenTelemetry、OTLP exporter 和通用 HTTP observation 同时覆盖 Auth/Todo 业务 HTTP 与 Ops management/diagnostics，并由进程统一选择和治理，满足双条件，才进入 Observability 底层 Capability 计划。
 
-当前源码尚未迁移。实施、门禁和测试属于非文档任务，只有用户在本计划报告后的后续消息明确确认 027 当前方案后才能开始。
+源码已单轨迁移到项目自有 Observability 契约与底层 App；实现与验证证据见 `tasks.md`。
 
 ## 阅读顺序
 

@@ -10,9 +10,9 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/module/auth"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	httpbinding "github.com/rin721/go-scaffold-template/internal/module/ops/binding/http"
-	opsmiddleware "github.com/rin721/go-scaffold-template/internal/module/ops/middleware"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	httpapi "github.com/rin721/go-scaffold-template/internal/transport/http/api"
+	pkgobservability "github.com/rin721/go-scaffold-template/pkg/observability"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
@@ -86,7 +86,11 @@ func (s generationOpsSource) Snapshot(ctx context.Context) (opsmodel.RuntimeSnap
 		return opsmodel.RuntimeSnapshot{}, err
 	}
 	result.AuthReady = s.generation.authModule.Service.Ready()
-	result.Telemetry = s.generation.opsModule.Telemetry.Diagnostics()
+	telemetry, diagnosticsErr := s.generation.telemetry.output.Diagnostics(ctx)
+	if diagnosticsErr != nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read telemetry diagnostics: %w", diagnosticsErr)
+	}
+	result.Telemetry = telemetry
 	return result, nil
 }
 
@@ -104,11 +108,11 @@ func (s generationOpsSource) Readiness(ctx context.Context) (bool, bool, error) 
 	return authReady, true, nil
 }
 
-func opsOperations() []opsmiddleware.Operation {
+func opsOperations() []pkgobservability.Operation {
 	operations := httpapi.Operations()
-	result := make([]opsmiddleware.Operation, len(operations))
+	result := make([]pkgobservability.Operation, len(operations))
 	for index, operation := range operations {
-		result[index] = opsmiddleware.Operation{ID: string(operation.ID), Method: operation.Method, Path: operation.Path}
+		result[index] = pkgobservability.Operation{ID: string(operation.ID), Method: operation.Method, Path: operation.Path}
 	}
 	return result
 }

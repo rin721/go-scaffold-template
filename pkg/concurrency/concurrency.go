@@ -8,8 +8,7 @@ import (
 	"golang.org/x/sync/singleflight"
 )
 
-// Group 包装 errgroup，统一 nil context 处理。
-func Group(ctx context.Context) (*errgroup.Group, context.Context) {
+func group(ctx context.Context) (*errgroup.Group, context.Context) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -40,7 +39,7 @@ func NewPool(workers int) *Pool {
 
 // Run 执行任务集合，任一任务失败后返回错误。
 func (p *Pool) Run(ctx context.Context, tasks []func(context.Context) error) error {
-	group, groupCtx := Group(ctx)
+	group, groupCtx := group(ctx)
 	queue := make(chan func(context.Context) error)
 	group.Go(func() error {
 		defer close(queue)

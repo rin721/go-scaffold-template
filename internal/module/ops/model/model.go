@@ -1,7 +1,11 @@
 // Package model 定义 Ops module 对外稳定的管理与观测契约。
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/rin721/go-scaffold-template/pkg/observability"
+)
 
 // ProbeKind 是管理端点支持的有限探针集合。
 type ProbeKind string
@@ -28,37 +32,27 @@ type BuildInfo struct {
 	Dirty     bool   `json:"dirty"`
 }
 
-// TelemetryDiagnostics 描述 exporter 的低敏、自包含运行状态。
-type TelemetryDiagnostics struct {
-	Enabled       bool   `json:"enabled"`
-	Ready         bool   `json:"ready"`
-	QueueDepth    int64  `json:"queueDepth"`
-	DroppedSpans  uint64 `json:"droppedSpans"`
-	ExportedSpans uint64 `json:"exportedSpans"`
-	LastErrorType string `json:"lastErrorType,omitempty"`
-}
-
 // RuntimeSnapshot 是 composition 向 Ops module 提供的只读进程视图。
 type RuntimeSnapshot struct {
-	Started           bool                 `json:"started"`
-	Live              bool                 `json:"live"`
-	Ready             bool                 `json:"ready"`
-	ProcessState      string               `json:"processState"`
-	GenerationState   string               `json:"generationState"`
-	Generation        uint64               `json:"generation"`
-	Phase             string               `json:"phase"`
-	ConfiguredAddress string               `json:"configuredAddress,omitempty"`
-	BoundAddress      string               `json:"boundAddress,omitempty"`
-	ActiveRequests    int64                `json:"activeRequests"`
-	ActiveConnections int64                `json:"activeConnections"`
-	AuthReady         bool                 `json:"authReady"`
-	DatabaseReady     bool                 `json:"databaseReady"`
-	CleanupRequired   bool                 `json:"cleanupRequired"`
-	LastFailurePhase  string               `json:"lastFailurePhase,omitempty"`
-	LastFailureOwner  string               `json:"lastFailureOwner,omitempty"`
-	LastFailureType   string               `json:"lastFailureType,omitempty"`
-	Telemetry         TelemetryDiagnostics `json:"telemetry"`
-	Since             time.Time            `json:"since"`
+	Started           bool                      `json:"started"`
+	Live              bool                      `json:"live"`
+	Ready             bool                      `json:"ready"`
+	ProcessState      string                    `json:"processState"`
+	GenerationState   string                    `json:"generationState"`
+	Generation        uint64                    `json:"generation"`
+	Phase             string                    `json:"phase"`
+	ConfiguredAddress string                    `json:"configuredAddress,omitempty"`
+	BoundAddress      string                    `json:"boundAddress,omitempty"`
+	ActiveRequests    int64                     `json:"activeRequests"`
+	ActiveConnections int64                     `json:"activeConnections"`
+	AuthReady         bool                      `json:"authReady"`
+	DatabaseReady     bool                      `json:"databaseReady"`
+	CleanupRequired   bool                      `json:"cleanupRequired"`
+	LastFailurePhase  string                    `json:"lastFailurePhase,omitempty"`
+	LastFailureOwner  string                    `json:"lastFailureOwner,omitempty"`
+	LastFailureType   string                    `json:"lastFailureType,omitempty"`
+	Telemetry         observability.Diagnostics `json:"telemetry"`
+	Since             time.Time                 `json:"since"`
 }
 
 // Probe 是公开探针的最小响应，不包含内部失败细节。

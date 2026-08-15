@@ -180,6 +180,38 @@ func startImmutableComponent[T any](
 	return &immutableComponent[T]{coordinator: coordinator, output: added.Output}, nil
 }
 
+func startFixedComponent[T any](
+	ctx context.Context,
+	logging *kernellogging.Manager,
+	definition app.Definition[T],
+) (*immutableComponent[T], error) {
+	loader := config.New(config.MapSource("application-generation-fixed", map[string]any{}))
+	runtime, err := kernel.New(loader, kernel.Options{Logging: logging})
+	if err != nil {
+		return nil, err
+	}
+	plan := app.NewPlan()
+	added, err := app.Add(plan, definition)
+	if err != nil {
+		return nil, err
+	}
+	frozen, err := plan.Freeze()
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.Install(frozen); err != nil {
+		return nil, err
+	}
+	coordinator, err := kernel.NewCoordinator(runtime)
+	if err != nil {
+		return nil, err
+	}
+	if err := coordinator.Start(ctx); err != nil {
+		return nil, err
+	}
+	return &immutableComponent[T]{coordinator: coordinator, output: added.Output}, nil
+}
+
 func (c *immutableComponent[T]) close(ctx context.Context) error {
 	if c == nil || c.coordinator == nil {
 		return nil

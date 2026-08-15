@@ -1,11 +1,10 @@
-// Package configbinding 绑定 Ops module 的 management 与 observability 配置。
+// Package configbinding 绑定 Ops module 自有的 management 配置。
 package configbinding
 
 import (
 	"context"
 	"fmt"
 	"net"
-	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -14,10 +13,8 @@ import (
 )
 
 const (
-	managementCapabilityID    = "module.ops.management"
-	observabilityCapabilityID = "module.ops.observability"
-	managementPath            = "management"
-	observabilityPath         = "observability"
+	managementCapabilityID = "module.ops.management"
+	managementPath         = "management"
 )
 
 // AccessMode 控制 metrics 是否关闭、公开或需要 management scope。
@@ -43,47 +40,21 @@ type Management struct {
 	MetricsAccess       AccessMode    `mapstructure:"metricsAccess"`
 }
 
-// Tracing 配置 generation-owned OTLP/HTTP trace exporter。
-type Tracing struct {
-	Enabled         bool          `mapstructure:"enabled"`
-	Endpoint        string        `mapstructure:"endpoint"`
-	Insecure        bool          `mapstructure:"insecure"`
-	SampleRatio     float64       `mapstructure:"sampleRatio"`
-	QueueSize       int           `mapstructure:"queueSize"`
-	BatchSize       int           `mapstructure:"batchSize"`
-	BatchTimeout    time.Duration `mapstructure:"batchTimeout"`
-	ExportTimeout   time.Duration `mapstructure:"exportTimeout"`
-	ShutdownTimeout time.Duration `mapstructure:"shutdownTimeout"`
-}
-
-// Observability 是 Ops module 的观测配置。
-type Observability struct {
-	ServiceName string  `mapstructure:"serviceName"`
-	Tracing     Tracing `mapstructure:"tracing"`
-}
-
-// Config 聚合 Ops module 的两个独立配置段。
+// Config 聚合 Ops module 自有配置。
 type Config struct {
-	Management    Management
-	Observability Observability
+	Management Management
 }
 
-// Bindings 返回两个 section 的默认值与候选校验 authority。
-func Bindings() []config.Binding {
-	return []config.Binding{
-		{CapabilityID: managementCapabilityID, ConfigPath: managementPath, Contract: managementDefaults{}, Validate: func(snapshot config.Snapshot) error { _, err := Decode(snapshot); return err }},
-		{CapabilityID: observabilityCapabilityID, ConfigPath: observabilityPath, Contract: observabilityDefaults{}, Validate: func(snapshot config.Snapshot) error { _, err := Decode(snapshot); return err }},
-	}
+// Binding 返回 management section 的默认值与候选校验 authority。
+func Binding() config.Binding {
+	return config.Binding{CapabilityID: managementCapabilityID, ConfigPath: managementPath, Contract: managementDefaults{}, Validate: func(snapshot config.Snapshot) error { _, err := Decode(snapshot); return err }}
 }
 
-// Decode 从同一 Snapshot 解码并校验管理面与观测配置。
+// Decode 从 Snapshot 解码并校验管理面配置。
 func Decode(snapshot config.Snapshot) (Config, error) {
 	resolved := Default()
 	if err := snapshot.DecodeSection(managementPath, &resolved.Management); err != nil {
 		return Config{}, fmt.Errorf("decode management configuration: %w", err)
-	}
-	if err := snapshot.DecodeSection(observabilityPath, &resolved.Observability); err != nil {
-		return Config{}, fmt.Errorf("decode observability configuration: %w", err)
 	}
 	if err := validate(resolved); err != nil {
 		return Config{}, err
@@ -100,10 +71,6 @@ func Default() Config {
 			RequestTimeout: 2 * time.Second, MaxHeaderBytes: 16 << 10,
 			MaxRequestBodyBytes: 4 << 10, MaxInFlight: 16, MetricsAccess: AccessPublic,
 		},
-		Observability: Observability{ServiceName: "go-scaffold-template", Tracing: Tracing{
-			SampleRatio: 0.1, QueueSize: 2048, BatchSize: 256,
-			BatchTimeout: 5 * time.Second, ExportTimeout: 3 * time.Second, ShutdownTimeout: 5 * time.Second,
-		}},
 	}
 }
 
@@ -125,31 +92,6 @@ func validate(config Config) error {
 	case AccessDisabled, AccessPublic, AccessProtected:
 	default:
 		return fmt.Errorf("management metrics access %q is unsupported", management.MetricsAccess)
-	}
-	observability := config.Observability
-	if strings.TrimSpace(observability.ServiceName) == "" {
-		return fmt.Errorf("observability service name is required")
-	}
-	tracing := observability.Tracing
-	if tracing.SampleRatio < 0 || tracing.SampleRatio > 1 || tracing.QueueSize <= 0 || tracing.BatchSize <= 0 || tracing.BatchSize > tracing.QueueSize {
-		return fmt.Errorf("observability trace sampling or queue limits are invalid")
-	}
-	if tracing.BatchTimeout <= 0 || tracing.ExportTimeout <= 0 || tracing.ShutdownTimeout <= 0 {
-		return fmt.Errorf("observability trace budgets must be positive")
-	}
-	if !tracing.Enabled {
-		return nil
-	}
-	parsed, err := url.Parse(tracing.Endpoint)
-	if err != nil || parsed.Host == "" || parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
-		return fmt.Errorf("observability trace endpoint is invalid")
-	}
-	if tracing.Insecure {
-		if parsed.Scheme != "http" || !loopbackHost(parsed.Hostname()) {
-			return fmt.Errorf("insecure trace endpoint requires HTTP loopback")
-		}
-	} else if parsed.Scheme != "https" {
-		return fmt.Errorf("trace endpoint requires HTTPS")
 	}
 	return nil
 }
@@ -192,32 +134,6 @@ func (managementDefaults) Defaults(ctx context.Context) (config.Object, config.C
 	}, config.Continue, nil
 }
 
-type observabilityDefaults struct{}
-
-func (observabilityDefaults) Defaults(ctx context.Context) (config.Object, config.Control, error) {
-	if ctx == nil {
-		return nil, config.Continue, fmt.Errorf("observability defaults context is nil")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, config.Continue, err
-	}
-	value := Default().Observability
-	return config.Object{
-		config.FieldOf("serviceName", config.String(value.ServiceName)),
-		config.FieldOf("tracing", config.ObjectValue(config.Object{
-			config.FieldOf("enabled", config.Bool(value.Tracing.Enabled)),
-			config.FieldOf("endpoint", config.String(value.Tracing.Endpoint)),
-			config.FieldOf("insecure", config.Bool(value.Tracing.Insecure)),
-			config.FieldOf("sampleRatio", number(value.Tracing.SampleRatio)),
-			config.FieldOf("queueSize", number(value.Tracing.QueueSize)),
-			config.FieldOf("batchSize", number(value.Tracing.BatchSize)),
-			config.FieldOf("batchTimeout", config.Duration(value.Tracing.BatchTimeout)),
-			config.FieldOf("exportTimeout", config.Duration(value.Tracing.ExportTimeout)),
-			config.FieldOf("shutdownTimeout", config.Duration(value.Tracing.ShutdownTimeout)),
-		})),
-	}, config.Continue, nil
-}
-
 func number(value any) config.Value {
 	resolved, err := config.Number(fmt.Sprint(value))
 	if err != nil {
@@ -227,4 +143,3 @@ func number(value any) config.Value {
 }
 
 var _ config.DefaultContract = managementDefaults{}
-var _ config.DefaultContract = observabilityDefaults{}

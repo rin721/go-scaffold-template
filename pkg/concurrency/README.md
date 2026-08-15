@@ -1,12 +1,11 @@
 # concurrency
 
-`pkg/concurrency` 封装 errgroup、singleflight 和固定并发 worker pool。
+`pkg/concurrency` 封装 singleflight 和固定并发 worker pool；内部可以使用 errgroup，但不把第三方 Group 类型交给调用方。
 
 运行期 goroutine 必须受 context 控制，不能靠调用时序碰巧退出。
 
 ## 推荐入口
 
-- `Group(ctx)`：创建带取消传播的 `errgroup.Group`，并统一处理 `nil context`。
 - `SingleFlight.Do(key, fn)`：合并相同 key 的并发加载，避免缓存击穿或重复远端请求。
 - `NewPool(workers).Run(ctx, tasks)`：用固定并发度执行一组 `context` 感知任务。
 

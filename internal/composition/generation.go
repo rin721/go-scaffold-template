@@ -20,7 +20,6 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/module/auth"
 	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/ops"
-	prometheusadapter "github.com/rin721/go-scaffold-template/internal/module/ops/adapter/prometheus"
 	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo"
@@ -32,6 +31,7 @@ import (
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
 	"github.com/rin721/go-scaffold-template/pkg/idgen"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
+	pkgobservability "github.com/rin721/go-scaffold-template/pkg/observability"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 	"github.com/rin721/go-scaffold-template/pkg/validation"
 )
@@ -40,7 +40,6 @@ type applicationGenerationFactory struct {
 	logging       *kernellogging.Manager
 	hub           *httpx.ListenerHub
 	managementHub *httpx.ListenerHub
-	metrics       *prometheusadapter.Registry
 	opsRuntime    *opsRuntimeSource
 
 	loggerPool   *resourcePool[logger.Logger]
@@ -48,6 +47,7 @@ type applicationGenerationFactory struct {
 	cachePool    *resourcePool[cacheapp.Access]
 	i18nPool     *resourcePool[i18n.Translator]
 	storagePool  *resourcePool[storageapp.Access]
+	metricsPool  *resourcePool[pkgobservability.Metrics]
 
 	nextID    atomic.Uint64
 	failures  chan error
@@ -61,11 +61,13 @@ type applicationGeneration struct {
 	id       uint64
 	snapshot config.Snapshot
 
-	logger   *resourceHandle[logger.Logger]
-	database *resourceHandle[databaseapp.Access]
-	cache    *resourceHandle[cacheapp.Access]
-	i18n     *resourceHandle[i18n.Translator]
-	storage  *resourceHandle[storageapp.Access]
+	logger    *resourceHandle[logger.Logger]
+	database  *resourceHandle[databaseapp.Access]
+	cache     *resourceHandle[cacheapp.Access]
+	i18n      *resourceHandle[i18n.Translator]
+	storage   *resourceHandle[storageapp.Access]
+	metrics   *resourceHandle[pkgobservability.Metrics]
+	telemetry *immutableComponent[pkgobservability.Telemetry]
 
 	module            todo.HTTPModule
 	authModule        auth.Module
@@ -105,18 +107,15 @@ func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicati
 	if err != nil {
 		return nil, err
 	}
-	metrics, err := prometheusadapter.New()
-	if err != nil {
-		return nil, err
-	}
 	factory := &applicationGenerationFactory{
-		logging: logging, hub: hub, managementHub: managementHub, metrics: metrics,
+		logging: logging, hub: hub, managementHub: managementHub,
 		build:        opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
 		loggerPool:   newResourcePool[logger.Logger]("logger"),
 		databasePool: newResourcePool[databaseapp.Access]("database"),
 		cachePool:    newResourcePool[cacheapp.Access]("cache"),
 		i18nPool:     newResourcePool[i18n.Translator]("i18n"),
 		storagePool:  newResourcePool[storageapp.Access]("storage"),
+		metricsPool:  newResourcePool[pkgobservability.Metrics]("observability.metrics"),
 		failures:     make(chan error, 8),
 	}
 	factory.opsRuntime = &opsRuntimeSource{}
@@ -238,6 +237,31 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.recordResource("storage", reused)
 
+	generation.metrics, reused, err = f.metricsPool.acquire(ctx, "process", func(ctx context.Context) (pkgobservability.Metrics, func(context.Context) error, error) {
+		definition, buildErr := kernelcomposition.ObservabilityMetricsDefinition()
+		if buildErr != nil {
+			return nil, nil, buildErr
+		}
+		component, buildErr := startFixedComponent(ctx, f.logging, definition)
+		if buildErr != nil {
+			return nil, nil, buildErr
+		}
+		return component.output, component.close, nil
+	})
+	if err != nil {
+		return abort(err)
+	}
+	generation.recordResource("observability.metrics", reused)
+	telemetryDefinition, err := kernelcomposition.ObservabilityTelemetryDefinition(generation.metrics.value())
+	if err != nil {
+		return abort(err)
+	}
+	generation.telemetry, err = startImmutableComponent(ctx, snapshot, f.logging, telemetryDefinition)
+	if err != nil {
+		return abort(err)
+	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "observability.telemetry")
+
 	authConfig, err := authconfig.Decode(snapshot)
 	if err != nil {
 		return abort(err)
@@ -307,8 +331,9 @@ func (f *applicationGenerationFactory) Prepare(
 		return abort(fmt.Errorf("development anonymous auth requires loopback management HTTP"))
 	}
 	generation.opsModule, err = ops.New(ctx, ops.Dependencies{
-		Runtime: generationOpsSource{process: f.opsRuntime, generation: generation}, Build: f.build, Config: opsConfig, Metrics: f.metrics,
-		Access: opsAccessAdapter{auth: generation.authModule}, Operations: opsOperations(),
+		Runtime: generationOpsSource{process: f.opsRuntime, generation: generation}, Build: f.build, Config: opsConfig,
+		Observability: pkgobservability.Capabilities{Metrics: generation.metrics.value(), Telemetry: generation.telemetry.output},
+		Access:        opsAccessAdapter{auth: generation.authModule}, Operations: opsOperations(),
 	})
 	if err != nil {
 		return abort(err)
@@ -404,6 +429,7 @@ func (f *applicationGenerationFactory) Stop(ctx context.Context) error {
 	remaining := map[string]int{
 		"logger": f.loggerPool.remaining(), "database": f.databasePool.remaining(),
 		"cache": f.cachePool.remaining(), "i18n": f.i18nPool.remaining(), "storage": f.storagePool.remaining(),
+		"observability.metrics": f.metricsPool.remaining(),
 	}
 	for owner, count := range remaining {
 		if count != 0 {
@@ -553,9 +579,7 @@ func (g *applicationGeneration) abort(ctx context.Context) error {
 		joined = errors.Join(joined, g.factory.managementHub.Abort(g.managementRoute))
 	}
 	joined = errors.Join(joined, g.stopParticipants(ctx))
-	joined = errors.Join(joined, releaseGenerationResources(
-		ctx, g.storage, g.i18n, g.cache, g.database, g.logger,
-	))
+	joined = errors.Join(joined, g.releaseResources(ctx))
 	g.mu.Lock()
 	g.settled = true
 	g.terminalErr = joined
@@ -623,7 +647,7 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 		if wasCurrent {
 			g.factory.logging.Restore()
 		}
-		joined = releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger)
+		joined = g.releaseResources(ctx)
 	}
 	if terminal {
 		g.mu.Lock()
@@ -678,7 +702,7 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 		if wasCurrent {
 			g.factory.logging.Restore()
 		}
-		joined = releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger)
+		joined = g.releaseResources(ctx)
 	}
 	if terminal {
 		g.mu.Lock()
@@ -745,6 +769,18 @@ func (g *applicationGeneration) managementServerRunError() error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.managementRunErr
+}
+
+func (g *applicationGeneration) releaseResources(ctx context.Context) error {
+	var joined error
+	if g.telemetry != nil {
+		joined = errors.Join(joined, g.telemetry.close(ctx))
+	}
+	if g.metrics != nil {
+		joined = errors.Join(joined, g.metrics.release(ctx))
+	}
+	joined = errors.Join(joined, releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger))
+	return joined
 }
 
 func (g *applicationGeneration) stopParticipants(ctx context.Context) error {

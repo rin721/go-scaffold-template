@@ -49,7 +49,7 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	// CLI 与 Service 共用正式配置文件，因此两种模式都声明 application-owned 配置节。
 	// 这里只注册 HTTP 配置契约，不会构造 listener、Host 或 watcher。
 	bindings := []config.Binding{kernelcomposition.HTTPConfiguration(), authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	bindings = append(bindings, opsconfig.Bindings()...)
+	bindings = append(bindings, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
 	coordinator, err := kernel.NewCoordinator(runtime, bindings...)
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("create configuration coordinator: %w", err)

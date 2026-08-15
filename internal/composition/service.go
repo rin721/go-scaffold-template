@@ -44,7 +44,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 		config.EnvSource(a.config.EnvironmentPrefix),
 	)
 	bindingsInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	bindingsInput = append(bindingsInput, opsconfig.Bindings()...)
+	bindingsInput = append(bindingsInput, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
 	bindings, err := kernelcomposition.ConfigurationBindings(bindingsInput...)
 	if err != nil {
 		return nil, fmt.Errorf("compose service configuration bindings: %w", err)

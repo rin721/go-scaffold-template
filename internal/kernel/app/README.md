@@ -135,7 +135,8 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/cache`：配置化选择 disabled/Redis，Leased RestartRequired；Access 不暴露 RemoteStore，Redis 连接由 Kernel 关闭，泛型 Client 由调用方关闭。
 - `app/i18n`：配置化 Translator，Leased Swap；对消费者输出身份稳定的 `pkg/i18n.Translator` facade。
 - `app/storage`：配置化对象存储 Manager，Leased Swap；当前 Manager 没有独占 transport/goroutine，因此不声明 finalizer；按 route 借用无 Close Client，文件工具不进入该组件。
+- `app/observability`：Metrics 使用 process-stable `ManagedFixed` Lease facade；Telemetry 使用 generation-owned `ManagedConfigured`，HTTP 请求在 Lease 内完成，排空后 flush/shutdown；两者都不导出 Prometheus Registry、OTel Tracer/Provider 或关闭权。
 
 当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。
 
-Prometheus/OTel Observability 尚未成为当前 Kernel App 组件。其项目契约、稳定 Metrics identity 与 generation-owned Telemetry 的分裂设计见 [027](../../../docs/changes/027-business-module-third-party-isolation/README.md)，实施确认前不得虚构 `pkg/observability` API，也不得把现有 Ops 具体类型描述成底层输出。
+Observability 的项目契约、稳定 Metrics identity 与 generation-owned Telemetry 分裂实现见 [027](../../../docs/changes/027-business-module-third-party-isolation/README.md)。Application Generation 通过底层 composition 选择 Definition，不直接构造 Prometheus/OTel，也不把技术类型交给 Ops。

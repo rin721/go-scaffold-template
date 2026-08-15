@@ -31,9 +31,10 @@
 | `clock` | 标准库 `time` | 构造系统时钟或固定时钟，封装时间格式边界。 |
 | `secrets` | 标准库 `crypto/rand`、`crypto/hmac`、`crypto/pbkdf2` | 封装敏感值、脱敏、随机 token、HMAC、KDF 和 secret source。 |
 | `resilience` | 标准库 | 提供 retry、timeout 和 circuit breaker 策略执行器。 |
-| `concurrency` | `x/sync` + 标准库 | 提供 errgroup 包装、singleflight、固定 worker pool 和 context 感知任务执行。 |
+| `concurrency` | `x/sync` + 标准库 | 提供项目自有 singleflight、固定 worker pool 和 context 感知任务执行，不导出 errgroup 类型。 |
 | `codec` | `encoding/json`、`yaml.v3`、`msgpack` | 构造 JSON/YAML/msgpack 编解码器，提供内容类型、大小限制和统一错误语义。 |
 | `testkit` | 标准库 + 项目包 | 提供 fake clock、临时文件、健康 fixture 和底层库测试辅助。 |
+| `observability` | 项目自有契约 | 提供 HTTP observation、Metrics endpoint 与低敏 diagnostics；Prometheus/OTel/OTLP 只存在于 Kernel App 实现。 |
 
 ## 暂缓路线
 
@@ -47,7 +48,6 @@
 - 邮件：SMTP/API adapter、模板、重试和投递诊断。
 - 搜索：Meilisearch/Elasticsearch adapter，等待真实检索模型。
 - 特性开关：本地/远端开关、灰度规则和审计。
-- 观测采集：当前 Prometheus/OTel 实现已经存在，但项目自有 Capability 与底层装配尚未完成；[027](../docs/changes/027-business-module-third-party-isolation/README.md) 只形成待确认迁移设计，不能把 `pkg/observability` 当成已实现 API。
 - 架构扩展：基础能力依赖 DAG、业务对象图、诊断报告体系和观测采集适配。
 
 ## 验收要求

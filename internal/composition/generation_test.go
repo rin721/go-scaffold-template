@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	payload := generationConfig(directory, 120, 1<<20, filepath.Join(directory, "todo.db"))
 	writeGenerationConfig(t, configPath, payload)
 
-	coordinator, _ := newGenerationTestCoordinator(t, configPath)
+	coordinator, factory := newGenerationTestCoordinator(t, configPath)
 	if err := coordinator.Start(t.Context()); err != nil {
 		t.Fatalf("Start() error = %v", err)
 	}
@@ -63,12 +64,16 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "todo", "auth", "ops", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "todo", "auth", "ops", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
 		t.Fatalf("initial create status = %d, want 201", status)
 	}
+	if status := listTodos(t, initial.BoundAddress); status != http.StatusOK {
+		t.Fatalf("initial list status = %d, want 200", status)
+	}
+	assertMetricCount(t, factory, "listTodos", 1)
 	largeHeader := strings.Repeat("h", 1280<<10)
 	if status := listTodosWithHeader(t, initial.BoundAddress, largeHeader); status != http.StatusRequestHeaderFieldsTooLarge {
 		t.Fatalf("initial large-header status = %d, want 431", status)
@@ -90,13 +95,17 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	if after.BoundAddress != initial.BoundAddress || after.CurrentGeneration != 2 || !after.Ready {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
-	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage"}) ||
-		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"todo", "auth", "ops", "http"}) {
+	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics"}) ||
+		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "todo", "auth", "ops", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
 	if status := createTodo(t, after.BoundAddress, strings.Repeat("x", 100)); status != http.StatusBadRequest {
 		t.Fatalf("reloaded create status = %d, want 400", status)
 	}
+	if status := listTodos(t, after.BoundAddress); status != http.StatusOK {
+		t.Fatalf("reloaded list status = %d, want 200", status)
+	}
+	assertMetricCount(t, factory, "listTodos", 2)
 	if status := listTodosWithHeader(t, after.BoundAddress, largeHeader); status != http.StatusOK {
 		t.Fatalf("reloaded large-header status = %d, want 200", status)
 	}
@@ -137,7 +146,7 @@ func TestAllConfigurationSectionsCommitOneGeneration(t *testing.T) {
 	if !result.Applied || result.PreviousGeneration != 1 || result.CurrentGeneration != 2 || fmt.Sprint(result.ChangedSections) != fmt.Sprint(wantSections) {
 		t.Fatalf("Reload() result = %#v", result)
 	}
-	if diagnostics := coordinator.Diagnostics(); diagnostics.CurrentGeneration != 2 || diagnostics.CandidateGeneration != 0 || len(diagnostics.ResourceReused) != 0 {
+	if diagnostics := coordinator.Diagnostics(); diagnostics.CurrentGeneration != 2 || diagnostics.CandidateGeneration != 0 || fmt.Sprint(diagnostics.ResourceReused) != fmt.Sprint([]string{"observability.metrics"}) {
 		t.Fatalf("Diagnostics() = %#v", diagnostics)
 	}
 }
@@ -615,7 +624,7 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
 	bindingInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	bindingInput = append(bindingInput, opsconfig.Bindings()...)
+	bindingInput = append(bindingInput, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
 	bindings, err := kernelcomposition.ConfigurationBindings(bindingInput...)
 	if err != nil {
 		t.Fatalf("ConfigurationBindings() error = %v", err)
@@ -628,6 +637,31 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 		t.Fatalf("NewGenerationCoordinator() error = %v", err)
 	}
 	return coordinator, factory
+}
+
+func assertMetricCount(t *testing.T, factory *applicationGenerationFactory, operation string, count int) {
+	t.Helper()
+	generation := factory.currentGeneration()
+	if generation == nil || generation.managementRoute == nil || generation.managementRoute.BoundAddress() == nil {
+		t.Fatal("management route is unavailable")
+	}
+	response, err := http.Get("http://" + generation.managementRoute.BoundAddress().String() + "/metrics")
+	if err != nil {
+		t.Fatalf("get metrics: %v", err)
+	}
+	payload, readErr := io.ReadAll(response.Body)
+	closeErr := response.Body.Close()
+	if readErr != nil || closeErr != nil {
+		t.Fatalf("read metrics: %v", errors.Join(readErr, closeErr))
+	}
+	wantCount := " " + strconv.Itoa(count)
+	for _, line := range strings.Split(string(payload), "\n") {
+		if strings.Contains(line, `operation="`+operation+`"`) && strings.Contains(line, `method="GET"`) &&
+			strings.Contains(line, `status_class="2xx"`) && strings.Contains(line, `error_class="none"`) && strings.HasSuffix(line, wantCount) {
+			return
+		}
+	}
+	t.Fatalf("metrics missing operation %q count %d:\n%s", operation, count, payload)
 }
 
 func generationConfig(directory string, titleMax, maxHeaderBytes int, databasePath string) string {
