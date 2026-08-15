@@ -192,6 +192,8 @@ http:
 					if err != nil {
 						t.Fatalf("service shutdown error = %v", err)
 					}
+					assertAddressCanBeRebound(t, httpAddress)
+					assertFileCanBeRenamed(t, databasePath)
 				case <-time.After(5 * time.Second):
 					t.Fatal("service did not stop after cancellation")
 				}
@@ -282,6 +284,7 @@ http:
 	if !fileExists(databasePath) {
 		t.Fatal("Todo CLI did not create SQLite database")
 	}
+	assertFileCanBeRenamed(t, databasePath)
 
 	serviceContext, cancelService := context.WithCancel(t.Context())
 	serviceDone := make(chan error, 1)
@@ -342,6 +345,8 @@ http:
 		if err != nil {
 			t.Fatalf("service shutdown error = %v", err)
 		}
+		assertAddressCanBeRebound(t, address)
+		assertFileCanBeRenamed(t, databasePath)
 	case <-time.After(5 * time.Second):
 		t.Fatal("service did not stop after cancellation")
 	}
@@ -366,6 +371,28 @@ func reserveLoopbackAddress(t *testing.T) string {
 		t.Fatalf("release loopback address: %v", err)
 	}
 	return address
+}
+
+func assertAddressCanBeRebound(t *testing.T, address string) {
+	t.Helper()
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		t.Fatalf("rebind released address %s: %v", address, err)
+	}
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close rebound address %s: %v", address, err)
+	}
+}
+
+func assertFileCanBeRenamed(t *testing.T, path string) {
+	t.Helper()
+	releasedPath := path + ".released"
+	if err := os.Rename(path, releasedPath); err != nil {
+		t.Fatalf("rename released file %s: %v", path, err)
+	}
+	if err := os.Rename(releasedPath, path); err != nil {
+		t.Fatalf("restore released file %s: %v", path, err)
+	}
 }
 
 func fileExists(path string) bool {

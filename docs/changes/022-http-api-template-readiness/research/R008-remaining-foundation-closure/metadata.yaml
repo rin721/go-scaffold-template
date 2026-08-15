@@ -1,0 +1,41 @@
+schema_version: 1
+id: R008
+title: "剩余 Foundation 闭环复核"
+question: "生命周期、统一 diagnostics 与配置确定性实施后，当前 022 还缺哪些真实代码或验收证据才能在已证明 profile 内声明 Foundation-closed，哪些旧待办应合并或移出阻断线？"
+research_type: current-project-synthesis
+topics: ["foundation closure", "restart reconciliation", "fault acceptance", "release verification", "profile gate"]
+keywords: ["RestartRequired", "Coordinator", "ProcessDiagnostics", "FND-GOV", "Foundation-closed", "go mod tidy -diff"]
+languages: ["Go", "PowerShell"]
+frameworks: ["net/http"]
+technologies: ["Kernel", "Supervisor", "SQLite", "fsnotify", "GitHub Actions"]
+applicable_scenarios: ["FOUNDATION-CLOSURE-001", "022 Foundation 总验收", "同步 HTTP/CLI profile 解锁"]
+non_applicable_scenarios: ["Production HTTP API-ready", "外部 PostgreSQL/MySQL/S3 运行验收", "WebSocket 或 hijacked connection", "部署第二次信号", "跨平台 release"]
+status: active
+summary: "当前 HEAD 已实现配置、装配、生命周期、Supervisor 和统一 diagnostics 的核心不变量；剩余真实缺口收敛为 preflight-only RestartRequired 无法在配置恢复后解除，以及缺少跨层 current-profile acceptance authority。应把未启动的 FOUNDATION-ACCEPTANCE-001 与 FOUNDATION-RECONCILIATION-001 单轨合并为 FOUNDATION-CLOSURE-001，仅做窄 reconciliation、补足缺失集成证据并刷新十一门。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "local-validation", "git-history", "synthesis"]
+  primary_sources:
+    - title: "生命周期、诊断与配置实施后的当前源码和测试"
+      locator: "internal/kernel; internal/kernel/app; internal/kernel/config; pkg/supervisor; pkg/httpx; cmd/app"
+      snapshot: "HEAD 3a936a5, verified 2026-08-15"
+    - title: "022 三项已实施施工计划"
+      locator: "FOUNDATION-LIFECYCLE-001; FOUNDATION-DIAGNOSTICS-001; FOUNDATION-CONFIG-001"
+      snapshot: "commits 7d64f86, 6f1521a, 3a936a5"
+    - title: "当前 Windows 完整验证"
+      locator: "go test ./... -count=1; go test -race ./... -count=1; go vet ./...; go build ./..."
+      snapshot: "Go 1.25.7 windows/amd64; passed 2026-08-15"
+    - title: "当前平台与 module 可重复性探针"
+      locator: "wsl.exe --exec; go mod tidy -diff"
+      snapshot: "无可运行 WSL distro；Windows tidy-diff 仅报告 go.sum CRLF/LF 全文件差异，verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["FOUNDATION-CLOSURE-001 实施", "Coordinator Reload/RestartRequired 语义变化", "新增资源或后台 profile", "Foundation acceptance matrix 变化", "Go 或相关资源依赖升级"]
+relations:
+  extends: ["022-R002", "022-R004", "022-R005", "022-R006", "022-R007"]
+  related: ["022-R001", "022-R003"]
+  supersedes: ["022-R002", "022-R004"]
+  superseded_by: []
+report: report.md

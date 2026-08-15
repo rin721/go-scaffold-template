@@ -16,6 +16,7 @@ import (
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
 	pkghealth "github.com/rin721/go-scaffold-template/pkg/health"
 	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func TestHostRunsKernelBeforeAndStopsKernelAfterUpperParticipants(t *testing.T) {
@@ -88,6 +89,65 @@ func TestHostReadinessAndHealthFollowSupervisedLifecycle(t *testing.T) {
 	if snapshot := host.Health(t.Context()); snapshot.Status != pkghealth.StatusFail {
 		t.Fatalf("Health() after stop = %#v, want fail", snapshot)
 	}
+}
+
+func TestHostDiagnosticsPreservesUncooperativeParticipantAndTask(t *testing.T) {
+	assembly := newTestAssembly(t, &mutableSource{values: versionValues("service", "v1")}, Options{})
+	assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	assembly.install(t)
+	participantRelease := make(chan struct{})
+	participantDone := make(chan struct{})
+	taskRelease := make(chan struct{})
+	taskDone := make(chan struct{})
+	ready := make(chan struct{})
+	close(ready)
+	participant := &blockingHostParticipant{release: participantRelease, done: participantDone}
+	host, err := NewHost(assembly.coordinator, HostOptions{
+		ShutdownTimeout:      80 * time.Millisecond,
+		ForceShutdownTimeout: 20 * time.Millisecond,
+		Runners: []supervisor.Task{{
+			Name: "blocking-task", Ready: ready,
+			Run: func(context.Context) error {
+				defer close(taskDone)
+				<-taskRelease
+				return nil
+			},
+		}},
+	}, participant)
+	if err != nil {
+		t.Fatalf("NewHost() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- host.Run(ctx) }()
+	<-host.Ready()
+	cancel()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Run() error = nil, want incomplete shutdown")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Host did not honor the shared shutdown budget")
+	}
+
+	diagnostics := host.Diagnostics()
+	if diagnostics.Ready || diagnostics.ProcessState != supervisor.StateFailed || !diagnostics.ShutdownBudget.Exhausted {
+		t.Fatalf("Diagnostics() = %#v, want failed exhausted process", diagnostics)
+	}
+	participantSnapshot := findResponsibility(t, diagnostics, OwnerParticipant, participant.Name())
+	if participantSnapshot.Phase != ResponsibilityPhase(supervisor.UnitPhaseStop) || participantSnapshot.State != ResponsibilityPending {
+		t.Fatalf("participant responsibility = %#v, want stop pending", participantSnapshot)
+	}
+	taskSnapshot := findResponsibility(t, diagnostics, OwnerTask, "blocking-task")
+	if taskSnapshot.Phase != ResponsibilityPhase(supervisor.UnitPhaseStop) || taskSnapshot.State != ResponsibilityPending {
+		t.Fatalf("task responsibility = %#v, want stop pending", taskSnapshot)
+	}
+
+	close(participantRelease)
+	close(taskRelease)
+	waitForTestOwnerDone(t, participantDone, "participant")
+	waitForTestOwnerDone(t, taskDone, "task")
 }
 
 func findResponsibility(t *testing.T, diagnostics ProcessDiagnostics, kind OwnerKind, owner string) ResponsibilitySnapshot {
@@ -299,6 +359,30 @@ type hostParticipant struct {
 	name    string
 	events  *eventLog
 	onStart func()
+}
+
+type blockingHostParticipant struct {
+	release <-chan struct{}
+	done    chan<- struct{}
+}
+
+func (*blockingHostParticipant) Name() string { return "blocking-participant" }
+
+func (*blockingHostParticipant) Start(context.Context) error { return nil }
+
+func (p *blockingHostParticipant) Stop(context.Context) error {
+	defer close(p.done)
+	<-p.release
+	return nil
+}
+
+func waitForTestOwnerDone(t *testing.T, done <-chan struct{}, owner string) {
+	t.Helper()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatalf("%s test owner did not exit", owner)
+	}
 }
 
 func (p *hostParticipant) Name() string { return p.name }

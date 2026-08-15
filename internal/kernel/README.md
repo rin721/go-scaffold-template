@@ -117,9 +117,9 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 | --- | --- |
 | `NoReload` | 无运行期配置；Fixed Managed 只在初始启动构造 |
 | `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
-| `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
+| `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件；后续完整有效候选不再要求重启时解除该状态 |
 
-候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 ownership snapshot 并阻断后续 Reload。
+候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。无副作用的 `RestartRequired` 不会永久阻止 watcher：下一候选仍从 Loader 和全部 owner 校验开始，只有成功恢复到当前有效配置或完成合法热切换后才清除 restart latch。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 ownership snapshot 并阻断后续 Reload，恢复配置不能误清 cleanup debt。
 
 `WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
 

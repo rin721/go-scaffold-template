@@ -2,7 +2,7 @@
 
 ## 1. 用途
 
-本文件把研究结论转换成可复核门禁。生命周期目标证据已按 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 产生，统一运行诊断证据已按 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 产生，配置确定性证据已按 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md) 产生；其他门禁仍由对应后续计划负责，不能从本轮测试外推为 Foundation-closed。
+本文件把研究结论转换成可复核门禁。生命周期、统一 diagnostics 与配置确定性证据已由三个已实施计划产生；剩余 restart reconciliation、跨层 current-profile acceptance 和十一门总复核由已实施的 [`FOUNDATION-CLOSURE-001`](plans/foundation-closure-001.md) 单轨闭环。
 
 ## 2. 十一门当前矩阵
 
@@ -10,17 +10,25 @@
 | --- | --- | --- | --- | --- |
 | 事实门 | 通过 | R002 全链源码/测试追踪，R003 官方主源 | 无 | 变更后刷新快照 |
 | 目标门 | 通过 | copy-owned HTTP API server baseline；不做通用 Runtime | 无 | 后续任务不得扩大产品目标 |
-| 边界门 | 部分通过 | business/kernel/http/third-party import 边界 | Runner/Health/new resource 场景无模块接入契约 | 真实需求触发时完成 capability assessment |
+| 边界门 | 通过（current profile） | business/kernel/http/third-party import 边界 | current profile 无阻断；Runner/Health/new resource 场景无模块接入契约 | 新 profile 由真实需求触发 capability assessment |
 | 装配门 | 当前 profile 通过 | application composition + forward-only Plan | 后台 profile 未证明 | 同步 profile 复制验收；异步 profile 单独验收 |
 | 生命周期门 | **通过（当前 profile）** | terminal timeout 可继续 Stop；candidate/retired/current terminal result cache；Supervisor/HTTP graceful-force；逐资源释放测试 | 新 retryable Adapter、hijacked/WebSocket 和部署信号政策仍需真实场景 | 新资源继续执行 capability assessment |
-| 一致性门 | 通过（当前 profile） | 同一候选、提交前原子；cleanup debt 保留 owner/generation；Host 单一视图合并 capability/participant/task 与共享 budget | sticky reconciliation 仍是 P1 | 后续 Foundation acceptance 复核 |
-| 错误门 | 通过（当前 profile） | error wrapping/join、typed cleanup error；owner-local error type 与 pending/failed/forced/finalized 分离 | 外部真实资源失败仍待总验收 | `FOUNDATION-ACCEPTANCE-001` |
-| 治理门 | 通过（当前 profile） | import graph、binding、route/participant 唯一性、terminal attempt/force 与 EnvSource/Loader 确定性负向门禁 | 无当前 profile 阻断 | `FOUNDATION-ACCEPTANCE-001` 总复核 |
-| 演进门 | 部分通过 | immutable generation、RestartRequired、cleanup debt 不覆盖 | sticky recovery 和受控 management recovery 未决定 | diagnostics 与 P1 reconciliation 研究 |
+| 一致性门 | 通过（当前 profile） | 同一候选、提交前原子；preflight restart 可恢复；cleanup debt 保留 owner/generation 且不误清 | 无当前 profile 阻断 | 新 profile 另做能力评估 |
+| 错误门 | 通过（当前 profile） | error wrapping/join、typed cleanup error；owner-local error type 与 pending/failed/forced/finalized 分离 | 外部真实资源属于场景验收，不阻断当前 profile | `FOUNDATION-CLOSURE-001` 复核 |
+| 治理门 | 通过（当前 profile） | import graph、binding、route/participant 唯一性、terminal attempt/force、EnvSource/Loader、current-profile 物理释放与完整 validation | 无当前 profile 阻断 | 新边界继续加 architecture/test gate |
+| 演进门 | 通过（当前 profile） | immutable generation；preflight restart recovery 与 degraded cleanup block 分离；无未授权 management recovery | 无当前 profile 阻断 | 新 retry/force/resource 需独立计划 |
 | 复杂度门 | 通过 | 当前规模无需 Fx/Wire/general DAG | 防止借加固扩成万能框架 | Diff/ADR 证明只改必要状态与契约 |
-| 业务扩展门 | **未通过** | Todo 同步 HTTP/CLI profile | 底层 P0 未闭环；新模块 profile 未评估 | 第 4 节全部条件通过 |
+| 业务扩展门 | 通过（current profile） | Todo 同步 HTTP/CLI/startup Participant；Foundation current profile 已闭环 | 具体新模块仍需 profile assessment | 第 4 节逐模块执行 |
 
 ## 3. Foundation-closed 阻断验收
+
+### `FND-RECONCILIATION-001` 安全恢复
+
+- application-owned 与 Kernel `RestartRequired` 都在 Build/Commit 前拒绝，并保持当前 generation。
+- 重复 restart 候选和无效候选保持 latch；恢复候选只有经 Loader、全部 owner 与现有 reload 事务成功后才清除。
+- 恢复候选可同时提交合法 hot-swappable 变化；restart-only section 仍保持 current 值。
+- watcher 在 restart-required 后继续接收恢复事件。
+- committed cleanup failure 的 degraded/cleanup-required 状态继续阻断 Reload，恢复文件不能误清 owner 或 debt。
 
 ### `FND-ACCEPT-001` 终止排空
 
@@ -90,4 +98,4 @@
 
 ## 6. 当前结果
 
-截至 2026-08-15：`FOUNDATION-DIAGNOSTICS-001 = PASS`，但 `Foundation-closed = FAIL`、`Business-extension = BLOCKED`、`Production HTTP API-ready = FAIL`。统一 diagnostics 的 typed state、budget、pending/failed/forced、脱敏和并发读取已经实现并验证；EnvSource 冲突与完整 Foundation acceptance 仍未完成。
+截至 2026-08-15：lifecycle、diagnostics、config、reconciliation 与 current-profile acceptance 均为 PASS；`Foundation-closed(current synchronous HTTP/CLI profile) = PASS`，`Business-design-unlocked(current profile) = PASS after per-module assessment`，`Production HTTP API-ready = FAIL`。外部资源、长连接、后台/Health、新共享资源、部署、Linux runtime 和 release 没有从本轮结果外推为通过。

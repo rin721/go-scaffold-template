@@ -7,11 +7,11 @@
 1. 当前底层何时形成配置、装配、资源、运行、重载、排空、停止、诊断和验证的真实闭环，从而允许后续业务模块进入详细设计；
 2. 项目何时可以诚实声明为成熟 Go Server HTTP API 后端脚手架。
 
-生命周期实施前事实依据为 [R002](research/R002-foundation-closure-audit/report.md)，外部实践为 [R003](research/R003-go-runtime-practices/report.md)，综合取舍为 [R004](research/R004-foundation-closure-synthesis/report.md)，逐资源 Close/retry/force 语义由 [R005](research/R005-resource-finalization-policy/report.md) 支撑，生命周期实施后的 diagnostics 实施前事实由 [R006](research/R006-unified-runtime-diagnostics/report.md) 支撑，EnvSource/Loader 实施前确定性事实由 [R007](research/R007-config-source-determinism/report.md) 支撑；整体 HTTP 差距继续由 [R001](research/R001-current-readiness-reassessment/report.md) 与 [019-R002](../019-http-api-maturity-gap-assessment/research/R002-http-api-maturity-reference/report.md) 支撑。生命周期施工级契约、文件和测试由已实施的 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 唯一负责；统一诊断施工级范围与实施证据由已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 唯一负责；配置确定性的施工级契约与实施证据由已实施的 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md) 唯一负责，其余要求仍是后续 Program 门禁。
+当前剩余范围与取舍由 [R008](research/R008-remaining-foundation-closure/report.md) 支撑；R002/R004 已被它取代并保留为三项 P0 实施前历史。外部实践继续由 [R003](research/R003-go-runtime-practices/report.md) 支撑，逐资源 Close/retry/force 语义由 [R005](research/R005-resource-finalization-policy/report.md) 支撑，R006/R007 保存 diagnostics/config 实施前快照；整体 HTTP 差距继续由 [R001](research/R001-current-readiness-reassessment/report.md) 与 [019-R002](../019-http-api-maturity-gap-assessment/research/R002-http-api-maturity-reference/report.md) 支撑。生命周期、统一 diagnostics 与配置确定性的施工级契约和证据分别由已实施的三个计划负责；剩余 Foundation requirement 由 [`FOUNDATION-CLOSURE-001`](plans/foundation-closure-001.md) 单轨负责。
 
 ## 2. 标签定义
 
-- **Foundation-partial**：主链和正常路径存在，但至少一个失败/终止/诊断责任没有可验证终态。当前状态。
+- **Foundation-partial**：主链和正常路径存在，但至少一个失败/终止/诊断责任没有可验证终态。当前 synchronous HTTP/CLI profile 已越过该状态。
 - **Foundation-closed**：配置、显式装配、资源 owner、start/ready/run/reload/drain/stop、错误、诊断和故障验证构成闭环。
 - **Business-design-unlocked(profile)**：Foundation-closed 已通过，且具体业务需求完全落入已经验证的能力 profile；只解锁设计，不授权实现。
 - **Copy-ready**：固定 release 可在支持平台完整复制、迁移 identity、保留/移除示例并独立演进。当前部分达到。
@@ -27,6 +27,7 @@
 - `FND-CONFIG-001`：File/Env/未来 Source 的同源和跨源 object/non-object 形状冲突必须确定性拒绝，不依赖枚举顺序；null 属于 non-object，不得与 object 静默改形状。
 - `FND-CONFIG-002`：Loader 仍是 Coordinator 唯一调用路径；同一 immutable candidate 必须被全部 Kernel 和 application owner 严格校验后才能 Build。
 - `FND-CONFIG-003`：unknown field、exact/case-fold duplicate key、空 path segment、跨类型弱转换、未知顶层 section、秘密脱敏和 provenance 的现有保证不得回退；配置错误不得输出原始 value。
+- `FND-RECONCILIATION-001`：preflight-only `RestartRequired` 不得与 committed cleanup debt 共用永久 latch。后续候选只有在重新加载、全部 owner 校验且相对当前有效 generation 不再要求重启，并完整通过现有 reload 事务后才能清除 restart 状态；degraded/cleanup-required 仍 fail-closed。
 
 ### 3.2 DI、装配与边界
 
@@ -113,10 +114,10 @@
 - 不预装消息、调度、分布式锁、邮件、搜索、租户或特性开关。
 - 不要求所有消费者采用 Kubernetes、某个云、APM 或 API gateway。
 
-## 7. 本轮文档验收
+## 7. `FOUNDATION-CLOSURE-001` 验收
 
-- 研究先检查既有 metadata，并明确复用、刷新和新增原因。
-- 事实、原始意图、外部实践、方案、取舍、风险、建议、证据强度、验证与未知分离。
-- requirements/design/acceptance/tasks 对 Foundation 状态、P0 顺序和业务解锁条件一致。
-- 不把目标状态写成当前 API，不修改或执行任何非文档资产。
-- 文档链接、metadata、Markdown 和 `git diff --check` 通过，所有变更保持未暂存未提交。
+- R008 已检查既有 metadata，并明确 R002/R004 的 supersede 与其他研究的继续复用边界。
+- `FND-RECONCILIATION-001` 只解除无副作用 preflight latch，不自动恢复 degraded、cleanup debt 或 terminal failure。
+- requirements/design/acceptance/tasks 对唯一 `FOUNDATION-CLOSURE-001`、current-profile 标签和业务解锁条件一致。
+- 实施只覆盖 `FCL-001..008`，不新增依赖、公共 API、外部服务、后台 recovery 或 HTTP 产品能力。
+- 目标测试、full test/race/vet/build/cross-build、文档链接、metadata、Diff 和提交范围门禁通过；未执行平台或外部场景如实报告。

@@ -134,7 +134,11 @@ serving
 
 实现保持 `Source`/`Loader`/Snapshot、File < Env 和 provenance 不变，在 config owner 内统一 object/non-object 分类、大小写唯一 sibling、稳定遍历和有错误 path insertion。同一 EnvSource 的 ancestor/descendant、duplicate logical path、空 path segment 和大小写碰撞确定性拒绝；object 与 scalar/array/null 的跨源冲突也在候选产生前拒绝。唯一施工级设计与测试证据见已实施的 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md)。
 
-## 5. Phase F2：故障验收与 Foundation 复核
+## 5. Phase F2：剩余 reconciliation、故障验收与 Foundation 复核
+
+当前施工级设计由 [R008](research/R008-remaining-foundation-closure/report.md) 与已确认的 [`FOUNDATION-CLOSURE-001`](plans/foundation-closure-001.md) 唯一负责。未启动的 acceptance/reconciliation 两个 Program 已单轨合并，不再分别形成实现。
+
+preflight-only `RestartRequired` 没有 Build/Commit 副作用，因此后续 Reload 可以重新加载并全量校验候选：持续要求重启或无效候选保持 latch；候选相对 current generation 不再要求重启并完整成功后才清除。`LifecycleDegraded`、`CleanupRequired`、incomplete ownership 和 terminal failure 不进入该恢复路径。
 
 测试必须先证明失败语义再声明闭环：
 
@@ -146,7 +150,7 @@ serving
 6. EnvSource shape collision 在 Build 前失败；
 7. 真实可关闭资源证明旧/当前 generation 不残留文件锁或连接 owner。
 
-完成后按 [acceptance.md](acceptance.md) 逐门复核。只有 Foundation-closed 通过，才进入 Phase B。
+完成后按 [acceptance.md](acceptance.md) 逐门复核。只有 `Foundation-closed(current synchronous HTTP/CLI profile)` 通过，才按同一 profile 进入 Phase B；后台、Health、新资源和长连接仍需独立能力评估。
 
 ## 6. Phase B：按 profile 解锁业务模块设计
 
@@ -214,18 +218,18 @@ Operation 显式 public/protected；遗漏分类 fail closed。真实 actor 出�
 FOUNDATION-LIFECYCLE-001
         -> FOUNDATION-DIAGNOSTICS-001
         -> FOUNDATION-CONFIG-001
-        -> FOUNDATION-ACCEPTANCE-001
+        -> FOUNDATION-CLOSURE-001
         -> BUSINESS-DESIGN-UNLOCK
 
-FOUNDATION-ACCEPTANCE-001 -> MANAGEMENT-001 -> OBSERVABILITY-001
-FOUNDATION-ACCEPTANCE-001 -> API-AUTHORITY-001 -> API-CONTRACT-001
+FOUNDATION-CLOSURE-001 -> MANAGEMENT-001 -> OBSERVABILITY-001
+FOUNDATION-CLOSURE-001 -> API-AUTHORITY-001 -> API-CONTRACT-001
 PORTABILITY-001 -------------------------------> RELEASE-001
 API-CONTRACT-001 -> PROTOCOL-001 / EDGE-001 / SECURITY-001
 MIGRATION-001 ---------------------------------> DELIVERY-001
 all baseline ---------------------------------> ACCEPTANCE-001
 ```
 
-`FOUNDATION-CONFIG-001` 已实施；最终 Foundation 状态仍由 `FOUNDATION-ACCEPTANCE-001` 统一复核。业务详细设计不能在 Foundation 总验收前越过解锁门。
+`FOUNDATION-CONFIG-001` 已实施；最终 Foundation 状态由单轨 `FOUNDATION-CLOSURE-001` 统一复核。业务详细设计不能在 Foundation 总验收前越过解锁门。
 
 ## 14. 关键风险与控制
 
@@ -240,16 +244,15 @@ all baseline ---------------------------------> ACCEPTANCE-001
 | 业务模块私起 goroutine | Supervisor 无法等待和诊断 | profile gate；先扩展窄 Runner 契约 |
 | 提前扩成万能 Contribution | 抽象无真实调用方 | 真实需求先做 capability assessment |
 | 直接实现 Swagger 注解 | Router/文档/权限多权威 | API authority 原型和 ADR 先行 |
-| 一次提交全部 P0 | 难审查、难回滚 | 022 内独立施工计划、稳定任务 ID、逐项确认 |
+| 将剩余 acceptance/reconciliation 继续拆分 | Foundation 长期停在部分通过，证据重复 | 用一个窄闭环计划、稳定任务 ID 和同一提交收口 |
 
 ## 15. 未决项
 
 1. 部署平台 SIGTERM 总预算、第二次信号和非零退出政策；
 2. HTTP hijacked connection 是否进入 baseline，以及由谁治理；
-3. 外部 PostgreSQL/MySQL/Redis/fsnotify close error 的真实物理释放结果；
-4. sticky RestartRequired 是否允许有效配置恢复后解除；
-5. 第一个新业务模块是否需要 Runner/Health/new resource；
-6. API authority 的 spec-first/typed code-first 选择；
-7. management listener、认证、migration artifact、支持平台和签名方案。
+3. 外部 PostgreSQL/MySQL/Redis/S3 close error 的真实物理释放结果；
+4. 第一个新业务模块是否需要 Runner/Health/new resource；
+5. API authority 的 spec-first/typed code-first 选择；
+6. management listener、认证、migration artifact、支持平台和签名方案。
 
-R005 已消解“当前资源应选择哪类关闭策略”的研究未知；生命周期契约已经在 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 冻结，第 1 至 3 项的真实结果仍需其故障验证或部署研究证明。第 5 项决定是否需要扩展 module contract；后续项分别阻塞 HTTP 成熟化阶段。022 不替它们虚构答案。
+R008 已决定只对无副作用 preflight `RestartRequired` 提供候选恢复，并由 `FOUNDATION-CLOSURE-001` 实施；它不再是未决项。R005 已消解当前资源场景分类。上列项目属于部署、特定资源、新业务 profile 或 HTTP 产品成熟化，不阻止 current synchronous HTTP/CLI profile 的 Foundation 闭环，也不能由 022 虚构答案。

@@ -427,6 +427,14 @@ func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
 	if _, err := assembly.coordinator.Reload(t.Context()); err == nil {
 		t.Fatal("Reload() after committed cleanup failure error = nil")
 	}
+	afterBlockedReload := assembly.coordinator.Diagnostics()
+	if afterBlockedReload.State != LifecycleDegraded || !afterBlockedReload.CleanupRequired || !afterBlockedReload.RestartRequired || afterBlockedReload.ConfigGeneration != 2 {
+		t.Fatalf("Diagnostics() after blocked recovery = %#v, want unchanged cleanup debt", afterBlockedReload)
+	}
+	retired = findOwnership(t, afterBlockedReload.Ownerships, "service", app.FinalizationPhaseRetired)
+	if retired.Attempt != 1 || retired.State != app.OwnershipTerminalFailed {
+		t.Fatalf("retired ownership after blocked recovery = %#v", retired)
+	}
 	assertAccessVersion(t, access, "v2")
 }
 
@@ -581,6 +589,43 @@ func TestReloadRestartRequiredHasNoPartialSideEffects(t *testing.T) {
 	}
 	assertAccessVersion(t, swapAccess, "v1")
 	assertAccessVersion(t, restartAccess, "v1")
+	if diagnostics := assembly.coordinator.Diagnostics(); !diagnostics.RestartRequired || diagnostics.ConfigGeneration != 1 {
+		t.Fatalf("restart diagnostics = %#v, want latched generation 1", diagnostics)
+	}
+
+	source.set(map[string]any{
+		"swap": map[string]any{"version": "v3"}, "fixed-port": map[string]any{"version": "v3"},
+	})
+	result, err = assembly.coordinator.Reload(t.Context())
+	if !errors.Is(err, app.ErrRestartRequired) || result.Applied {
+		t.Fatalf("Reload(repeated restart) = %#v, %v; want restart required", result, err)
+	}
+	if got := log.snapshot(); !reflect.DeepEqual(got, before) {
+		t.Fatalf("repeated restart produced side effects = %#v, want %#v", got, before)
+	}
+
+	source.set(map[string]any{
+		"swap": map[string]any{"version": "v2"}, "fixed-port": map[string]any{},
+	})
+	if _, err := assembly.coordinator.Reload(t.Context()); err == nil || errors.Is(err, app.ErrRestartRequired) {
+		t.Fatalf("Reload(invalid recovery) error = %v, want owner validation error", err)
+	}
+	if diagnostics := assembly.coordinator.Diagnostics(); !diagnostics.RestartRequired || diagnostics.ConfigGeneration != 1 {
+		t.Fatalf("invalid recovery diagnostics = %#v, want retained latch", diagnostics)
+	}
+
+	source.set(map[string]any{
+		"swap": map[string]any{"version": "v2"}, "fixed-port": map[string]any{"version": "v1"},
+	})
+	result, err = assembly.coordinator.Reload(t.Context())
+	if err != nil || !result.Applied {
+		t.Fatalf("Reload(recovered hot swap) = %#v, %v; want applied", result, err)
+	}
+	if diagnostics := assembly.coordinator.Diagnostics(); diagnostics.RestartRequired || diagnostics.ConfigGeneration != 2 {
+		t.Fatalf("recovered diagnostics = %#v, want clear latch generation 2", diagnostics)
+	}
+	assertAccessVersion(t, swapAccess, "v2")
+	assertAccessVersion(t, restartAccess, "v1")
 }
 
 func TestReloadRequiresRestartForApplicationOwnedSection(t *testing.T) {
@@ -610,6 +655,20 @@ func TestReloadRequiresRestartForApplicationOwnedSection(t *testing.T) {
 	result, err := assembly.coordinator.Reload(t.Context())
 	if !errors.Is(err, app.ErrRestartRequired) || result.Applied || len(result.RestartRequired) != 1 {
 		t.Fatalf("Reload() = %#v, %v; want application restart requirement", result, err)
+	}
+	if diagnostics := assembly.coordinator.Diagnostics(); !diagnostics.RestartRequired {
+		t.Fatalf("Diagnostics() = %#v, want restart requirement", diagnostics)
+	}
+
+	source.set(map[string]any{
+		"service": map[string]any{"version": "v1"}, "other": map[string]any{"value": "one"},
+	})
+	result, err = assembly.coordinator.Reload(t.Context())
+	if err != nil || result.Applied {
+		t.Fatalf("Reload(restored application config) = %#v, %v; want unchanged success", result, err)
+	}
+	if diagnostics := assembly.coordinator.Diagnostics(); diagnostics.RestartRequired || diagnostics.ConfigGeneration != 1 {
+		t.Fatalf("restored diagnostics = %#v, want clear latch generation 1", diagnostics)
 	}
 }
 
@@ -643,6 +702,59 @@ func TestWatchReportsReloadErrorAndContinues(t *testing.T) {
 	}
 	writeVersionFile(t, path, "v2")
 	waitForAccessVersion(t, access, "v2")
+	cancel()
+	select {
+	case err := <-watchDone:
+		if err != nil {
+			t.Fatalf("Watch() shutdown error = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out stopping Watch()")
+	}
+}
+
+func TestWatchRecoversAfterRestartRequiredCandidateIsRestored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	writeWatchRecoveryFile(t, path, "v1", "one")
+	assembly := newTestAssembly(t, config.FileSource(path), Options{Debounce: 30 * time.Millisecond, ReloadTimeout: time.Second})
+	access := assembly.add(t, "service", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	assembly.installWith(t, config.Binding{
+		CapabilityID: "application.other",
+		ConfigPath:   "other",
+		Validate: func(snapshot config.Snapshot) error {
+			var value struct {
+				Value string `mapstructure:"value"`
+			}
+			return snapshot.DecodeSection("other", &value)
+		},
+	})
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	t.Cleanup(func() { _ = assembly.coordinator.Stop(context.Background()) })
+	watchCtx, cancel := context.WithCancel(t.Context())
+	errorsSeen := make(chan error, 2)
+	watchDone := make(chan error, 1)
+	go func() { watchDone <- assembly.coordinator.Watch(watchCtx, func(err error) { errorsSeen <- err }) }()
+
+	writeWatchRecoveryFile(t, path, "v1", "two")
+	select {
+	case err := <-errorsSeen:
+		if !errors.Is(err, app.ErrRestartRequired) {
+			t.Fatalf("Watch() error = %v, want ErrRestartRequired", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for restart-required event")
+	}
+	if diagnostics := assembly.coordinator.Diagnostics(); !diagnostics.RestartRequired {
+		t.Fatalf("Diagnostics() = %#v, want restart latch", diagnostics)
+	}
+
+	writeWatchRecoveryFile(t, path, "v2", "one")
+	waitForAccessVersion(t, access, "v2")
+	if diagnostics := assembly.coordinator.Diagnostics(); diagnostics.RestartRequired {
+		t.Fatalf("Diagnostics() = %#v, want recovered watcher", diagnostics)
+	}
 	cancel()
 	select {
 	case err := <-watchDone:
@@ -696,5 +808,22 @@ func writeVersionFile(t *testing.T, path, version string) {
 	content := []byte("service:\n  version: " + version + "\n")
 	if err := os.WriteFile(path, content, 0o600); err != nil {
 		t.Fatalf("write config %s: %v", version, err)
+	}
+}
+
+func writeWatchRecoveryFile(t *testing.T, path, version, other string) {
+	t.Helper()
+	content := []byte("service:\n  version: " + version + "\nother:\n  value: " + other + "\n")
+	temporary := path + ".next"
+	if err := os.WriteFile(temporary, content, 0o600); err != nil {
+		t.Fatalf("write recovery config %s/%s: %v", version, other, err)
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			t.Fatalf("remove previous recovery config: %v", removeErr)
+		}
+		if retryErr := os.Rename(temporary, path); retryErr != nil {
+			t.Fatalf("publish recovery config %s/%s: %v", version, other, retryErr)
+		}
 	}
 }

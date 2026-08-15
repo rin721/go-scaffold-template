@@ -3,12 +3,12 @@
 ## 1. 门禁状态
 
 - 022 研究门禁：已通过。
-- 022 文档计划：Program 总计划已完成；生命周期、diagnostics 与 `FOUNDATION-CONFIG-001` 均已实施并保留独立施工证据。
-- 当前底层：Foundation-partial；生命周期、统一 diagnostics 与配置确定性 P0 已闭环，完整 Foundation acceptance 仍未通过。
-- 业务模块详细设计：阻断，等待 Foundation P0 验收和具体 profile assessment。
+- 022 文档计划：生命周期、diagnostics 与 config 已实施；R008 已把剩余 acceptance/reconciliation 单轨收敛为 `FOUNDATION-CLOSURE-001`。
+- 当前底层：`Foundation-closed(current synchronous HTTP/CLI profile)`；其他 profile 未自动通过。
+- 业务模块详细设计：current profile 在逐模块 capability assessment 后解锁；Runner/Health/new resource/long-lived connection 仍阻断。
 - Production HTTP API-ready：未通过。
-- 非文档实施：`FOUNDATION-LIFECYCLE-001`、`FOUNDATION-DIAGNOSTICS-001` 与 `FOUNDATION-CONFIG-001` 均已由用户在各自计划报告后的后续消息明确确认并完成；其他 Program item 仍需形成各自计划并单独确认。
-- 本轮边界：只实施、验证并提交 `CFG-001..008`；不启动服务、不修改真实配置、不部署、不推送。
+- 非文档实施：前三项已完成；用户已对本 goal 明确授予 AGENTS 门禁的临时全流程例外，`FOUNDATION-CLOSURE-001` 的 `FCL-001..008` 已确认。
+- 本轮边界：连续完成 `FCL-001..008`、本地验证与一个 commit；不推送、不部署、不操作外部系统或真实配置。
 
 ## 2. 本轮研究与计划任务
 
@@ -26,6 +26,8 @@
 | `PLAN-004` | XL | `RES-005` | 建立 `FOUNDATION-DIAGNOSTICS-001` 唯一施工计划并同步 022 authority | 冻结 typed ledger、Host 单一快照、文件影响、`DGN-001..009`、精确测试和重新确认线，状态为待确认 | 已完成 |
 | `RES-006` | L | `FOUNDATION-DIAGNOSTICS-001` 已实施、022-R002/R004 | 在当前 HEAD 追踪 EnvSource、Loader、Snapshot、Coordinator、Kernel 与测试，复核 012-R019 刷新条件和 Go `os.Environ` 契约 | R007 分离当前事实、推断、适用边界、局限与任务影响 | 已完成 |
 | `PLAN-005` | XL | `RES-006` | 建立 `FOUNDATION-CONFIG-001` 唯一施工计划并同步 022 authority | 冻结 object/non-object、case/empty/null、错误脱敏、文件影响、`CFG-001..008`、测试矩阵和重新确认线，状态为待确认 | 已完成 |
+| `RES-007` | L | 三项 P0 已实施 | 在当前 HEAD 复核旧 R002/R004、Coordinator latch、跨层测试、平台与验证边界 | R008 分离真实剩余缺口、非阻断场景和 Program 合并理由 | 已完成 |
+| `PLAN-006` | XL | `RES-007` | 建立 `FOUNDATION-CLOSURE-001` 并单轨替换两个未启动 Program | 冻结 reconciliation、不误清条件、文件影响、`FCL-001..008`、精确测试和停止线 | 已完成并确认 |
 
 ## 3. Foundation 后续实施项
 
@@ -34,8 +36,7 @@
 | `FOUNDATION-LIFECYCLE-001` | P0 | 022-R002/R003/R004/R005 | 实现统一 owner/state/budget 引擎与场景化 finalization Adapter，修复 terminal drain、部分构造和 cleanup debt | `FND-LIFECYCLE-001` 至 `008`，`FND-ACCEPT-001/002` | [已确认并实施完成](plans/foundation-lifecycle-001.md) |
 | `FOUNDATION-DIAGNOSTICS-001` | P0 | `FOUNDATION-LIFECYCLE-001` 已实施、022-R006 | 统一 Kernel/Coordinator/Supervisor responsibility、generation、phase、policy、budget、verification 和 terminal diagnostics | `FND-RUNTIME-002`、`FND-DIAGNOSTICS-001/002`、`FND-ACCEPT-003` | [已确认并实施完成](plans/foundation-diagnostics-001.md) |
 | `FOUNDATION-CONFIG-001` | P0 | 022-R002/R004/R007 | 统一 EnvSource 与 Loader 的结构冲突语义，拒绝顺序相关路径 | `FND-CONFIG-001` 至 `003`、`FND-ACCEPT-004` | [已确认并实施完成](plans/foundation-config-001.md) |
-| `FOUNDATION-ACCEPTANCE-001` | P0 | 上述三项 | 故障注入、真实资源、Service/CLI、race/vet/build 和十一门复核 | `FND-GOV-001` 至 `004`、`FND-ACCEPT-005` | 未立项 |
-| `FOUNDATION-RECONCILIATION-001` | P1 | Foundation P0 | 研究 sticky RestartRequired 的恢复与人工干预语义 | 不破坏提交前原子和 degraded 诚实性 | 未立项 |
+| `FOUNDATION-CLOSURE-001` | P0 | 上述三项、022-R008 | 合并 restart reconciliation、跨层故障/物理释放验收和十一门复核 | `FND-RECONCILIATION-001`、`FND-GOV-001..004`、`FND-ACCEPT-005`，current-profile Foundation-closed | [已确认并实施完成](plans/foundation-closure-001.md) |
 | `MODULE-RUNTIME-PROFILE-001` | 场景触发 | 首个后台/health 需求 | 为真实 Runner/Ready/Health 场景设计最小贡献契约 | `BIZ-UNLOCK-002` 至 `004`，无万能 hook/locator | 等待真实场景 |
 
 ### 3.1 `FOUNDATION-LIFECYCLE-001` 当前计划
@@ -50,16 +51,20 @@
 
 实施前事实与取舍由 [R007](research/R007-config-source-determinism/report.md) 支撑，唯一施工级正文与实施证据为 [`plans/foundation-config-001.md`](plans/foundation-config-001.md)。`CFG-001` 至 `CFG-008` 已完成：`Source`/`Loader`/Snapshot、File < Env 和 Coordinator 单候选保持不变，config owner 已统一 Env path insertion、case-fold sibling identity、object/non-object merge、null、安全错误与 Build-zero 门禁。
 
+### 3.4 `FOUNDATION-CLOSURE-001` 当前计划
+
+当前事实与合并取舍由 [R008](research/R008-remaining-foundation-closure/report.md) 支撑，唯一施工级正文为 [`plans/foundation-closure-001.md`](plans/foundation-closure-001.md)。它只实施 preflight restart latch 的安全恢复、实际 Host diagnostics 和 current-profile 物理释放证据；不自动恢复 cleanup debt，不引入外部服务、management 或 HTTP 产品能力。
+
 ## 4. HTTP API 成熟化后续 Program
 
 | Program ID | 优先级 | 前置 | 目标 | 完成门禁 | 当前状态 |
 | --- | --- | --- | --- | --- | --- |
 | `PORTABILITY-001` | P0 | 无 | 统一 module/行尾与 Windows/Linux validation manifest | `BASE-003`，两平台同义通过 | 未立项 |
-| `API-AUTHORITY-001` | P0 | `FOUNDATION-ACCEPTANCE-001` | Todo 隔离原型比较 spec-first/typed code-first，ADR 单轨决策 | 证据覆盖 schema/security/diff/DX | 未立项 |
+| `API-AUTHORITY-001` | P0 | `FOUNDATION-CLOSURE-001` | Todo 隔离原型比较 spec-first/typed code-first，ADR 单轨决策 | 证据覆盖 schema/security/diff/DX | 未立项 |
 | `API-CONTRACT-001` | P0 | `API-AUTHORITY-001` | 建立 Operation/OpenAPI/Router/inventory/compatibility 单一权威 | `API-001` 至 `003` | 未立项 |
 | `PROTOCOL-001` | P0 | `API-CONTRACT-001` | strict decode/encode、problem、validation、404/405/panic 单轨迁移 | `PROTO-001/002` | 未立项 |
 | `EDGE-001` | P0 | `API-CONTRACT-001` | trusted proxy、budget、limits、CORS/CSRF、rate/overload | `EDGE-001` | 未立项 |
-| `MANAGEMENT-001` | P0 | `FOUNDATION-ACCEPTANCE-001` | 独立 management listener、startup/live/ready、dependency contribution、diagnostics/build info | `MGMT-001/002` | 未立项 |
+| `MANAGEMENT-001` | P0 | `FOUNDATION-CLOSURE-001` | 独立 management listener、startup/live/ready、dependency contribution、diagnostics/build info | `MGMT-001/002` | 未立项 |
 | `OBSERVABILITY-001` | P0 | `API-CONTRACT-001`、`MANAGEMENT-001` | OTel Adapter、trace/metric/log correlation、cardinality/redaction | `OBS-001/002` | 未立项 |
 | `SECURITY-001` | P0 | `API-CONTRACT-001`、真实 actor | access policy、Principal、认证 Adapter、对象授权、审计 | `SEC-001` 至 `003` | 等待真实场景 |
 | `MIGRATION-001` | P0 | 生产部署模型 | versioned migration、lock、独立 command/job、expand-contract | `DATA-001/002` | 等待部署场景 |
@@ -74,11 +79,11 @@
 1. `FOUNDATION-LIFECYCLE-001`：已完成；后续以当前代码、权威文档和本轮验证证据为准；
 2. `FOUNDATION-DIAGNOSTICS-001`：已完成，让所有未结束责任可定位，不以 error string 代替状态；
 3. `FOUNDATION-CONFIG-001`：已完成，配置歧义在 Snapshot 与资源副作用前确定性拒绝；
-4. `FOUNDATION-ACCEPTANCE-001`：故障注入后复核十一门，决定是否解锁同步业务 profile；
+4. `FOUNDATION-CLOSURE-001`：已完成，安全解除 preflight restart latch，补跨层故障/释放证据并复核十一门；
 5. Foundation 通过后，`API-AUTHORITY-001`、`MANAGEMENT-001` 与 `PORTABILITY-001` 可独立推进；
 6. 再按 `API-CONTRACT -> PROTOCOL/EDGE -> OBS/SEC` 和 `MIGRATION -> DELIVERY -> RELEASE -> ACCEPTANCE` 推进。
 
-不得在 Foundation P0 期间并行细化新的 Handler/Service/Repo/Model。现有 Todo 只作为证据和后续故障验收对象，不据此扩张业务范围。
+Foundation current profile 通过不自动授权新的 Handler/Service/Repo/Model。现有 Todo 只作为证据；后续模块仍须先完成 capability assessment，不据此扩张业务范围。
 
 ## 6. 逐轮证据
 
@@ -93,7 +98,8 @@
 | 7 | 2026-08-15 | `DGN-001..009` | Kernel ownership ledger、Supervisor unit/budget ledger、Host `ProcessDiagnostics`、Health authority、Service/CLI 与并发/脱敏/终态测试；完整验证命令见施工计划第 14 节 | `6f1521a` | EnvSource、Foundation 总验收、management transport、外部真实资源和部署信号仍不在范围 |
 | 8 | 2026-08-15 | `RES-006`、`PLAN-005` | HEAD `6f1521a211c6aa6b137db8464be4633bd9ded809`；EnvSource/Loader/Snapshot/Coordinator/Kernel 调用链；012-R019 刷新复核；Go 1.25.7 `os.Environ` 契约；`go test ./internal/kernel/config -count=1` 通过；R007 与配置施工计划 | 无，计划阶段按门禁保持未提交 | `CFG-001..008` 待用户后续明确确认；Linux 运行、Foundation 总验收、remote Source 与 null 删除语义不在范围 |
 | 9 | 2026-08-15 | `CFG-001..008` | typed path error、受控 Env entry、deterministic object/non-object merge、case/empty/null/置换/脱敏测试、Coordinator Stage/Build-zero；target/full/race/vet/Windows+Linux build、文档链接与 Diff 门禁通过 | 本任务提交 | Linux runtime、remote Source、null 删除语义、真实服务与 Foundation 总验收不在范围 |
+| 10 | 2026-08-15 | `RES-007`、`PLAN-006`、`FCL-001..008` | R008；restart latch 建立/重复/invalid/revert/hot reload/watcher/degraded；Host pending Participant/Task；HTTP rebind 与 SQLite rename；target/full/race/vet/build/cross-build/文档/Diff | 本任务提交 | external resources、long-lived/background/Health、新资源、部署、Linux runtime、portability 与 HTTP product maturity 不在范围 |
 
 ## 7. 停止条件
 
-本轮在 `CFG-001..008`、完整验证、Diff 审计和本任务提交完成后停止。不得顺带实施 `FOUNDATION-ACCEPTANCE-001`、HTTP API 产品治理、服务启动、真实配置修改、部署或推送；后续非文档实施仍需对应计划报告后的明确确认。
+本轮在 `FCL-001..008`、完整验证、Diff 审计和本任务提交完成后停止。不得顺带实施 HTTP API 产品治理、常驻服务、真实配置、外部系统、部署或推送。

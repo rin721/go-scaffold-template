@@ -101,7 +101,7 @@ go run ./cmd/app todo complete --id <todo-id>
 
 目录职责、依赖方向和扩展方式见 [应用模块说明](internal/module/README.md) 与 [Todo 模块说明](internal/module/todo/README.md)，业务垂直切片证据见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)，模块级 middleware 示例证据见 [015 Todo 路由中间件示例](docs/changes/015-todo-route-middleware-example/README.md)。
 
-无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，要求重启恢复。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
+无参数服务模式默认监听 `config.yaml`。watcher 完成父目录注册后会先执行一次 reconciliation，再把稳定后的文件事件交给同一个 Coordinator Reload 事务；Database、I18n、Storage 与配置化 Logger 只有在全部候选准备成功后才切换，单次无效候选保留旧实例并继续监听。Cache 和 HTTP 配置变化属于 `RestartRequired`：同轮预检会在任何构建、排空或提交前拒绝整轮变更；后续候选仍会完整加载和校验，恢复到当前有效配置或只保留合法热切换变化时才解除重启要求。提交后的旧代清理失败会进入 `degraded`、撤销 readiness 并阻断后续重载，不能通过恢复配置自动清除。环境变量优先级高于文件，因此被 `APP_*` 覆盖的字段仅修改文件不会改变有效配置；运行中的进程也不会读取另一个 shell 后续修改的环境。推荐使用临时文件加 rename 的原子保存方式，原地 truncate/write 的中间内容可能产生一次“候选被拒绝、旧配置保留”的诊断日志。
 
 Host 通过单一 `ProcessDiagnostics` 组合 Kernel capability ownership 与 Supervisor Participant/Task responsibility：可定位 config/instance generation、phase、policy、attempt、pending/failed/forced/finalized、共享 shutdown deadline 和脱敏 error type。该结构只供当前进程内 Health 与未来受控 management transport 消费；默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
 

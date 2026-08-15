@@ -10,7 +10,7 @@ frameworks: ["net/http"]
 technologies: ["Kernel", "Supervisor", "Host", "module Contribution"]
 applicable_scenarios: ["022 最终判断", "后续任务排序", "业务模块详细设计门禁"]
 non_applicable_scenarios: ["声明计划已实现", "跨过确认门禁修改源码", "替真实业务决定场景能力"]
-status: needs-refresh
+status: superseded
 summary: "建议保留现有显式装配和不可变资源代际，不做框架级重构；先补齐 terminal cleanup、清理债务诊断、EnvSource 冲突和故障验收，再按业务 profile 解锁模块设计。当前底层为 partial closure，业务扩展门未通过。"
 evidence:
   types: ["synthesis", "current-project", "external-primary", "tradeoff-analysis"]
@@ -34,5 +34,5 @@ relations:
   extends: ["022-R001", "022-R002", "022-R003"]
   related: ["022-R005"]
   supersedes: []
-  superseded_by: []
+  superseded_by: ["022-R008"]
 report: report.md

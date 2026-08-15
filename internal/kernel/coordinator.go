@@ -177,7 +177,7 @@ func (c *Coordinator) Reload(ctx context.Context) (ReloadResult, error) {
 		c.mu.Unlock()
 		return ReloadResult{}, ErrNotRunning
 	}
-	if c.diagnostics.State == LifecycleDegraded || c.diagnostics.RestartRequired {
+	if c.diagnostics.State == LifecycleDegraded || c.diagnostics.CleanupRequired {
 		c.mu.Unlock()
 		return ReloadResult{}, fmt.Errorf("kernel reload blocked until process restart")
 	}
@@ -236,10 +236,7 @@ func (c *Coordinator) Reload(ctx context.Context) (ReloadResult, error) {
 		}
 		return result, err
 	}
-	c.update(LifecycleRunning, true, nil, true, snapshot, false)
-	c.mu.Lock()
-	c.current = snapshot
-	c.mu.Unlock()
+	c.completeReload(snapshot)
 	return result, nil
 }
 
@@ -303,6 +300,22 @@ func (c *Coordinator) update(state LifecycleState, ready bool, failure error, co
 	if restart {
 		c.diagnostics.RestartRequired = true
 	}
+}
+
+// completeReload 原子发布成功候选，并解除只由无副作用预检产生的重启要求。
+func (c *Coordinator) completeReload(snapshot config.Snapshot) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.diagnostics.State = LifecycleRunning
+	c.diagnostics.Ready = true
+	c.diagnostics.Since = time.Now()
+	if snapshot.Digest() != c.diagnostics.ConfigDigest {
+		c.diagnostics.ConfigGeneration++
+		c.diagnostics.ConfigDigest = snapshot.Digest()
+		c.diagnostics.ConfigProvenance = snapshot.Provenance()
+	}
+	c.diagnostics.RestartRequired = false
+	c.current = snapshot
 }
 
 func hasIncompleteOwnership(snapshots []app.OwnershipSnapshot) bool {

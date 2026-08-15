@@ -10,7 +10,7 @@ frameworks: ["net/http", "chi"]
 technologies: ["Kernel", "Supervisor", "mapstructure", "fsnotify"]
 applicable_scenarios: ["022 底层闭环判断", "业务模块设计解锁", "后续生命周期加固计划"]
 non_applicable_scenarios: ["证明目标修复已实现", "授权源码实施", "替具体业务预装后台任务或健康协议"]
-status: needs-refresh
+status: superseded
 summary: "当前主链与正常路径已形成，显式装配、严格候选和原子切换值得保留；但终止排空超时和清理失败会丢失可完成的资源清理责任，模块贡献也只证明同步 HTTP/CLI 场景，因此底层闭环与通用业务扩展门禁尚未通过。"
 evidence:
   types: ["source-code", "tests", "current-documentation", "repository-layout", "reused-research"]
@@ -37,5 +37,5 @@ relations:
   extends: ["012-R021", "012-R019", "017-R001", "022-R001"]
   related: ["022-R003", "022-R004", "022-R005"]
   supersedes: []
-  superseded_by: []
+  superseded_by: ["022-R008"]
 report: report.md
