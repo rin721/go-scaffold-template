@@ -646,6 +646,9 @@ func defaultInt(spec FlagSpec) (int, error) {
 	case uint32:
 		return int(v), nil
 	case uint64:
+		if v > uint64(^uint(0)>>1) {
+			return 0, fmt.Errorf("default integer exceeds platform range")
+		}
 		return int(v), nil
 	case string:
 		return strconv.Atoi(v)

@@ -75,7 +75,7 @@
 
 ## 8. 可移植交付与发布
 
-- `REL-REQ-001`：基线升级为 Go `1.26.5`，`go.mod`、CI、容器 builder 与 release toolchain 同版；`.gitattributes` 固化 Go/module/YAML/Markdown 为 LF。
+- `REL-REQ-001`：基线升级为 Go `1.26.6`，`go.mod`、CI、容器 builder 与 release toolchain 同版；`.gitattributes` 固化 Go/module/YAML/Markdown 为 LF。1.26.5 在 C7 的 2026-08-15 漏洞库中存在可达标准库漏洞，替代证据见 R007。
 - `REL-REQ-002`：支持 `windows/amd64` 与 `linux/amd64` 二进制；首个 OCI image 只承诺 `linux/amd64`。两个平台必须执行同义 tidy/test/race/vet/build 和 CLI/config smoke。
 - `REL-REQ-003`：使用 digest-pinned `distroless/static-debian13:nonroot`，CGO-free、非 root、默认只读 root filesystem；SQLite/data/config/cert path 必须显式挂载并检查权限。
 - `REL-REQ-004`：CI 固定 Action/tool 版本，执行 generation clean diff、OpenAPI lint/diff、test/race/vet/tidy/build、bounded fuzz、`govulncheck`、gosec、secret/artifact scan、三数据库 contract、容器 smoke 与复制验收。

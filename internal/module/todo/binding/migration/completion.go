@@ -36,6 +36,7 @@ func (c *Completion) Resolve(ctx context.Context, legacyOwnerSubject string) err
 		if legacyOwnerSubject == "" || strings.HasPrefix(legacyOwnerSubject, "migration:") {
 			return dbmigrate.ErrCompletionRequired
 		}
+		// #nosec G202 -- placeholder 只由受控 driver 枚举返回，业务值仍通过参数绑定。
 		statement := "UPDATE todos SET owner_subject = " + firstPlaceholder + " WHERE owner_subject = " + secondPlaceholder
 		if _, err := transaction.ExecContext(ctx, statement, legacyOwnerSubject, unassignedOwnerSubject); err != nil {
 			return fmt.Errorf("backfill Todo legacy owner: migration operation failed")

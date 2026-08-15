@@ -29,6 +29,7 @@
 - [internal/kernel/app/README.md](internal/kernel/app/README.md)：组件 Definition、Direct/Leased、Plan、typed Input 和接入步骤。
 - [pkg/cli/README.md](pkg/cli/README.md)：项目自有 CLI 契约、I/O 与退出码语义。
 - [AGENTS.md](AGENTS.md)：AI Agent 协作红线和工程底线。
+- [交付与运维](docs/operations/README.md)：构建、容器、迁移、发布、复制与安全响应。
 
 ## Bootstrap CLI 与 Service
 
@@ -131,5 +132,7 @@ go test -race ./...
 go vet ./...
 git diff --check
 ```
+
+固定版本扫描器、distroless container smoke、GoReleaser 本地候选、SPDX SBOM 与 Cosign checksum 验证见 [交付与运维](docs/operations/README.md)。正式 release workflow 只响应受保护的 `v*` tag 并创建 draft；当前任务没有授权 push、tag、GitHub Release 或 registry 写入。
 
 消息、任务调度、分布式锁、认证、邮件、搜索、特性开关和观测采集适配仍需等待真实场景确认。Kernel 当前只提供严格前向的底层 Component 有序计划，不是通用依赖 DAG 容器；Todo 模块对象由 application composition root 显式构造。

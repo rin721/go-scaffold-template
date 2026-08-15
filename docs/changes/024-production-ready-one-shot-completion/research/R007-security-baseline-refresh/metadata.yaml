@@ -1,0 +1,37 @@
+schema_version: 1
+id: R007
+title: "C7 安全基线刷新"
+question: "C7 固定扫描器首次运行后，Go 与可达依赖的既定版本是否仍可作为 fail-closed release baseline？"
+research_type: security-refresh
+topics: ["Go 1.26.6", "govulncheck", "gRPC", "x/image", "release gate"]
+keywords: ["GO-2026-6218", "GO-2026-6061", "GO-2026-5066", "reachable vulnerability"]
+languages: ["Go", "YAML", "Dockerfile"]
+technologies: ["govulncheck", "Go toolchain", "GitHub Actions", "OCI"]
+applicable_scenarios: ["024 C7", "local RC", "CI security gate", "container builder"]
+non_applicable_scenarios: ["jwx major selection", "business module boundary", "published release claim"]
+status: active
+summary: "Go 1.26.5、gRPC 1.81.1 与 x/image 0.38.0 存在项目可达漏洞；C7 必须在不改变公共 API 和模块边界的前提下单轨升级到 Go 1.26.6、gRPC 1.82.1 与 x/image 0.43.0。"
+evidence:
+  types: ["current-project", "reachable-vulnerability-scan", "official-vulnerability-database"]
+  primary_sources:
+    - title: "govulncheck local symbol scan"
+      locator: "govulncheck v1.3.0 ./..."
+      snapshot: "source 411ff860958b60fe66a3b41ccd750765689a0793 plus C7 worktree; vulnerability DB 2026-08-14 UTC"
+    - title: "Go vulnerability database findings"
+      locator: "https://pkg.go.dev/vuln/GO-2026-6218; https://pkg.go.dev/vuln/GO-2026-6091; https://pkg.go.dev/vuln/GO-2026-6090; https://pkg.go.dev/vuln/GO-2026-6089; https://pkg.go.dev/vuln/GO-2026-6088; https://pkg.go.dev/vuln/GO-2026-5972"
+      snapshot: "Go 1.26.5 affected and Go 1.26.6 fixed, verified 2026-08-15"
+    - title: "Dependency vulnerability findings"
+      locator: "https://pkg.go.dev/vuln/GO-2026-6061; https://pkg.go.dev/vuln/GO-2026-5066; https://pkg.go.dev/vuln/GO-2026-5062; https://pkg.go.dev/vuln/GO-2026-5032; https://pkg.go.dev/vuln/GO-2026-5031"
+      snapshot: "gRPC 1.82.1 and x/image 0.43.0 fix selected reachable paths, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: current-vulnerability-database
+  review_after: "2026-08-16"
+  refresh_triggers: ["govulncheck database update", "Go patch release", "gRPC or x/image security advisory", "first external release"]
+relations:
+  extends: ["024-R003"]
+  related: ["024-R004"]
+  supersedes: ["024-R003 Go 1.26.5 baseline only"]
+  superseded_by: []
+report: report.md

@@ -345,6 +345,7 @@ func (f *applicationGenerationFactory) Prepare(
 	if err := generation.server.StartWithListener(ctx, generation.route.Listener()); err != nil {
 		return abort(err)
 	}
+	// #nosec G118 -- generation 拥有 server、停止信号和 runDone，ctx 仅治理候选构造窗口。
 	go generation.runServer()
 	generation.managementRoute, err = f.managementHub.Prepare(ctx, generation.opsModule.Management.Addr)
 	if err != nil {
@@ -357,6 +358,7 @@ func (f *applicationGenerationFactory) Prepare(
 	if err := generation.managementServer.StartWithListener(ctx, generation.managementRoute.Listener()); err != nil {
 		return abort(err)
 	}
+	// #nosec G118 -- management server 由同一 generation Stop/Wait 生命周期回收。
 	go generation.runManagementServer()
 	select {
 	case <-ctx.Done():

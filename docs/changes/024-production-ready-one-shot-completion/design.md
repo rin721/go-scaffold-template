@@ -260,7 +260,7 @@ cmd/app db migrate ...                      explicit invocation owner
 
 ### 9.1 可重复构建与容器
 
-- `go.mod`/CI/builder/release 统一 Go 1.26.5；使用 `-trimpath` 和受控 ldflags 注入 build info；
+- `go.mod`/CI/builder/release 统一 Go 1.26.6；使用 `-trimpath` 和受控 ldflags 注入 build info；
 - `.gitattributes` 固化文本 LF，Windows/Linux 均执行 `go mod tidy -diff`；
 - multi-stage Dockerfile 构造静态 linux/amd64 binary，运行层 digest pin `distroless/static-debian13:nonroot`；
 - 默认 nonroot、read-only rootfs、无 shell，显式 mount config/data/cert；SIGTERM 进入 Host drain；

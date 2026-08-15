@@ -193,6 +193,7 @@ func (c *layeredClient[T]) startCleanup() {
 		close(c.cleanupDone)
 		return
 	}
+	// #nosec G118 -- cancel 保存到 cleanupCancel，并由 Close 的单一 owner 调用和等待 cleanupDone。
 	ctx, cancel := context.WithCancel(context.Background())
 	c.cleanupCancel = cancel
 	go func() {

@@ -11,7 +11,7 @@
 
 ### 1. 语言与平台
 
-- 基线升级到 Go `1.26.5`，`go.mod`、CI、容器 builder 和 release toolchain 使用同一版本。
+- 基线升级到 Go `1.26.6`，`go.mod`、CI、容器 builder 和 release toolchain 使用同一版本；1.26.5 的历史选择由 R007 的可达漏洞证据单轨替代。
 - 正式二进制支持 `windows/amd64` 与 `linux/amd64`；OCI image 首个正式范围为 `linux/amd64`。
 - `.gitattributes` 固化 Go/module/YAML/Markdown 为 LF，Windows 与 Linux 的 `go mod tidy -diff` 必须同义通过。
 

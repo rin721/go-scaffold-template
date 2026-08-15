@@ -64,6 +64,7 @@ func run(input, output, packageName string) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G306 -- 生成的 Go 源码不含 secret，0644 保持跨平台源码可读性。
 	if err := os.WriteFile(output, source, 0o644); err != nil {
 		return fmt.Errorf("write operation inventory: %w", err)
 	}

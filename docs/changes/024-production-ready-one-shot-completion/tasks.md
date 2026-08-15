@@ -3,7 +3,7 @@
 ## 1. 门禁状态
 
 - 024 研究门禁：C1-C3 证据见 `R001..R004`；C4-C6 module ownership 复核见 `R005..R006` 并已通过。
-- 024 计划状态：C1-C6 已完成；C6 的 PostgreSQL/MySQL 动态门禁待 C7 CI。R004 的 `jwx v3.2.0` 选择继续有效，下一步进入 C7。
+- 024 计划状态：C1-C6 已完成；C7 实现与 Windows 本地证据完成，C8 验收中。R004 的 `jwx v3.2.0` 选择继续有效；Go 1.26.5 已由 R007 的安全证据单轨替换为 1.26.6。
 - 当前标签：`Foundation-closed(current synchronous HTTP/CLI profile)`；Production HTTP API-ready 未通过。
 - 当前授权：连续实施 `ONE-001..025`、本地与 CI 验证、检查点提交，以及临时本地容器/测试数据库。
 - 当前禁止：push、tag、GitHub Release、GHCR、外部 attestation、真实部署与真实数据迁移。
@@ -13,8 +13,8 @@
 | ID | 工作量 | 依赖 | 内容 | 完成条件 | 状态 |
 | --- | --- | --- | --- | --- | --- |
 | `ONE-001` | S | 用户确认 | 仲裁 023/024 与工作区 authority，固定 HEAD、用户修改和实施范围 | 只有 024 为当前施工 authority；可复用成果有 Commit/证据映射；用户修改不混入 | 已完成（C2） |
-| `ONE-002` | M | `ONE-001` | 升级 Go 1.26.5、固定 LF 与 Windows/Linux validation manifest | go.mod/CI/builder/release 同版；两平台 tidy 语义一致；无 CRLF 漂移 | 进行中（C1 基线完成） |
-| `ONE-003` | M | `ONE-002` | 固定新增依赖、工具、Action、许可证与安全基线 | 版本与 checksum/commit SHA 可追踪；无未使用依赖；选型符合 ADR-003 | 进行中（基线 Action 已固定） |
+| `ONE-002` | M | `ONE-001` | 升级 Go 1.26.6、固定 LF 与 Windows/Linux validation manifest | go.mod/CI/builder/release 同版；两平台 tidy 语义一致；无 CRLF 漂移 | 实现完成；Windows 动态通过，Linux 待 C8 |
+| `ONE-003` | M | `ONE-002` | 固定新增依赖、工具、Action、许可证与安全基线 | 版本与 checksum/commit SHA 可追踪；无未使用依赖；选型符合 ADR-003 | 已完成（C7；本地工具按官方 checksum 校验） |
 | `ONE-004` | L | `ONE-003` | 建立稳定 file candidate、全 owner Validate/Build 与补偿账本 | 候选读取稳定；任何副作用前完成严格校验；部分构造无资源遗忘 | 已完成（C2/Windows） |
 | `ONE-005` | XL | `ONE-004` | 实现 typed immutable `ApplicationGeneration` 与完整资源 owner | 同 Snapshot 构造现有七节及 auth/management/observability；无 locator/全局可变资源 | 进行中（七节基础完成） |
 | `ONE-006` | XL | `ONE-005` | 实现 process-level `ListenerHub` 和 request/connection generation lease | Windows/Linux admission、切换、pending connection、drain、shutdown 测试通过 | 进行中（Windows 契约完成） |
@@ -27,16 +27,16 @@
 | `ONE-013` | XL | `ONE-010`、`ONE-012`、`ONE-016` | Todo 定义 actor/对象授权/audit 窄 port；composition 连接 Auth module；完成 `owner_subject` 与 CLI actor | expand/backfill/contract 完成；跨 actor 拒绝；HTTP/CLI 同 policy；敏感信息不泄露 | 已完成（C4） |
 | `ONE-014` | L | `ONE-007`、`ONE-012` | 在 `internal/module/ops` 实现 management use cases/HTTP binding 与独立 process-owned listener | startup/live/ready 分离；management budget/scope 生效；pprof 默认不存在；无分散 management package | 已完成（C5） |
 | `ONE-015` | XL | `ONE-009`、`ONE-014` | 在 Ops module 接入 OTel/Prometheus Adapter、middleware 与 generation contribution；process 保持 registry identity | 低基数/脱敏、传播、drop/flush/self-diagnostics、重复 generation 注册测试通过 | 已完成（C5） |
-| `ONE-016` | XL | `ONE-003`、`ONE-005` | 以 `pkg/database/migrate` + `internal/module/migration` + Todo-owned migration set 建立三 driver SQL 与独立 CLI | fresh/incremental/idempotent/lock/dirty/version contract 通过；Todo owner migration 可执行；移除 Todo 无 SQL 残留 | 实现完成；SQLite 动态通过，PostgreSQL/MySQL 待 C7 CI |
+| `ONE-016` | XL | `ONE-003`、`ONE-005` | 以 `pkg/database/migrate` + `internal/module/migration` + Todo-owned migration set 建立三 driver SQL 与独立 CLI | fresh/incremental/idempotent/lock/dirty/version contract 通过；Todo owner migration 可执行；移除 Todo 无 SQL 残留 | 实现完成；SQLite 动态通过，PostgreSQL/MySQL 待 C8/CI |
 | `ONE-017` | L | `ONE-016` | Todo migration binding 提供 schema compatibility，删除 startup AutoMigrate/Schema authority | service 不改 schema；too-old/too-new/dirty fail closed；旧接口/依赖/测试无残留 | 已完成（C6） |
-| `ONE-018` | L | `ONE-002`、`ONE-014`、`ONE-017` | 可重复 build、build info、distroless nonroot image 与 runtime smoke | linux/amd64 image digest pin、read-only/mount/probe/SIGTERM/无 shell 验收通过 | 待确认 |
-| `ONE-019` | XL | `ONE-011`、`ONE-013`、`ONE-015`、`ONE-017`、`ONE-018` | 建立 generation、quality、security、DB、container CI | pinned Actions；所有 gate fail closed；无 continue-on-error/环境绕过 | 待确认 |
-| `ONE-020` | L | `ONE-018`、`ONE-019` | GoReleaser、Syft、Cosign、checksum 与 local RC 验证 | Windows/Linux artifact、SPDX SBOM、bundle/signature 与 build/source digest 对应 | 待确认 |
-| `ONE-021` | M | `ONE-020` | 完成 copy-owned 指南、identity manifest、migration/rollback/security Runbook | 干净环境可按文档执行；不依赖本机路径、未跟踪文件或隐式 secret | 待确认 |
-| `ONE-022` | L | `ONE-021` | 创建“保留 Todo”隔离副本并全门禁验收 | identity 迁移、三 DB、两平台/容器/API/security/release smoke 通过 | 待确认 |
-| `ONE-023` | XL | `ONE-021` | 创建“移除 Todo”隔离副本并全门禁验收 | Todo 代码/路由/spec/config/migration/docs/dependency 无残留，模板仍完整通过 | 待确认 |
-| `ONE-024` | XL | `ONE-022`、`ONE-023` | 执行双平台、容器和完整失败矩阵总验收 | `ACC-REQ-001..006` 全有真实证据；未执行项不标通过 | 待确认 |
-| `ONE-025` | L | `ONE-024` | 同步唯一权威文档、清理旧轨、汇总 Commit 与发布结论 | 三标签一致；024 无残留 diff；local RC 或明确授权后的 remote release 可验证 | 待确认 |
+| `ONE-018` | L | `ONE-002`、`ONE-014`、`ONE-017` | 可重复 build、build info、distroless nonroot image 与 runtime smoke | linux/amd64 image digest pin、read-only/mount/probe/SIGTERM/无 shell 验收通过 | 实现完成；image runtime 待 C8/CI |
+| `ONE-019` | XL | `ONE-011`、`ONE-013`、`ONE-015`、`ONE-017`、`ONE-018` | 建立 generation、quality、security、DB、container CI | pinned Actions；所有 gate fail closed；无 continue-on-error/环境绕过 | 实现完成；Windows 本地门禁通过，未触发远端 CI |
+| `ONE-020` | L | `ONE-018`、`ONE-019` | GoReleaser、Syft、Cosign、checksum 与 local RC 验证 | Windows/Linux artifact、SPDX SBOM、bundle/signature 与 build/source digest 对应 | 已完成（C7 local RC） |
+| `ONE-021` | M | `ONE-020` | 完成 copy-owned 指南、identity manifest、migration/rollback/security Runbook | 干净环境可按文档执行；不依赖本机路径、未跟踪文件或隐式 secret | 已完成（C7） |
+| `ONE-022` | L | `ONE-021` | 创建“保留 Todo”隔离副本并全门禁验收 | identity 迁移、三 DB、两平台/容器/API/security/release smoke 通过 | 实施中（C8） |
+| `ONE-023` | XL | `ONE-021` | 创建“移除 Todo”隔离副本并全门禁验收 | Todo 代码/路由/spec/config/migration/docs/dependency 无残留，模板仍完整通过 | 实施中（C8） |
+| `ONE-024` | XL | `ONE-022`、`ONE-023` | 执行双平台、容器和完整失败矩阵总验收 | `ACC-REQ-001..006` 全有真实证据；未执行项不标通过 | 未开始（依赖双副本） |
+| `ONE-025` | L | `ONE-024` | 同步唯一权威文档、清理旧轨、汇总 Commit 与发布结论 | 三标签一致；024 无残留 diff；local RC 或明确授权后的 remote release 可验证 | 未开始（依赖总验收） |
 
 ## 3. 检查点与提交边界
 
@@ -105,7 +105,8 @@ go test ./... -run 'Contract|Protocol|Problem|JWT|JWKS|Authorization|Audit'
 | 3 | 2026-08-15 | C2 基础：`ONE-001/004/007`，`ONE-005/006` 当前七节与 Windows 契约 | stable file、七节单改、Todo/HTTP 同进程生效、资源复用、Schema/bind reject、watcher 恢复、旧请求固定、graceful/force 与 targeted race 通过 | `56ce851` | auth/management/observability 将在后续任务进入同一 generation；Linux runtime 留待 C8 真验收 |
 | 4 | 2026-08-15 | C3：`ONE-008..011` 与 C2 diagnostics/listener 加固 | OpenAPI 3.0.3、oapi-codegen v2.8.0、oasdiff v1.22.0、strict Chi、operation inventory、RFC 9457、旧 Route 零引用；生成 hash 不变，Windows 全量 test/race/vet/build、protocol/edge contract、oasdiff self baseline、Diff 检查通过 | `86c2aca` | JWT/JWKS、operation authorization/audit 与真实 base breaking diff 在 C4/C7 接入；Linux runtime 留待 C8 |
 | 5 | 2026-08-15 | C4 + C6 implementation：`ONE-012/013/017` 完成，`ONE-016` 三 driver 实现 | Auth module + jwx v3.2.0、OpenAPI operation policy、Todo actor/owner/跨主体隐藏、独立 `db migrate`、三 driver checksummed SQL、显式 legacy owner completion、startup read-only exact-version gate；Windows `go test ./...` 通过 | `2752110` | 本机无 Docker 且无可运行 WSL，PostgreSQL/MySQL 动态 migration/lock/dirty gate 必须由 C7 CI 真验收 |
-| 6 | 2026-08-15 | C5：`ONE-014..015` | Ops module、独立 management listener、startup/live/ready、scope-protected diagnostics、build info、稳定 Prometheus registry、OTel 1.44 trace/OTLP HTTP、有界 drop/flush/self-diagnostics；业务/管理面隔离与重复 generation 测试通过 | 见本行所在检查点提交 | 外部 OTLP backend 未配置；exporter failure 使用受控 fake 动态验证 |
+| 6 | 2026-08-15 | C5：`ONE-014..015` | Ops module、独立 management listener、startup/live/ready、scope-protected diagnostics、build info、稳定 Prometheus registry、OTel 1.44 trace/OTLP HTTP、有界 drop/flush/self-diagnostics；业务/管理面隔离与重复 generation 测试通过 | `411ff86` | 外部 OTLP backend 未配置；exporter failure 使用受控 fake 动态验证 |
+| 7 | 2026-08-15 | C7 实现与 Windows 本地证据：`ONE-002/003/018..021` | Go 1.26.6；Windows 全量 test/race/vet/CGO-free build、生成 diff、artifact allowlist 通过；`govulncheck` 可达漏洞 0、`gosec` 0 issue、`gitleaks` 0 leak；GoReleaser v2.17.1 配置通过，Windows/Linux amd64 archives、SPDX SBOM、SHA-256 checksum、本地 Cosign bundle/signature 生成并反向验证 | 见本行所在检查点提交 | 本机无 Docker 且无可运行 WSL；Linux runtime、container、PostgreSQL/MySQL 与远端 CI 未执行，必须在 C8 保持未通过状态 |
 
 后续每个检查点必须补充命令、平台、退出码、artifact/digest、Commit 与未通过项。只有最终总验收可以把任务状态改为完成。
 

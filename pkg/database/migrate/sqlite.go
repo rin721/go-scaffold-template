@@ -71,10 +71,12 @@ func (d *sqliteDriver) SetVersion(version int, dirty bool) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G202 -- table 在 Adapter 构造时经过严格 identifier 校验，不包含外部 SQL 片段。
 	if _, err := transaction.Exec("DELETE FROM " + d.table); err != nil {
 		return errors.Join(err, transaction.Rollback())
 	}
 	if version >= 0 || version == database.NilVersion && dirty {
+		// #nosec G202 -- table 在 Adapter 构造时经过严格 identifier 校验，值仍使用占位符。
 		statement := "INSERT INTO " + d.table + " (version, dirty) VALUES (?, ?)"
 		if _, err := transaction.Exec(statement, version, dirty); err != nil {
 			return errors.Join(err, transaction.Rollback())
@@ -102,6 +104,7 @@ func (d *sqliteDriver) ensureVersionTable() (resultErr error) {
 		return err
 	}
 	defer func() { resultErr = errors.Join(resultErr, d.Unlock()) }()
+	// #nosec G202 -- table 在 Adapter 构造时经过严格 identifier 校验，不接受任意 SQL。
 	statement := "CREATE TABLE IF NOT EXISTS " + d.table + " (version INTEGER NOT NULL, dirty BOOLEAN NOT NULL)"
 	if _, err := d.database.Exec(statement); err != nil {
 		return err

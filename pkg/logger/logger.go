@@ -143,6 +143,7 @@ func openSink(path string) (zapcore.WriteSyncer, io.Closer, error) {
 	case outputPathStderr:
 		return nonClosingWriteSyncer{Writer: os.Stderr}, nil, nil
 	default:
+		// #nosec G304 -- path 是受严格配置治理的显式日志 sink，不来自请求输入。
 		file, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND|os.O_CREATE, defaultLogFileMode)
 		if err != nil {
 			return nil, nil, fmt.Errorf("open log file %q: %w", path, err)

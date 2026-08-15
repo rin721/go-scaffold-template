@@ -151,7 +151,7 @@ func reloadErrorReporter(logging logger.Logger) func(error) {
 			fields = append(fields,
 				logger.String("phase", operation.Phase),
 				logger.String("owner", operation.Owner),
-				logger.Int("generation", int(operation.Generation)),
+				logger.Any("generation", operation.Generation),
 				logger.String("cause_type", fmt.Sprintf("%T", operation.Err)),
 			)
 		}

@@ -1,0 +1,43 @@
+schema_version: 1
+ownership: copy-owned
+source:
+  repository: github.com/rin721/go-scaffold-template
+  module: github.com/rin721/go-scaffold-template
+  application_name: go-scaffold-template
+  application_description: Go 后端服务与 CLI 工具基础设施脚手架
+  binary_name: go-scaffold-template
+  environment_prefix: APP_
+  config_filename: config.yaml
+required_identity_changes:
+  - id: module
+    owners:
+      - go.mod
+      - cmd/**/*.go
+      - internal/**/*.go
+      - pkg/**/*.go
+  - id: application
+    owners:
+      - cmd/app/main.go
+      - Dockerfile
+      - .goreleaser.yaml
+      - .github/workflows/*.yml
+  - id: configuration
+    owners:
+      - cmd/app/main.go
+      - .gitignore
+      - config.example.yaml
+      - README.md
+  - id: provenance
+    owners:
+      - docs/scaffold-baseline.md
+verification:
+  forbidden_source_dependencies:
+    - replace directive pointing to the source checkout
+    - go.work or relative workspace dependency
+    - Git remote inherited from the source repository
+  required_commands:
+    - go mod tidy -diff
+    - go test ./...
+    - go test -race ./...
+    - go vet ./...
+    - go build ./...

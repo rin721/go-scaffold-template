@@ -1,0 +1,7 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Configuration parser fixture containing a non-secret token-like value"
+paths = ['''internal/kernel/config/config_test\.go''']
+regexes = ['''APP_TOKEN=part=with=equals''']

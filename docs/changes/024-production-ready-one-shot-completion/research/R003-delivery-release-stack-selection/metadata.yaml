@@ -9,7 +9,7 @@ languages: ["Go", "SQL", "YAML", "Dockerfile"]
 technologies: ["GitHub Actions", "OCI", "Sigstore", "SPDX"]
 applicable_scenarios: ["024 migration", "024 CI and container", "024 release and copy acceptance"]
 non_applicable_scenarios: ["production database mutation during planning", "cloud deployment", "private registry policy", "automatic upgrade of copied repositories"]
-status: active
+status: partial
 summary: "选择 Go 1.26.5、golang-migrate v4.19.x、driver-specific embedded SQL、distroless nonroot digest-pinned OCI、GoReleaser v2.17.x、Syft SPDX SBOM 与 Cosign keyless bundle；两平台、三数据库、容器和两个隔离副本构成最终 release evidence。"
 evidence:
   types: ["official-release", "official-documentation", "official-source", "current-project-fit"]
@@ -45,5 +45,5 @@ relations:
   extends: ["020-R002", "022-R001"]
   related: ["024-R001", "024-R002"]
   supersedes: []
-  superseded_by: []
+  superseded_by: ["024-R007"]
 report: report.md

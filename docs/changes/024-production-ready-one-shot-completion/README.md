@@ -33,7 +33,7 @@
 - `internal/module/auth` 收口 Principal/Policy/Decision/Audit、JWT/JWKS Adapter、配置、middleware 与 generation contribution；
 - `internal/module/ops` 收口 management、startup/live/ready、metrics、build info、脱敏 diagnostics、OpenTelemetry trace 与 Prometheus Adapter；
 - `internal/module/migration` 收口命令用例，跨模块 engine 进入 `pkg/database/migrate`，Todo SQL/readiness 留在 Todo；
-- Go 1.26.5、Windows/Linux 同义门禁、非 root OCI image、CI 安全门禁；
+- Go 1.26.6、Windows/Linux 同义门禁、非 root OCI image、CI 安全门禁；
 - GoReleaser、Syft、Cosign、checksum、provenance、复制指南和最终验收。
 
 ## 非目标

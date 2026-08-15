@@ -243,6 +243,10 @@ func (p *boundedProcessor) export(batch []sdktrace.ReadOnlySpan) error {
 }
 
 func (p *boundedProcessor) recordDropped(count int) {
+	if count <= 0 {
+		return
+	}
+	// #nosec G115 -- count 来自内存队列长度，已证明为正 int，转换不会截断。
 	p.dropped.Add(uint64(count))
 	p.metrics.RecordDropped(count)
 }

@@ -20,6 +20,7 @@ go.work.sum
 /bin/
 /build/
 /dist/
+/.tools/
 
 # 临时文件和缓存
 /tmp/

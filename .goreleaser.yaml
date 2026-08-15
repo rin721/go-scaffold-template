@@ -1,0 +1,68 @@
+version: 2
+
+project_name: go-scaffold-template
+
+builds:
+  - id: application
+    main: ./cmd/app
+    binary: go-scaffold-template
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - windows
+    goarch:
+      - amd64
+    flags:
+      - -trimpath
+      - -buildvcs=false
+    ldflags:
+      - >-
+        -s -w
+        -X main.buildVersion={{.Version}}
+        -X main.buildCommit={{.Commit}}
+        -X main.buildTime={{.Date}}
+        -X main.buildDirty={{.IsGitDirty}}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: application
+    ids:
+      - application
+    formats:
+      - tar.gz
+    format_overrides:
+      - goos: windows
+        formats:
+          - zip
+    files:
+      - README.md
+      - config.example.yaml
+      - api/openapi.yaml
+      - docs/operations/*.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+sboms:
+  - id: archives
+    artifacts: archive
+    documents:
+      - "{{ .ArtifactName }}.spdx.json"
+    args:
+      - "file:$artifact"
+      - --output
+      - "spdx-json=$document"
+    env:
+      - SYFT_CHECK_FOR_APP_UPDATE=false
+
+snapshot:
+  version_template: "1.0.0-rc.1-local.{{ .ShortCommit }}"
+
+changelog:
+  disable: true
+
+release:
+  draft: true
+  prerelease: auto

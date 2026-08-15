@@ -251,6 +251,7 @@ func prepareSQLite(dsn string) (string, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("inspect sqlite database: %w", redactDriverError(err))
 	}
+	// #nosec G304 -- path 来自受严格配置治理的 SQLite DSN，并在本函数内固定权限。
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return "", fmt.Errorf("create sqlite database: %w", redactDriverError(err))
@@ -293,6 +294,7 @@ func prepareSQLiteDirectory(directory string) error {
 		return fmt.Errorf("sqlite parent path must be a regular directory")
 	}
 	if created {
+		// #nosec G302 -- 0700 是目录遍历所需且仅 owner 可访问，比文件 0600 契约更严格。
 		if err := os.Chmod(directory, 0o700); err != nil {
 			return fmt.Errorf("secure sqlite directory: %w", redactDriverError(err))
 		}

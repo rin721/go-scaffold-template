@@ -184,7 +184,7 @@ func (c *GenerationCoordinator) Start(ctx context.Context) error {
 	c.publishLocked(active, nil)
 	c.mu.Unlock()
 	c.options.Logging.Info("application generation started",
-		pkglogger.Int("generation", int(active.ID())),
+		pkglogger.Any("generation", active.ID()),
 		pkglogger.String("bound_address", active.BoundAddress()),
 	)
 	return nil
@@ -300,7 +300,7 @@ func (c *GenerationCoordinator) Reload(ctx context.Context) (GenerationReloadRes
 	c.diagnostics.Since = time.Now()
 	c.mu.Unlock()
 	c.options.Logging.Info("application generation reload completed",
-		pkglogger.Int("generation", int(active.ID())),
+		pkglogger.Any("generation", active.ID()),
 		pkglogger.Any("changed_sections", changed),
 		pkglogger.String("bound_address", active.BoundAddress()),
 	)

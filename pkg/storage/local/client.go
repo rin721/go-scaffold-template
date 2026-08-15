@@ -54,6 +54,7 @@ func (c *Client) Get(_ context.Context, key string) ([]byte, storageclient.Objec
 	if err != nil {
 		return nil, storageclient.ObjectInfo{}, err
 	}
+	// #nosec G304 -- pathForKey 已做绝对根边界和穿越校验，读取被限制在 basePath 内。
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, storageclient.ObjectInfo{}, err

@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   sqlite:
-    name: SQLite and package boundaries
+    name: SQLite migration and repository contracts
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -20,17 +20,7 @@ jobs:
           go-version-file: go.mod
           cache-dependency-path: go.sum
       - name: Test
-        run: go test ./...
-      - name: Race test
-        run: go test -race ./...
-      - name: Vet
-        run: go vet ./...
-      - name: Verify module files
-        run: go mod tidy -diff
-      - name: Verify CGO-free build
-        env:
-          CGO_ENABLED: "0"
-        run: go build ./...
+        run: go test ./internal/module/migration ./pkg/database -count=1
 
   postgres:
     name: PostgreSQL contract
@@ -56,10 +46,13 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Run PostgreSQL repository contract
+      - name: Run PostgreSQL migration and repository contracts
         env:
           TEST_DATABASE_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/scaffold_test?sslmode=disable
-        run: go test ./pkg/database -run TestConfiguredServerDrivers/postgres -count=1
+          TEST_MIGRATION_POSTGRES_DSN: postgres://postgres:postgres@127.0.0.1:5432/scaffold_test?sslmode=disable
+        run: |
+          go test ./internal/module/migration -run TestConfiguredServerMigrations/postgres -count=1
+          go test ./pkg/database -run TestConfiguredServerDrivers/postgres -count=1
 
   mysql:
     name: MySQL contract
@@ -85,7 +78,10 @@ jobs:
         with:
           go-version-file: go.mod
           cache-dependency-path: go.sum
-      - name: Run MySQL repository contract
+      - name: Run MySQL migration and repository contracts
         env:
           TEST_DATABASE_MYSQL_DSN: root:mysql@tcp(127.0.0.1:3306)/scaffold_test?parseTime=true
-        run: go test ./pkg/database -run TestConfiguredServerDrivers/mysql -count=1
+          TEST_MIGRATION_MYSQL_DSN: root:mysql@tcp(127.0.0.1:3306)/scaffold_test?parseTime=true
+        run: |
+          go test ./internal/module/migration -run TestConfiguredServerMigrations/mysql -count=1
+          go test ./pkg/database -run TestConfiguredServerDrivers/mysql -count=1

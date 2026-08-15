@@ -1,0 +1,57 @@
+name: Release candidate
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    name: Build signed draft release
+    if: github.repository == 'rin721/go-scaffold-template'
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - name: Install pinned release tools
+        env:
+          GOBIN: ${{ github.workspace }}/.tools/bin
+        run: |
+          mkdir -p "${GOBIN}"
+          go install github.com/goreleaser/goreleaser/v2@v2.17.1
+          go install github.com/anchore/syft/cmd/syft@v1.50.0
+          go install github.com/sigstore/cosign/v2/cmd/cosign@v2.6.5
+          echo "${GOBIN}" >> "${GITHUB_PATH}"
+      - name: Verify release gates
+        run: bash scripts/verify-quality.sh
+      - name: Build draft release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: goreleaser release --clean --skip=sign
+      - name: Sign and verify checksum bundle
+        env:
+          CHECKSUM: dist/checksums.txt
+          CERTIFICATE_IDENTITY: https://github.com/${{ github.repository }}/.github/workflows/release.yml@${{ github.ref }}
+        run: |
+          cosign sign-blob --yes --bundle dist/checksums.txt.sigstore.json "${CHECKSUM}"
+          cosign verify-blob \
+            --bundle dist/checksums.txt.sigstore.json \
+            --certificate-identity "${CERTIFICATE_IDENTITY}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            "${CHECKSUM}"
+      - name: Attach verification bundle to draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" dist/checksums.txt.sigstore.json --clobber

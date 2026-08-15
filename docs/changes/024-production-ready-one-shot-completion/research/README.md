@@ -8,6 +8,7 @@
 4. [R004 jwx v4 与 jsonv2 生产基线复核](R004-jwx-jsonv2-reassessment/report.md)：记录 v4 强制实验工具链的新事实，并确认 v3.2.0 稳定基线。
 5. [R005 认证授权能力的应用模块归属复核](R005-security-module-ownership/report.md)：撤回分散顶层包方案，固定 `internal/module/auth` owner、generation lifecycle 与 Todo 跨模块窄 port。
 6. [R006 C5-C6 新增能力归属复核](R006-remaining-module-ownership/report.md)：将 management/observability 合并为 Ops module，并固定 migration engine、command 与 Todo SQL 的不同 owner。
+7. [R007 C7 安全基线刷新](R007-security-baseline-refresh/report.md)：记录固定漏洞门禁发现的可达风险，并将 Go/gRPC/x.image 单轨更新到修复版本。
 
 ## 复用记录
 

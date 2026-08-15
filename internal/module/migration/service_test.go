@@ -3,6 +3,7 @@ package migration_test
 import (
 	"database/sql"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -12,6 +13,51 @@ import (
 	todomigration "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	"github.com/rin721/go-scaffold-template/pkg/database"
 )
+
+func TestConfiguredServerMigrations(t *testing.T) {
+	tests := []struct {
+		name   string
+		driver database.Driver
+		env    string
+	}{
+		{name: "postgres", driver: database.DriverPostgres, env: "TEST_MIGRATION_POSTGRES_DSN"},
+		{name: "mysql", driver: database.DriverMySQL, env: "TEST_MIGRATION_MYSQL_DSN"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dsn := os.Getenv(test.env)
+			if dsn == "" {
+				t.Skipf("%s is not configured", test.env)
+			}
+			config := database.DefaultConfig()
+			config.Driver = test.driver
+			config.DSN = dsn
+			completion, err := todomigration.NewCompletion(config)
+			if err != nil {
+				t.Fatalf("NewCompletion(%s) error = %v", test.driver, err)
+			}
+			module, err := modulemigration.NewModule(
+				config,
+				migrationconfig.Config{LockTimeout: 10 * time.Second, OperationTimeout: time.Minute},
+				todomigration.Set(),
+				modulemigration.NewDefaultFactory,
+				completion,
+			)
+			if err != nil {
+				t.Fatalf("NewModule(%s) error = %v", test.driver, err)
+			}
+			for attempt := 1; attempt <= 2; attempt++ {
+				status, err := module.Service.Up(t.Context(), "")
+				if err != nil || !status.Compatible || status.Dirty || status.Current != todomigration.CurrentVersion {
+					t.Fatalf("Up(%s, attempt %d) = %#v, %v", test.driver, attempt, status, err)
+				}
+			}
+			if err := module.Service.Compatible(t.Context()); err != nil {
+				t.Fatalf("Compatible(%s) error = %v", test.driver, err)
+			}
+		})
+	}
+}
 
 func TestSQLiteMigrationFreshAndIdempotent(t *testing.T) {
 	service, databasePath := newSQLiteService(t)
