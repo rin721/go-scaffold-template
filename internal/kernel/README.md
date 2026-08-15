@@ -94,7 +94,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 
 配置化组件通过 `app.Configured` 声明 ConfigPath、typed Decode/Validate 和可选 Defaults。没有 Defaults 的组件不会生成虚假配置段。Plan Freeze 后只把真实配置节注册安装到 Kernel；服务能力 composition 不再持有 CLI。
 
-当前 `cmd/app` 的有参数分支调用 `composition.ComposeBootstrap`，只构造默认配置管理器和 CLI，不创建 Kernel、稳定 facade、资源、listener 或 goroutine。`config init` 聚合 Logger、Database、Cache、I18n、Storage、HTTP 与 application-owned Todo 七段：
+当前 `cmd/app` 的有参数分支调用 `composition.ComposeBootstrap`，只构造默认配置管理器和 CLI，不创建 Kernel、稳定 facade、资源、listener 或 goroutine。`config init` 聚合 Logger、Database、Cache、I18n、Storage、HTTP 与 application-owned Auth、Migration、Todo、Management、Observability 配置节：
 
 ```powershell
 go run ./cmd/app config init
@@ -160,7 +160,7 @@ Reload 比较的是合并后的有效配置段摘要：如果文件字段已被�
 
 当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service；`prepareTodo` 只服务 invocation-scoped CLI，`runService` 创建 GenerationCoordinator、完整 generation factory、ListenerHub 与 Supervisor。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口。
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md) 与 [Todo 模块说明](../module/todo/README.md)。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md)、[本地启动指南](../../docs/getting-started/local-development.md) 与 [Todo 模块说明](../module/todo/README.md)。
 
 ## 边界
 

@@ -9,12 +9,8 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
-	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
-	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
-	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
-	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	httpapi "github.com/rin721/go-scaffold-template/internal/transport/http/api"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
@@ -59,9 +55,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 		config.FileSource(a.config.ConfigPath),
 		config.EnvSource(a.config.EnvironmentPrefix),
 	)
-	bindingsInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	bindingsInput = append(bindingsInput, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
-	bindings, err := kernelcomposition.ConfigurationBindings(bindingsInput...)
+	bindings, err := kernelcomposition.ConfigurationBindings(applicationOwnedConfigurationBindings()...)
 	if err != nil {
 		return nil, fmt.Errorf("compose service configuration bindings: %w", err)
 	}

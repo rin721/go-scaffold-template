@@ -10,15 +10,10 @@ import (
 
 	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
-	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	"github.com/rin721/go-scaffold-template/internal/kernel/logging"
-	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	migrationcli "github.com/rin721/go-scaffold-template/internal/module/migration/binding/cli"
-	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
-	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	todocli "github.com/rin721/go-scaffold-template/internal/module/todo/binding/cli"
-	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	"github.com/rin721/go-scaffold-template/pkg/cli"
 	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 )
@@ -143,8 +138,6 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 	if err != nil {
 		return fmt.Errorf("compose migration CLI contract: %w", err)
 	}
-	configuration := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	configuration = append(configuration, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
 	bootstrap, err := kernelcomposition.ComposeBootstrap(cli.Config{
 		Name:                   a.config.Name,
 		Description:            a.config.Description,
@@ -153,7 +146,7 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		Stderr:                 a.config.Stderr,
 		DisableInteractiveHome: true,
 	}, kernelcomposition.BootstrapOptions{
-		Configuration: configuration,
+		Configuration: applicationOwnedConfigurationBindings(),
 		Commands:      []kernelcli.Contract{todoContract, migrationContract},
 	})
 	if err != nil {

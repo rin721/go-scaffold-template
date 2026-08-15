@@ -1,5 +1,7 @@
 # 数据库迁移与回滚
 
+本文是部署、发布和生产回滚场景的迁移权威说明。本地首次启动使用 [本地启动指南](../getting-started/local-development.md)：`config init -> db migrate up -> Service`。
+
 ## 部署顺序
 
 1. 备份数据库并验证恢复路径。

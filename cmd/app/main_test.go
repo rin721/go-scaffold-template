@@ -18,14 +18,24 @@ import (
 	applicationcomposition "github.com/rin721/go-scaffold-template/internal/composition"
 )
 
-func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
-	t.Parallel()
+func TestProcessGeneratedConfigurationSupportsMigrationAndServiceStartup(t *testing.T) {
+	directory := t.TempDir()
+	outputPath := filepath.Join(directory, "generated", "config.yaml")
+	databasePath := filepath.Join(directory, "application.db")
+	storagePath := filepath.Join(directory, "storage")
+	businessAddress := reserveLoopbackAddress(t)
+	managementAddress := reserveLoopbackAddress(t)
+	environmentPrefix := "GO_SCAFFOLD_029_"
+	t.Setenv(environmentPrefix+"DATABASE__DSN", filepath.ToSlash(databasePath))
+	t.Setenv(environmentPrefix+"STORAGE__LOCAL__BASEPATH", filepath.ToSlash(storagePath))
+	t.Setenv(environmentPrefix+"HTTP__ADDR", businessAddress)
+	t.Setenv(environmentPrefix+"MANAGEMENT__ADDR", managementAddress)
 
-	outputPath := filepath.Join(t.TempDir(), "generated", "config.yaml")
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	process := newTestProcess(t, strings.NewReader(""), &stdout, &stderr)
-	process.configPath = filepath.Join(t.TempDir(), "missing.yaml")
+	process.configPath = outputPath
+	process.environmentPrefix = environmentPrefix
 
 	if err := process.run(t.Context(), []string{"config", "init", "--output", outputPath}); err != nil {
 		t.Fatalf("run config init: %v", err)
@@ -55,6 +65,87 @@ func TestProcessRunsConfigInitBeforeConfigExists(t *testing.T) {
 		if !bytes.Contains(content, []byte(expected)) {
 			t.Fatalf("generated config missing %q:\n%s", expected, content)
 		}
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := process.run(t.Context(), []string{"db", "migrate", "status"}); err != nil {
+		t.Fatalf("generated config migration status error = %v, stderr=%s", err, stderr.String())
+	}
+	var beforeMigration struct {
+		Empty      bool `json:"empty"`
+		Compatible bool `json:"compatible"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &beforeMigration); err != nil || !beforeMigration.Empty || beforeMigration.Compatible {
+		t.Fatalf("status before migration = %q, parsed=%#v, err=%v", stdout.String(), beforeMigration, err)
+	}
+
+	stdout.Reset()
+	stderr.Reset()
+	if err := process.run(t.Context(), []string{"db", "migrate", "up"}); err != nil {
+		t.Fatalf("generated config migration up error = %v, stderr=%s", err, stderr.String())
+	}
+	var afterMigration struct {
+		Empty      bool `json:"empty"`
+		Compatible bool `json:"compatible"`
+	}
+	if err := json.Unmarshal(stdout.Bytes(), &afterMigration); err != nil || afterMigration.Empty || !afterMigration.Compatible {
+		t.Fatalf("status after migration = %q, parsed=%#v, err=%v", stdout.String(), afterMigration, err)
+	}
+
+	serviceContext, cancelService := context.WithCancel(t.Context())
+	serviceDone := make(chan error, 1)
+	go func() { serviceDone <- process.run(serviceContext, nil) }()
+	client := &http.Client{Timeout: 250 * time.Millisecond}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		readyResponse, readyErr := client.Get("http://" + managementAddress + "/readyz")
+		if readyErr == nil {
+			readyResponse.Body.Close()
+			if readyResponse.StatusCode == http.StatusOK {
+				businessResponse, businessErr := client.Get("http://" + businessAddress + "/not-registered")
+				if businessErr == nil {
+					businessResponse.Body.Close()
+					if businessResponse.StatusCode == http.StatusNotFound {
+						break
+					}
+				}
+			}
+		}
+		select {
+		case err := <-serviceDone:
+			t.Fatalf("generated config service exited before readiness: %v", err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			cancelService()
+			<-serviceDone
+			t.Fatal("generated config service did not become ready")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+
+	cancelService()
+	select {
+	case err := <-serviceDone:
+		if err != nil {
+			t.Fatalf("generated config service shutdown error = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("generated config service did not stop after cancellation")
+	}
+	assertAddressCanBeRebound(t, businessAddress)
+	assertAddressCanBeRebound(t, managementAddress)
+	assertFileCanBeRenamed(t, databasePath)
+
+	content = append(content, []byte("\nunknownRoot:\n  enabled: true\n")...)
+	if err := os.WriteFile(outputPath, content, 0o600); err != nil {
+		t.Fatalf("append unknown config root: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if err := process.run(t.Context(), []string{"db", "migrate", "status"}); err == nil || !strings.Contains(err.Error(), `unknown config section "unknownRoot"`) {
+		t.Fatalf("migration unknown section error = %v", err)
 	}
 }
 

@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前本地启动、配置闭环与文档关系复核"
+question: "为什么 config init 生成后 db migrate 与 Service 仍不能直接运行，现有文档为何不能给出确定顺序？"
+research_type: current-project
+topics: ["local startup", "configuration ownership", "migration CLI", "documentation authority", "onboarding"]
+keywords: ["config init", "db migrate", "ConfigurationBindings", "management", "observability", "README"]
+languages: ["Go", "Markdown", "YAML"]
+frameworks: []
+technologies: ["strict configuration", "SQLite", "Bootstrap CLI", "Application Generation"]
+applicable_scenarios: ["029 设计计划", "首次本地启动", "配置生成后迁移", "unknown config section", "文档入口整理"]
+non_applicable_scenarios: ["生产部署自动化", "远端数据库运维", "配置中心", "新增配置格式", "外部服务安装"]
+status: active
+summary: "config init 与 Service 使用完整 application 配置集合，但 migration executor 漏掉 ops management 与 observability binding，导致生成配置被自身 CLI 拒绝；测试缺少生成到运行的连续契约。根 README 与配置示例还给出冲突启动顺序，应以一个本地启动 authority、一个配置 authority 和一条真实闭环测试单轨修复。"
+evidence:
+  types: ["user-runtime-transcript", "source-code", "tests", "configuration", "current-documentation"]
+  primary_sources:
+    - title: "用户本地命令复现"
+      locator: "2026-08-16 transcript: config init succeeded; db migrate rejected observability/management; Service rejected invalid enabled trace endpoint"
+      snapshot: "ba50c21"
+    - title: "Bootstrap、Service 与 Migration 配置绑定"
+      locator: "internal/composition/application.go; internal/composition/service.go; internal/composition/migration.go; internal/kernel/composition/bootstrap.go"
+      snapshot: "ba50c21"
+    - title: "配置生成与迁移进程测试"
+      locator: "cmd/app/main_test.go; internal/kernel/composition/composition_test.go"
+      snapshot: "ba50c21"
+    - title: "当前启动与配置说明"
+      locator: "README.md; docs/README.md; config.example.yaml; docs/operations/migration-and-rollback.md; internal/module/migration/README.md"
+      snapshot: "ba50c21"
+researched_at: "2026-08-16"
+verified_at: "2026-08-16"
+validity:
+  mode: snapshot
+  review_after: "2026-09-16"
+  refresh_triggers: ["application configuration bindings change", "config init output changes", "migration CLI loading changes", "startup documentation is reorganized"]
+relations:
+  extends: ["001 default configuration contracts", "024 migration and production readiness", "028 startup logging visibility"]
+  related: ["023 full configuration seamless reload"]
+  supersedes: []
+  superseded_by: []
+report: report.md

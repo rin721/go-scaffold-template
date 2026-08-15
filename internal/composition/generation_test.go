@@ -21,11 +21,7 @@ import (
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
-	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
-	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
-	opsconfig "github.com/rin721/go-scaffold-template/internal/module/ops/binding/config"
-	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	todoservice "github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	pkgdatabase "github.com/rin721/go-scaffold-template/pkg/database"
@@ -623,9 +619,7 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
-	bindingInput := []config.Binding{authconfig.Binding(), migrationconfig.Binding(), configbinding.Binding()}
-	bindingInput = append(bindingInput, opsconfig.Binding(), kernelcomposition.ObservabilityConfiguration())
-	bindings, err := kernelcomposition.ConfigurationBindings(bindingInput...)
+	bindings, err := kernelcomposition.ConfigurationBindings(applicationOwnedConfigurationBindings()...)
 	if err != nil {
 		t.Fatalf("ConfigurationBindings() error = %v", err)
 	}

@@ -7,10 +7,8 @@ import (
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
-	authconfig "github.com/rin721/go-scaffold-template/internal/module/auth/binding/config"
 	"github.com/rin721/go-scaffold-template/internal/module/migration"
 	migrationconfig "github.com/rin721/go-scaffold-template/internal/module/migration/binding/config"
-	todoconfig "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
 	todomigration "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 )
 
@@ -38,9 +36,7 @@ func (a *Application) executeMigration(
 	if operation == nil {
 		return migration.Status{}, fmt.Errorf("migration application operation is nil")
 	}
-	bindings, err := kernelcomposition.ConfigurationBindings(
-		authconfig.Binding(), migrationconfig.Binding(), todoconfig.Binding(),
-	)
+	bindings, err := kernelcomposition.ConfigurationBindings(applicationOwnedConfigurationBindings()...)
 	if err != nil {
 		return migration.Status{}, fmt.Errorf("compose migration configuration bindings: %w", err)
 	}
