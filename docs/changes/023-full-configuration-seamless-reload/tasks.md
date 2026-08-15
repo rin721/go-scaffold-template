@@ -3,13 +3,14 @@
 ## 1. 状态与授权
 
 - 研究门禁：已通过。
-- 计划状态：**已取代**；024 是当前唯一施工 authority。
-- 实施授权：023 的既有授权已被用户后续确认的 024 `ONE-001..025` 单轨范围吸收，不再单独执行 `RLD-*`。
+- 计划状态：**已确认，实施验收中**。
+- 实施授权：用户于 2026-08-15 明确确认 023 当前计划，授权实施 `RLD-001..015`，并明确禁止 push。
 - 基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
-- 当前允许动作：仅作为 024 的历史证据与需求映射读取。
-- 当前禁止动作：以 023 名义继续并行施工，以及任何未获授权的外部发布。
+- 实现落点：主体为 `56ce851`；后续加固随 `86c2aca` 落盘。验收状态以 [acceptance.md](acceptance.md) 为准。
+- 当前允许动作：完成 `RLD-001..015` 的实现核对、本地验证、文档闭环与本地提交。
+- 当前禁止动作：push、tag、Release、GHCR、attestation，以及修改 024 的并行施工内容来掩盖 023 验收失败。
 
-若实施证据触发第 6 节条件，必须停止实施、恢复“待确认”并重新报告。
+若实施证据触发第 7 节条件，必须停止实施、恢复“待确认”并重新报告。
 
 ## 2. 任务依赖
 
@@ -28,6 +29,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-001 稳定配置读取
 
+- 状态：**已实施**；Windows 定向重复测试通过。
 - 工作量：M
 - 依据：R001、`CFG-001`
 - 内容：实现受 context/deadline 约束的稳定双采样；分类 Windows sharing violation、atomic rename 暂时不存在与永久错误；保持 File < Env 和 strict decode。
@@ -35,6 +37,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-002 ListenerHub 可证伪原型与契约
 
+- 状态：**已实施、部分验收**；Windows 与 race 自动化通过；用户批准跳过 Linux 真实 runtime，保持未验证。
 - 工作量：L
 - 依据：R002、ADR-002、`HTTP-001/002`
 - 内容：先在 `pkg/httpx` 证明 physical listener、虚拟 route、Serve-ready、pending dispatch barrier、背压、Stop 唤醒、地址迁移和错误传播。
@@ -42,6 +45,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-003 Generation 状态机与协议
 
+- 状态：**已实施**。
 - 工作量：L
 - 依赖：RLD-001、RLD-002
 - 内容：建立 `GenerationFactory`、prepared/current/retiring、candidate Abort、不可失败 Commit、cleanup debt、latest-wins 与 shutdown 状态机。
@@ -49,6 +53,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-004 Typed Resource Slot 与终结 journal
 
+- 状态：**已实施**。
 - 工作量：L
 - 依赖：RLD-003
 - 内容：为 Logger、Database、Cache、I18n、Storage 建立显式 typed key、digest、Ready、引用计数和反向 Close；不引入万能 registry。
@@ -56,6 +61,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-005 Logger 基线与 generation target
 
+- 状态：**已实施**。
 - 工作量：M
 - 依赖：RLD-004
 - 内容：保留不可丢失的 baseline diagnostics；configured business logger 在 commit 切换，旧请求仍可写旧 sink，引用归零后关闭。
@@ -63,6 +69,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-006 完整 Composition Factory
 
+- 状态：**已实施**。
 - 工作量：L
 - 依赖：RLD-004
 - 内容：从单一 Snapshot 构造 capabilities、Todo Repository/Policy/Service/Handler/Router、HTTP server/route 和 journal；完成 owner Ready。
@@ -70,6 +77,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-007 HTTP generation handoff
 
+- 状态：**已实施、跨平台验收未闭环**；用户批准跳过 Linux 真实 runtime，保持未验证。
 - 工作量：L
 - 依赖：RLD-006
 - 内容：把 Service HTTP 生命周期迁到 ListenerHub；实现同地址 route commit、地址变更先 bind、旧 `http.Server.Shutdown` 排空和进程 Stop。
@@ -77,6 +85,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-008 Todo 对象图代际化
 
+- 状态：**已实施**。
 - 工作量：M
 - 依赖：RLD-006
 - 内容：每代重建 immutable Policy、Service、Handler 和 Router；Repository 固定该代 Database；移除只 validate 不生效的旧 binding。
@@ -84,6 +93,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-009 Cache 客户端代际隔离
 
+- 状态：**已实施、真实 Redis 验收未闭环**；用户批准跳过真实 Redis，保持未验证。
 - 工作量：L
 - 依赖：RLD-006
 - 内容：typed Client、L1、tag index 和 cleanup goroutine 归 generation 所有；底层 remote resource 可按 digest 复用。
@@ -91,6 +101,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-010 Database、I18n、Storage 集成
 
+- 状态：**已实施**。
 - 工作量：M
 - 依赖：RLD-006
 - 内容：把现有 component replacement 迁入完整 generation；Database 增加只读 schema readiness，明确外部数据迁移边界。
@@ -98,6 +109,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-011 Watcher 与完整 reload 事务接线
 
+- 状态：**已实施**。
 - 工作量：L
 - 依赖：RLD-007、RLD-008、RLD-009、RLD-010
 - 内容：watcher 只触发 GenerationCoordinator；整合 no-op、latest-wins、deadline、Abort、Commit、retire 和 shutdown。
@@ -105,6 +117,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-012 诊断与可观测性
 
+- 状态：**已实施**。
 - 工作量：M
 - 依赖：RLD-011
 - 内容：统一 attempt/generation/digest/changed sections/phase/routes/active work/reuse/cleanup debt；脱敏错误保留 owner 与 error chain。
@@ -112,6 +125,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-013 单轨删除旧 reload
 
+- 状态：**已实施**；底层 Kernel 通用策略保留，不再是长期 Service 七节 reload 入口。
 - 工作量：L
 - 依赖：RLD-012
 - 内容：迁移全部调用方后删除长期 Service 的 section-level Coordinator、`RestartRequired` 策略、旧 application binding、Cache 跨代入口和失效测试/日志/文档。
@@ -119,6 +133,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-014 完整验证与运行验收
 
+- 状态：**未完成**；Linux 真实 runtime 与真实 Redis 已按用户指示跳过并标记未验证；当前全量测试受 024 未提交 Todo/API 改动和 Go 临时目录空间不足影响。
 - 工作量：XL
 - 依赖：RLD-013
 - 内容：执行七节单改/组合改、失败注入、并发、长请求、地址变化、cleanup debt、Windows/Linux 真实进程验收以及 test/race/vet/build。
@@ -126,6 +141,7 @@ RLD-002 ─┘                         ├-> RLD-005          ├-> RLD-011 -> R
 
 ### RLD-015 文档、Diff 与提交闭环
 
+- 状态：**进行中**；依赖 `RLD-014`，本轮不得声明整项完成。
 - 工作量：M
 - 依赖：RLD-014
 - 内容：同步 README、架构、配置、组件开发、运行与故障说明；更新 023 状态、逐轮证据和 Commit；审阅完整 Diff，只暂存本任务文件并创建 Conventional Commit。
@@ -153,7 +169,16 @@ git diff --check
 - 结论：022 的 latch 恢复修复不等于文件稳定读取，RLD-001 必须先解决保存窗口的瞬时不可读。
 - 计划阶段不修改 Go，不启动 Service，不暂存、不提交。
 
-## 6. 重新确认条件
+## 6. 实施与验收证据
+
+- `56ce851 feat(runtime): switch immutable application generations`：稳定读取、Application Generation、typed resource pools、ListenerHub、七节配置接线、测试与当前说明主体。
+- `86c2aca feat(api): establish strict OpenAPI transport`：包含后续 ListenerHub pending ownership/背压、Generation 结构化错误与动态诊断、Windows sharing violation 测试等加固；该提交同时包含 024 API 工作，不作为 023 的独立纯净提交证明。
+- Windows 真实进程：PID `60468` 内 Todo reload 后 generation `1 -> 2`，请求结果 `201 -> 400`，随后 Ctrl+C 走 application stopping 与资源停止链。
+- 定向 test、race、vet、build 和 Linux cross-compile 已通过；Linux cross-compile 不替代真实 runtime。
+- 完整逐项状态、命令和未执行项见 [acceptance.md](acceptance.md)。
+- 用户于 2026-08-15 批准跳过 Linux 真实 runtime 与真实 Redis backend/tag namespace 验证；两项必须永久保留“未验证”表述，除非后续补跑成功。
+
+## 7. 重新确认条件
 
 命中 `design.md` 第 13 节任一条件，或任务工作量、公共 API、依赖、模块边界、配置契约、数据迁移、外部副作用发生实质变化时：
 

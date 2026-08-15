@@ -2,11 +2,12 @@
 
 ## 当前状态
 
-- 任务类型：历史研究与实施计划，已由 024 单轨吸收。
+- 任务类型：已确认的非文档实施与验收闭环。
 - 基线：`e251b73518a457ec97c529d067ddfffe77be203a`。
 - 研究门禁：已通过，见 [R001](research/R001-current-reload-boundaries/report.md) 与 [R002](research/R002-generation-listener-patterns/report.md)。
-- 计划状态：**已取代**；用户于 2026-08-15 确认 [024 生产就绪模板一次性竣工](../024-production-ready-one-shot-completion/README.md)，023 不再是并行施工 authority。
-- 当前实现：023 的稳定读取、Application Generation、ListenerHub 与七节配置重载成果由 024 的 `ONE-004..007` 接收；当前行为以根 README 和 024 证据为准。
+- 计划状态：**已确认，实施验收中**；用户于 2026-08-15 明确确认 023 当前计划，授权实施 `RLD-001..015`，并明确禁止 push。
+- 当前实现：稳定读取、Application Generation、ListenerHub 与七节配置重载主体落在本地提交 `56ce851`；后续并发、诊断和 Windows 文件读取加固随当前本地提交 `86c2aca` 落盘。两者均未由本任务推送。
+- 当前缺口：Windows 真实进程验收已通过；用户已批准跳过 Linux 真实 runtime 与真实 Redis backend/tag namespace 切换，两项保持“未验证”，不再等待环境。当前全量测试仍受到 024 未提交 Todo/API 改动和本机 Go 临时目录空间不足影响，因此 `RLD-014`、`RLD-015` 尚不能标记完成，详见 [验收台账](acceptance.md)。
 
 ## 一句话结论
 
@@ -47,7 +48,8 @@
 5. [ADR-002](decision.md)
 6. [设计](design.md)
 7. [任务](tasks.md)
+8. [验收台账](acceptance.md)
 
 ## Authority 说明
 
-本目录只保留 023 的研究、需求、设计和任务历史，不再授权独立实施。后续扩展、验证、提交和竣工标签统一由 024 管理；外部 push、tag、Release、GHCR 与 attestation 仍未授权。
+本目录是 `RLD-001..015` 的实施与验收 authority；根 README 与主题文档描述当前有效运行行为。024 可以引用已落地成果，但不得把 023 的未执行验收写成已完成。当前授权不包含 push、tag、Release、GHCR 或外部 attestation。

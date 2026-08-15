@@ -1,6 +1,6 @@
 # ADR-002：采用不可变 Application Generation 与进程级 ListenerHub
 
-- 状态：已确认
+- 状态：已确认并已实施；跨平台与真实 Redis 验收未闭环
 - 日期：2026-08-15
 - 依据：[R001](research/R001-current-reload-boundaries/report.md)、[R002](research/R002-generation-listener-patterns/report.md)
 - 取代范围：长期 Service 的逐组件配置 reload 与 `HTTP/Todo/Cache RestartRequired` 终态

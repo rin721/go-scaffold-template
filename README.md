@@ -105,7 +105,7 @@ go run ./cmd/app todo complete --id <todo-id>
 
 GenerationCoordinator 提供 attempt、candidate/current/retiring generation、Snapshot digest、changed sections、phase、configured/bound/retiring address、active connections/requests、typed resource build/reuse、空 restart policy、cleanup debt 和脱敏 failure phase/owner/error type；Supervisor 继续记录 Participant/Task 与 shutdown 预算。默认应用没有 diagnostics endpoint、管理 listener 或跨进程 retry/force CLI。
 
-本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，底层组件生命周期见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。当前生产竣工与完整 Service 重载的唯一施工 authority 是 [024 生产就绪模板一次性竣工](docs/changes/024-production-ready-one-shot-completion/README.md)；[023 全配置无感重载](docs/changes/023-full-configuration-seamless-reload/README.md) 只保留历史研究证据。
+本地 `config.yaml`、`config.yml` 和 `config.json` 已被 Git 忽略。入口实现与约束记录在 [docs/changes/002-application-entrypoint](docs/changes/002-application-entrypoint/README.md)，底层组件生命周期见 [009 配置重载与生命周期修复](docs/changes/009-config-reload-lifecycle-repair/README.md)，能力装配见 [011 Cache、I18n、Storage 装配](docs/changes/011-cache-i18n-storage-composition/README.md)，首个应用模块见 [014 Todo 业务垂直切片](docs/changes/014-todo-business-vertical-slice/README.md)。[023 全配置无感重载](docs/changes/023-full-configuration-seamless-reload/README.md) 是 `RLD-001..015` 的实施与验收 authority；[024 生产就绪模板一次性竣工](docs/changes/024-production-ready-one-shot-completion/README.md) 继续管理其余生产竣工范围。两项任务都不授权外部发布。
 
 ## 本地验证
 
