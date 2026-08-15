@@ -3,12 +3,12 @@
 ## 1. 门禁状态
 
 - 022 研究门禁：已通过。
-- 022 文档计划：Program 总计划已完成；`FOUNDATION-DIAGNOSTICS-001` 的独立研究与施工计划已完成，属于纯文档交付。
-- 当前底层：Foundation-partial；生命周期 P0 与统一 diagnostics 已闭环，EnvSource 冲突与完整 Foundation acceptance 仍未通过。
+- 022 文档计划：Program 总计划已完成；生命周期、diagnostics 与 `FOUNDATION-CONFIG-001` 均已实施并保留独立施工证据。
+- 当前底层：Foundation-partial；生命周期、统一 diagnostics 与配置确定性 P0 已闭环，完整 Foundation acceptance 仍未通过。
 - 业务模块详细设计：阻断，等待 Foundation P0 验收和具体 profile assessment。
 - Production HTTP API-ready：未通过。
-- 非文档实施：`FOUNDATION-LIFECYCLE-001` 与 `FOUNDATION-DIAGNOSTICS-001` 均已由用户在各自计划报告后的后续消息明确确认并完成；其他 Program item 仍需形成各自计划并单独确认。
-- 本轮边界：只实施并提交 `DGN-001` 至 `DGN-009`；不启动服务、不部署、不推送，不实施 EnvSource、management transport 或 HTTP API 产品治理。
+- 非文档实施：`FOUNDATION-LIFECYCLE-001`、`FOUNDATION-DIAGNOSTICS-001` 与 `FOUNDATION-CONFIG-001` 均已由用户在各自计划报告后的后续消息明确确认并完成；其他 Program item 仍需形成各自计划并单独确认。
+- 本轮边界：只实施、验证并提交 `CFG-001..008`；不启动服务、不修改真实配置、不部署、不推送。
 
 ## 2. 本轮研究与计划任务
 
@@ -24,6 +24,8 @@
 | `PLAN-003` | XL | `PLAN-002` | 在 022 内建立 `FOUNDATION-LIFECYCLE-001` 唯一施工计划 | 冻结 Go 契约、状态机、逐资源政策、文件影响、迁移、任务 ID 和精确测试，状态为待确认 | 已完成 |
 | `RES-005` | L | `FOUNDATION-LIFECYCLE-001` 已实施 | 在当前 HEAD 追踪 Kernel app、Coordinator、Supervisor、Host、Service/CLI 的 diagnostics 数据源、终态、预算、脱敏和并发边界 | R006 给出字段矩阵、代码证据、复用/刷新判断与方案取舍 | 已完成 |
 | `PLAN-004` | XL | `RES-005` | 建立 `FOUNDATION-DIAGNOSTICS-001` 唯一施工计划并同步 022 authority | 冻结 typed ledger、Host 单一快照、文件影响、`DGN-001..009`、精确测试和重新确认线，状态为待确认 | 已完成 |
+| `RES-006` | L | `FOUNDATION-DIAGNOSTICS-001` 已实施、022-R002/R004 | 在当前 HEAD 追踪 EnvSource、Loader、Snapshot、Coordinator、Kernel 与测试，复核 012-R019 刷新条件和 Go `os.Environ` 契约 | R007 分离当前事实、推断、适用边界、局限与任务影响 | 已完成 |
+| `PLAN-005` | XL | `RES-006` | 建立 `FOUNDATION-CONFIG-001` 唯一施工计划并同步 022 authority | 冻结 object/non-object、case/empty/null、错误脱敏、文件影响、`CFG-001..008`、测试矩阵和重新确认线，状态为待确认 | 已完成 |
 
 ## 3. Foundation 后续实施项
 
@@ -31,7 +33,7 @@
 | --- | --- | --- | --- | --- | --- |
 | `FOUNDATION-LIFECYCLE-001` | P0 | 022-R002/R003/R004/R005 | 实现统一 owner/state/budget 引擎与场景化 finalization Adapter，修复 terminal drain、部分构造和 cleanup debt | `FND-LIFECYCLE-001` 至 `008`，`FND-ACCEPT-001/002` | [已确认并实施完成](plans/foundation-lifecycle-001.md) |
 | `FOUNDATION-DIAGNOSTICS-001` | P0 | `FOUNDATION-LIFECYCLE-001` 已实施、022-R006 | 统一 Kernel/Coordinator/Supervisor responsibility、generation、phase、policy、budget、verification 和 terminal diagnostics | `FND-RUNTIME-002`、`FND-DIAGNOSTICS-001/002`、`FND-ACCEPT-003` | [已确认并实施完成](plans/foundation-diagnostics-001.md) |
-| `FOUNDATION-CONFIG-001` | P0 | 022-R002 | 统一 EnvSource 与 Loader 的结构冲突语义，拒绝顺序相关路径 | `FND-CONFIG-001` 至 `003`、`FND-ACCEPT-004` | 未立项 |
+| `FOUNDATION-CONFIG-001` | P0 | 022-R002/R004/R007 | 统一 EnvSource 与 Loader 的结构冲突语义，拒绝顺序相关路径 | `FND-CONFIG-001` 至 `003`、`FND-ACCEPT-004` | [已确认并实施完成](plans/foundation-config-001.md) |
 | `FOUNDATION-ACCEPTANCE-001` | P0 | 上述三项 | 故障注入、真实资源、Service/CLI、race/vet/build 和十一门复核 | `FND-GOV-001` 至 `004`、`FND-ACCEPT-005` | 未立项 |
 | `FOUNDATION-RECONCILIATION-001` | P1 | Foundation P0 | 研究 sticky RestartRequired 的恢复与人工干预语义 | 不破坏提交前原子和 degraded 诚实性 | 未立项 |
 | `MODULE-RUNTIME-PROFILE-001` | 场景触发 | 首个后台/health 需求 | 为真实 Runner/Ready/Health 场景设计最小贡献契约 | `BIZ-UNLOCK-002` 至 `004`，无万能 hook/locator | 等待真实场景 |
@@ -43,6 +45,10 @@
 ### 3.2 `FOUNDATION-DIAGNOSTICS-001` 当前计划
 
 实施前事实与取舍由 [R006](research/R006-unified-runtime-diagnostics/report.md) 支撑，唯一施工级正文与实施证据为 [`plans/foundation-diagnostics-001.md`](plans/foundation-diagnostics-001.md)。`DGN-001` 至 `DGN-009` 已完成：Kernel/Supervisor 各自维护 typed responsibility ledger，Host 提供单一 process diagnostics，并覆盖共享 shutdown budget、pending/failed/forced/finalized 分类、release verification、并发脱敏快照和 Service/CLI/Host 验收。
+
+### 3.3 `FOUNDATION-CONFIG-001` 当前计划
+
+实施前事实与取舍由 [R007](research/R007-config-source-determinism/report.md) 支撑，唯一施工级正文与实施证据为 [`plans/foundation-config-001.md`](plans/foundation-config-001.md)。`CFG-001` 至 `CFG-008` 已完成：`Source`/`Loader`/Snapshot、File < Env 和 Coordinator 单候选保持不变，config owner 已统一 Env path insertion、case-fold sibling identity、object/non-object merge、null、安全错误与 Build-zero 门禁。
 
 ## 4. HTTP API 成熟化后续 Program
 
@@ -66,8 +72,8 @@
 第一条关键路径先于业务设计和 API product work：
 
 1. `FOUNDATION-LIFECYCLE-001`：已完成；后续以当前代码、权威文档和本轮验证证据为准；
-2. `FOUNDATION-DIAGNOSTICS-001`：让所有未结束责任可定位，不以 error string 代替状态；
-3. `FOUNDATION-CONFIG-001`：可与前两项研究并行，但合入前统一验收；
+2. `FOUNDATION-DIAGNOSTICS-001`：已完成，让所有未结束责任可定位，不以 error string 代替状态；
+3. `FOUNDATION-CONFIG-001`：已完成，配置歧义在 Snapshot 与资源副作用前确定性拒绝；
 4. `FOUNDATION-ACCEPTANCE-001`：故障注入后复核十一门，决定是否解锁同步业务 profile；
 5. Foundation 通过后，`API-AUTHORITY-001`、`MANAGEMENT-001` 与 `PORTABILITY-001` 可独立推进；
 6. 再按 `API-CONTRACT -> PROTOCOL/EDGE -> OBS/SEC` 和 `MIGRATION -> DELIVERY -> RELEASE -> ACCEPTANCE` 推进。
@@ -84,8 +90,10 @@
 | 4 | 2026-08-15 | `PLAN-003` | `plans/foundation-lifecycle-001.md`；当前 HEAD/调用方/公共接口复核；022 导航与门禁单轨引用 | 无，按用户要求保持未提交 | 源码未实施；需用户后续明确确认当前计划；外部真实资源与部署信号仍待实施/后续研究 |
 | 5 | 2026-08-15 | `LFC-001..010` | instance generation/terminal cache、可继续 drain、classified Supervisor snapshot、HTTP explicit force、Database Ready Ping、watcher/workbook error join、Redis/Logger/SQLite/文件释放测试；`go test ./...`、`go test -race ./...`、`go vet ./...`、`go build ./cmd/app` 通过 | `7d64f86` | 真实 PostgreSQL/MySQL/S3、HTTP hijacked/WebSocket、部署 grace/第二次信号未验证；统一 diagnostics、EnvSource 和 Foundation 总验收仍待后续 Program |
 | 6 | 2026-08-15 | `RES-005`、`PLAN-004` | HEAD `7d64f8634c59375a522e66b5b989dd40b557ee9d`；Coordinator/Kernel app/Supervisor/Host/Service/CLI 调用链；`go test ./internal/kernel/... ./pkg/supervisor ./pkg/httpx` 通过；R006 字段矩阵与 diagnostics 施工计划 | 无，计划阶段按门禁保持未提交 | `DGN-001..009` 待用户后续明确确认；EnvSource、Foundation 总验收、management transport 和部署信号仍不在范围 |
-| 7 | 2026-08-15 | `DGN-001..009` | Kernel ownership ledger、Supervisor unit/budget ledger、Host `ProcessDiagnostics`、Health authority、Service/CLI 与并发/脱敏/终态测试；完整验证命令见施工计划第 14 节 | 本任务提交 | EnvSource、Foundation 总验收、management transport、外部真实资源和部署信号仍不在范围 |
+| 7 | 2026-08-15 | `DGN-001..009` | Kernel ownership ledger、Supervisor unit/budget ledger、Host `ProcessDiagnostics`、Health authority、Service/CLI 与并发/脱敏/终态测试；完整验证命令见施工计划第 14 节 | `6f1521a` | EnvSource、Foundation 总验收、management transport、外部真实资源和部署信号仍不在范围 |
+| 8 | 2026-08-15 | `RES-006`、`PLAN-005` | HEAD `6f1521a211c6aa6b137db8464be4633bd9ded809`；EnvSource/Loader/Snapshot/Coordinator/Kernel 调用链；012-R019 刷新复核；Go 1.25.7 `os.Environ` 契约；`go test ./internal/kernel/config -count=1` 通过；R007 与配置施工计划 | 无，计划阶段按门禁保持未提交 | `CFG-001..008` 待用户后续明确确认；Linux 运行、Foundation 总验收、remote Source 与 null 删除语义不在范围 |
+| 9 | 2026-08-15 | `CFG-001..008` | typed path error、受控 Env entry、deterministic object/non-object merge、case/empty/null/置换/脱敏测试、Coordinator Stage/Build-zero；target/full/race/vet/Windows+Linux build、文档链接与 Diff 门禁通过 | 本任务提交 | Linux runtime、remote Source、null 删除语义、真实服务与 Foundation 总验收不在范围 |
 
 ## 7. 停止条件
 
-本轮在 `DGN-001..009`、完整验证、Diff 审计和本任务提交完成后停止。不得顺带实施 `FOUNDATION-CONFIG-001`、HTTP API 产品治理、服务启动、部署或推送；后续非文档实施仍必须等待对应计划报告后的明确确认。
+本轮在 `CFG-001..008`、完整验证、Diff 审计和本任务提交完成后停止。不得顺带实施 `FOUNDATION-ACCEPTANCE-001`、HTTP API 产品治理、服务启动、真实配置修改、部署或推送；后续非文档实施仍需对应计划报告后的明确确认。

@@ -6,7 +6,7 @@
 
 实施通过配置节 owner 的最小 `config.Binding` 闭合 Source 值域与身份、Default 与 runtime binder、strict binding、validation、Snapshot 不可变性以及 Application 与 Kernel 的同一 reload candidate；没有引入无类型公共 Map API、动态 schema registry、隐藏 Provider 或第二套 reload runtime。
 
-状态：**已实施设计记录**。实施快照见 [R021](../research/R021-foundation-closure-implementation/report.md)；实施前现状见 [R017](../research/R017-current-contract-inventory/report.md)，外部研究见 [R019](../research/R019-config-contracts/report.md)。
+状态：**已实施设计记录**。基础实施快照见 [R021](../research/R021-foundation-closure-implementation/report.md)；EnvSource/Loader 的同源与跨源路径确定性由 [022 FOUNDATION-CONFIG-001](../../022-http-api-template-readiness/plans/foundation-config-001.md) 补齐。实施前现状见 [R017](../research/R017-current-contract-inventory/report.md)，外部研究见 [R019](../research/R019-config-contracts/report.md)。
 
 ## 2. 实施前数据流与责任
 

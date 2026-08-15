@@ -2,8 +2,11 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -14,12 +17,12 @@ type databaseConfig struct {
 }
 
 func TestLoaderMergesSourcesAndRedactsSecrets(t *testing.T) {
-	t.Setenv("APP_DATABASE__PINGTIMEOUT", "9s")
+	t.Setenv("GO_SCAFFOLD_TEST_DATABASE__PINGTIMEOUT", "9s")
 	loader := New(
 		MapSource("defaults", map[string]any{
 			"database": map[string]any{"dsn": "postgres://user:secret@example.invalid/app", "pingTimeout": "5s"},
 		}),
-		EnvSource("APP_"),
+		EnvSource("GO_SCAFFOLD_TEST_"),
 	)
 	snapshot, err := loader.Load(t.Context())
 	if err != nil {
@@ -137,9 +140,9 @@ func TestSnapshotSectionDigestTracksOnlySection(t *testing.T) {
 
 func TestEnvironmentOverrideKeepsEffectiveSectionDigestStableAcrossFileChange(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
-	t.Setenv("APP_DATABASE__DSN", "environment.db")
+	t.Setenv("GO_SCAFFOLD_TEST_DATABASE__DSN", "environment.db")
 	writeDatabaseDSN(t, path, "file-v1.db")
-	loader := New(FileSource(path), EnvSource("APP_"))
+	loader := New(FileSource(path), EnvSource("GO_SCAFFOLD_TEST_"))
 	first, err := loader.Load(t.Context())
 	if err != nil {
 		t.Fatalf("Load(first) error = %v", err)
@@ -167,6 +170,206 @@ func TestEnvironmentOverrideKeepsEffectiveSectionDigestStableAcrossFileChange(t 
 	}
 	if decoded.DSN != "environment.db" {
 		t.Fatalf("DSN = %q, want environment override", decoded.DSN)
+	}
+}
+
+func TestEnvironmentSourceRejectsAmbiguousPathsDeterministically(t *testing.T) {
+	tests := []struct {
+		name     string
+		entries  []string
+		wantKind configPathErrorKind
+		wantPath string
+	}{
+		{name: "scalar before object", entries: []string{"APP_DATABASE=value", "APP_DATABASE__DSN=db"}, wantKind: configPathErrorShapeConflict, wantPath: "database"},
+		{name: "object before scalar", entries: []string{"APP_DATABASE__DSN=db", "APP_DATABASE=value"}, wantKind: configPathErrorShapeConflict, wantPath: "database"},
+		{name: "three level ancestor first", entries: []string{"APP_CACHE__REDIS=value", "APP_CACHE__REDIS__ADDR=localhost"}, wantKind: configPathErrorShapeConflict, wantPath: "cache.redis"},
+		{name: "three level descendant first", entries: []string{"APP_CACHE__REDIS__ADDR=localhost", "APP_CACHE__REDIS=value"}, wantKind: configPathErrorShapeConflict, wantPath: "cache.redis"},
+		{name: "duplicate logical path", entries: []string{"APP_DATABASE__DSN=one", "APP_DATABASE__DSN=two"}, wantKind: configPathErrorDuplicate, wantPath: "database.dsn"},
+		{name: "case collision", entries: []string{"APP_DATABASE__DSN=one", "APP_database__dsn=two"}, wantKind: configPathErrorCaseCollision, wantPath: "database.dsn"},
+		{name: "leading empty segment", entries: []string{"APP___DATABASE=value"}, wantKind: configPathErrorEmptySegment, wantPath: ".database"},
+		{name: "middle empty segment", entries: []string{"APP_DATABASE____DSN=value"}, wantKind: configPathErrorEmptySegment, wantPath: "database..dsn"},
+		{name: "trailing empty segment", entries: []string{"APP_DATABASE__=value"}, wantKind: configPathErrorEmptySegment, wantPath: "database."},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := loadEnvironment(t.Context(), "APP_", test.entries)
+			requireConfigPathError(t, err, test.wantKind, test.wantPath)
+		})
+	}
+}
+
+func TestEnvironmentSourceReturnsSameFirstConflictAcrossEntryOrders(t *testing.T) {
+	const secretValue = "env-secret-payload"
+	orders := [][]string{
+		{"APP_Z=" + secretValue, "APP_Z__CHILD=child", "APP_A=parent", "APP_A__CHILD=child"},
+		{"APP_A__CHILD=child", "APP_A=parent", "APP_Z__CHILD=child", "APP_Z=" + secretValue},
+		{"APP_Z__CHILD=child", "APP_A=parent", "APP_Z=" + secretValue, "APP_A__CHILD=child"},
+	}
+	for index, entries := range orders {
+		_, err := loadEnvironment(t.Context(), "APP_", entries)
+		requireConfigPathError(t, err, configPathErrorShapeConflict, "a")
+		if strings.Contains(err.Error(), secretValue) {
+			t.Fatalf("order %d error leaked environment value: %v", index, err)
+		}
+	}
+}
+
+func TestEnvironmentSourcePreservesEmptyAndEqualsValues(t *testing.T) {
+	values, err := loadEnvironment(t.Context(), "APP_", []string{
+		"UNRELATED=value",
+		"APP_=ignored",
+		"APP_DATABASE__DSN=",
+		"APP_TOKEN=part=with=equals",
+	})
+	if err != nil {
+		t.Fatalf("loadEnvironment() error = %v", err)
+	}
+	database, ok := values["database"].(map[string]any)
+	if !ok || database["dsn"] != "" {
+		t.Fatalf("database config = %#v, want explicit empty dsn", values["database"])
+	}
+	if values["token"] != "part=with=equals" {
+		t.Fatalf("token = %#v, want full value after first equals", values["token"])
+	}
+	if _, exists := values[""]; exists {
+		t.Fatal("prefix-only environment entry created an empty root key")
+	}
+}
+
+func TestEnvironmentSourcePreservesCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := loadEnvironment(ctx, "APP_", nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("loadEnvironment(cancelled) error = %v, want context.Canceled", err)
+	}
+}
+
+func TestLoaderRejectsObjectNonObjectShapeChanges(t *testing.T) {
+	object := map[string]any{"child": "value"}
+	tests := []struct {
+		name string
+		low  any
+		high any
+	}{
+		{name: "object to scalar", low: object, high: "top-secret-value"},
+		{name: "object to array", low: object, high: []any{"value"}},
+		{name: "object to null", low: object, high: nil},
+		{name: "scalar to object", low: "value", high: object},
+		{name: "array to object", low: []any{"value"}, high: object},
+		{name: "null to object", low: nil, high: object},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := New(
+				MapSource("base", map[string]any{"setting": test.low}),
+				MapSource("override", map[string]any{"setting": test.high}),
+			).Load(t.Context())
+			requireConfigPathError(t, err, configPathErrorShapeConflict, "setting")
+			if !strings.Contains(err.Error(), "merge config source override") {
+				t.Fatalf("Load() error = %v, want override source identity", err)
+			}
+			if strings.Contains(err.Error(), "top-secret-value") {
+				t.Fatalf("Load() error leaked config value: %v", err)
+			}
+		})
+	}
+}
+
+func TestLoaderAllowsDeterministicSameShapeOverrides(t *testing.T) {
+	t.Run("recursive object merge preserves base spelling", func(t *testing.T) {
+		snapshot, err := New(
+			MapSource("file", map[string]any{"Database": map[string]any{"DSN": "file.db", "pool": 4}}),
+			MapSource("env", map[string]any{"database": map[string]any{"dsn": "env.db", "timeout": "5s"}}),
+		).Load(t.Context())
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		data := snapshot.Data()
+		if _, exists := data["database"]; exists {
+			t.Fatal("merge created a second differently-cased database key")
+		}
+		database := data["Database"].(map[string]any)
+		if database["DSN"] != "env.db" || database["pool"] != 4 || database["timeout"] != "5s" {
+			t.Fatalf("merged database = %#v", database)
+		}
+		if got := snapshot.Provenance(); !reflect.DeepEqual(got, []string{"file", "env"}) {
+			t.Fatalf("Provenance() = %#v", got)
+		}
+	})
+
+	for _, test := range []struct {
+		name string
+		low  any
+		high any
+	}{
+		{name: "scalar to array", low: "value", high: []any{"next"}},
+		{name: "array to null", low: []any{"value"}, high: nil},
+		{name: "null to bool", low: nil, high: true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot, err := New(
+				MapSource("base", map[string]any{"setting": test.low}),
+				MapSource("override", map[string]any{"setting": test.high}),
+			).Load(t.Context())
+			if err != nil {
+				t.Fatalf("Load() error = %v", err)
+			}
+			got, exists := snapshot.Value("setting")
+			if !exists || !reflect.DeepEqual(got, test.high) {
+				t.Fatalf("setting = %#v, want %#v", got, test.high)
+			}
+		})
+	}
+}
+
+func TestLoaderRejectsCaseFoldSiblingCollision(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		values   map[string]any
+		wantPath string
+	}{
+		{name: "root", values: map[string]any{
+			"Database": map[string]any{"dsn": "one"},
+			"database": map[string]any{"dsn": "two"},
+		}, wantPath: "database"},
+		{name: "nested", values: map[string]any{
+			"database": map[string]any{"DSN": "one", "dsn": "two"},
+		}, wantPath: "database.dsn"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := New(MapSource("ambiguous", test.values)).Load(t.Context())
+			requireConfigPathError(t, err, configPathErrorCaseCollision, test.wantPath)
+			if !strings.Contains(err.Error(), "normalize config source ambiguous") {
+				t.Fatalf("Load() error = %v, want ambiguous source identity", err)
+			}
+		})
+	}
+}
+
+func TestLoaderReportsSameFirstConflictAcrossMapIterations(t *testing.T) {
+	for attempt := 0; attempt < 100; attempt++ {
+		_, err := New(
+			MapSource("base", map[string]any{
+				"z": map[string]any{"child": "value"},
+				"a": map[string]any{"child": "value"},
+			}),
+			MapSource("override", map[string]any{"z": "value", "a": "value"}),
+		).Load(t.Context())
+		requireConfigPathError(t, err, configPathErrorShapeConflict, "a")
+	}
+}
+
+func requireConfigPathError(t *testing.T, err error, wantKind configPathErrorKind, wantPath string) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("error = nil")
+	}
+	var pathErr *configPathError
+	if !errors.As(err, &pathErr) {
+		t.Fatalf("error = %v, want configPathError", err)
+	}
+	if pathErr.kind != wantKind || pathErr.path != wantPath {
+		t.Fatalf("configPathError = {%q %q}, want {%q %q}", pathErr.kind, pathErr.path, wantKind, wantPath)
 	}
 }
 

@@ -1,0 +1,44 @@
+schema_version: 1
+id: R007
+title: "EnvSource 与 Loader 配置路径确定性"
+question: "当前 EnvSource 与 Loader 对同源和跨源路径冲突、大小写别名、空段、null 与枚举顺序分别具有什么语义，FOUNDATION-CONFIG-001 应如何在不改变既有优先级和公共契约的前提下闭环？"
+research_type: current-project
+topics: ["configuration source", "deterministic merge", "environment variables", "shape conflict", "case collision"]
+keywords: ["EnvSource", "Loader", "setNested", "mergeMap", "matchingKey", "os.Environ", "FND-CONFIG-001"]
+languages: ["Go"]
+frameworks: ["mapstructure"]
+technologies: ["environment variables", "YAML", "JSON", "immutable Snapshot"]
+applicable_scenarios: ["FOUNDATION-CONFIG-001", "FND-ACCEPT-004", "FileSource 与 EnvSource 合并", "未来新增配置 Source 前的结构门禁"]
+non_applicable_scenarios: ["改变配置优先级", "字段级 provenance", "配置 schema 版本迁移", "实现 remote Source", "声明 Foundation-closed"]
+status: needs-refresh
+summary: "本记录保存 6f1521a 的实施前缺口：EnvSource 会按枚举顺序覆盖祖先/后代与大小写归一路径，Loader 允许 object/null 改形状且可能不确定匹配 sibling。FOUNDATION-CONFIG-001 已按该结论实施，当前事实以代码、测试和施工计划证据为准。"
+evidence:
+  types: ["source-code", "tests", "call-site-trace", "go-standard-library"]
+  primary_sources:
+    - title: "当前 EnvSource、Loader、canonical tree 与配置测试"
+      locator: "internal/kernel/config/config.go; internal/kernel/config/config_test.go"
+      snapshot: "HEAD 6f1521a211c6aa6b137db8464be4633bd9ded809, verified 2026-08-15"
+    - title: "当前 Application、Coordinator 与 Kernel 候选调用链"
+      locator: "internal/composition/todo.go; internal/kernel/coordinator.go; internal/kernel/kernel.go"
+      snapshot: "HEAD 6f1521a211c6aa6b137db8464be4633bd9ded809, verified 2026-08-15"
+    - title: "既有严格 Config 契约研究与设计"
+      locator: "012-R019; docs/changes/012-business-module-architecture/design/config-contracts.md; 022-R002; 022-R004"
+      snapshot: "refresh triggers reviewed 2026-08-15"
+    - title: "Go 1.25.7 os.Environ 契约与平台实现"
+      locator: "https://pkg.go.dev/os#Environ; GOROOT/src/os/env.go; GOROOT/src/syscall/env_windows.go; GOROOT/src/syscall/env_unix.go"
+      snapshot: "Go 1.25.7 windows/amd64, verified 2026-08-15"
+    - title: "当前针对性配置测试"
+      locator: "go test ./internal/kernel/config -count=1"
+      snapshot: "passed on Windows, Go 1.25.7, 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["EnvSource 或 mergeMap 实现变化", "新增配置 Source", "配置 key 大小写政策变化", "引入 null 清空或逐路径兼容规则", "FOUNDATION-CONFIG-001 实施完成"]
+relations:
+  extends: ["012-R019", "022-R002", "022-R004"]
+  related: ["012-R021"]
+  supersedes: []
+  superseded_by: []
+report: report.md

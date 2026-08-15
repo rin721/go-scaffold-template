@@ -123,7 +123,9 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 
 `WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
 
-Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。Reload 比较的是合并后的有效配置段摘要：如果文件字段已被环境变量覆盖，文件变化不会重建相关组件。运行中只能重新读取进程启动时继承的环境，另一个 shell 后续设置的变量不会进入该进程。
+Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。每个 object scope 的大小写等价 key 必须唯一；object/object 递归合并，scalar/array/null 组成的 non-object 由高优先级 Source 整体替换，object 与 non-object 任一方向改形状都会在 Snapshot 产生前失败。同一 EnvSource 还会确定性拒绝重复逻辑路径、大小写别名、空 segment 和祖先/后代路径，错误只携带 Source、路径与类别，不输出配置值。
+
+Reload 比较的是合并后的有效配置段摘要：如果文件字段已被环境变量覆盖，文件变化不会重建相关组件。运行中只能重新读取进程启动时继承的环境，另一个 shell 后续设置的变量不会进入该进程。Source syntax/shape 失败由 Coordinator 在 owner validation、Kernel Stage/Build 和任何资源副作用前返回；失败候选没有 Snapshot 或 provenance。
 
 `NativeAtomicReload`、`ComponentHandoff`、切换观察期与健康失败自动回切尚未实现；当前成功切换后立即清理旧代。
 

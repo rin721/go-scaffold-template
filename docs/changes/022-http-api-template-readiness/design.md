@@ -21,7 +21,7 @@ File/Env config
   -> API authority / protocol / security / management / delivery
 ```
 
-`cleanup-pending`、terminal-failed 与 forced 的生命周期最小语义已经由 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 实施；跨 Kernel/Supervisor diagnostics 数据源和实施前缺口由 [R006](research/R006-unified-runtime-diagnostics/report.md) 复核，施工级契约与结果由已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 唯一负责。[R005](research/R005-resource-finalization-policy/report.md) 保留逐资源研究快照，本设计不复制施工正文。
+`cleanup-pending`、terminal-failed 与 forced 的生命周期最小语义已经由 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 实施；跨 Kernel/Supervisor diagnostics 数据源和实施前缺口由 [R006](research/R006-unified-runtime-diagnostics/report.md) 复核，施工级契约与结果由已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 唯一负责；EnvSource/Loader 实施前事实由 [R007](research/R007-config-source-determinism/report.md) 支撑，施工级契约与结果由已实施的 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md) 唯一负责。[R005](research/R005-resource-finalization-policy/report.md) 保留逐资源研究快照，本设计不复制施工正文。
 
 ## 2. 继续保留的当前边界
 
@@ -130,7 +130,9 @@ serving
 
 ### 4.3 EnvSource
 
-`setNested` 应与 Loader 的结构冲突原则一致：同一 EnvSource 的 scalar/object、object/scalar、空 path segment 和大小写碰撞必须确定性拒绝。具体实现应复用一个有错误返回的结构写入规则，避免为 Env 单独形成第二套语义。
+[R007](research/R007-config-source-determinism/report.md) 保存实施前事实：无错误 `setNested` 会按环境枚举顺序静默覆盖祖先/后代路径；Loader 还允许 object/null 改形状，并可能在同层大小写别名下选择不确定目标。
+
+实现保持 `Source`/`Loader`/Snapshot、File < Env 和 provenance 不变，在 config owner 内统一 object/non-object 分类、大小写唯一 sibling、稳定遍历和有错误 path insertion。同一 EnvSource 的 ancestor/descendant、duplicate logical path、空 path segment 和大小写碰撞确定性拒绝；object 与 scalar/array/null 的跨源冲突也在候选产生前拒绝。唯一施工级设计与测试证据见已实施的 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md)。
 
 ## 5. Phase F2：故障验收与 Foundation 复核
 
@@ -223,7 +225,7 @@ MIGRATION-001 ---------------------------------> DELIVERY-001
 all baseline ---------------------------------> ACCEPTANCE-001
 ```
 
-`FOUNDATION-CONFIG-001` 可在生命周期研究期间并行研究，但实现与最终验收必须与 Foundation 状态一致。业务详细设计不能与 Foundation P0 并行越过解锁门。
+`FOUNDATION-CONFIG-001` 已实施；最终 Foundation 状态仍由 `FOUNDATION-ACCEPTANCE-001` 统一复核。业务详细设计不能在 Foundation 总验收前越过解锁门。
 
 ## 14. 关键风险与控制
 

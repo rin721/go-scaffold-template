@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -370,49 +371,187 @@ func (s envSource) Name() string {
 }
 
 func (s envSource) Load(ctx context.Context) (map[string]any, error) {
+	return loadEnvironment(ctx, s.prefix, os.Environ())
+}
+
+type configPathErrorKind string
+
+const (
+	configPathErrorCaseCollision configPathErrorKind = "case-collision"
+	configPathErrorDuplicate     configPathErrorKind = "duplicate-path"
+	configPathErrorEmptySegment  configPathErrorKind = "empty-segment"
+	configPathErrorShapeConflict configPathErrorKind = "shape-conflict"
+)
+
+type configPathError struct {
+	kind configPathErrorKind
+	path string
+}
+
+func (e *configPathError) Error() string {
+	path := e.path
+	if path == "" {
+		path = "<root>"
+	}
+	switch e.kind {
+	case configPathErrorCaseCollision:
+		return fmt.Sprintf("config path %s has a case-insensitive sibling collision", path)
+	case configPathErrorDuplicate:
+		return fmt.Sprintf("config path %s is duplicated", path)
+	case configPathErrorEmptySegment:
+		return fmt.Sprintf("config path %s contains an empty segment", path)
+	case configPathErrorShapeConflict:
+		return fmt.Sprintf("config path %s changes between object and non-object", path)
+	default:
+		return fmt.Sprintf("config path %s is invalid", path)
+	}
+}
+
+type environmentRecord struct {
+	rawPath  string
+	path     string
+	parts    []string
+	value    string
+	hasEmpty bool
+}
+
+func loadEnvironment(ctx context.Context, prefix string, entries []string) (map[string]any, error) {
 	if ctx == nil {
 		return nil, fmt.Errorf("environment config source context is nil")
 	}
-	out := map[string]any{}
-	for _, item := range os.Environ() {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	records := make([]environmentRecord, 0)
+	for _, item := range entries {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 		key, value, ok := strings.Cut(item, "=")
-		if !ok || !strings.HasPrefix(key, s.prefix) {
+		if !ok || !strings.HasPrefix(key, prefix) {
 			continue
 		}
-		trimmed := strings.TrimPrefix(key, s.prefix)
+		trimmed := strings.TrimPrefix(key, prefix)
 		if trimmed == "" {
 			continue
 		}
-		parts := strings.Split(strings.ToLower(trimmed), "__")
-		setNested(out, parts, value)
+		rawParts := strings.Split(trimmed, "__")
+		parts := make([]string, len(rawParts))
+		hasEmpty := false
+		for index, part := range rawParts {
+			parts[index] = strings.ToLower(part)
+			hasEmpty = hasEmpty || part == ""
+		}
+		records = append(records, environmentRecord{
+			rawPath:  strings.Join(rawParts, "."),
+			path:     strings.Join(parts, "."),
+			parts:    parts,
+			value:    value,
+			hasEmpty: hasEmpty,
+		})
+	}
+	sort.Slice(records, func(i, j int) bool {
+		if records[i].path == records[j].path {
+			return records[i].rawPath < records[j].rawPath
+		}
+		return records[i].path < records[j].path
+	})
+	if err := validateEnvironmentRecords(ctx, records); err != nil {
+		return nil, err
+	}
+	out := map[string]any{}
+	for _, record := range records {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if err := insertPath(out, record.parts, record.value, ""); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
 
-func mergeMap(dst map[string]any, src map[string]any, parent string) error {
-	for key, value := range src {
-		key = matchingKey(dst, key)
-		path := key
-		if parent != "" {
-			path = parent + "." + key
+func validateEnvironmentRecords(ctx context.Context, records []environmentRecord) error {
+	var first *configPathError
+	consider := func(candidate *configPathError) {
+		if first == nil || candidate.path < first.path || candidate.path == first.path && candidate.kind < first.kind {
+			first = candidate
 		}
-		if nested, ok := value.(map[string]any); ok {
-			if existing, ok := dst[key].(map[string]any); ok {
-				if err := mergeMap(existing, nested, path); err != nil {
-					return err
-				}
+	}
+	for _, record := range records {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if record.hasEmpty {
+			consider(&configPathError{kind: configPathErrorEmptySegment, path: record.path})
+		}
+	}
+	for left := 0; left < len(records); left++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if records[left].hasEmpty {
+			continue
+		}
+		for right := left + 1; right < len(records); right++ {
+			if records[right].hasEmpty {
 				continue
 			}
-			if existing, exists := dst[key]; exists && existing != nil {
-				return fmt.Errorf("config path %s changes from scalar or array to object", path)
+			common := commonPathPrefix(records[left].parts, records[right].parts)
+			if common == 0 {
+				continue
 			}
-		} else if existing, exists := dst[key]; exists {
-			if _, object := existing.(map[string]any); object && value != nil {
-				return fmt.Errorf("config path %s changes from object to scalar or array", path)
+			leftComplete := common == len(records[left].parts)
+			rightComplete := common == len(records[right].parts)
+			switch {
+			case leftComplete && rightComplete:
+				kind := configPathErrorDuplicate
+				if records[left].rawPath != records[right].rawPath {
+					kind = configPathErrorCaseCollision
+				}
+				consider(&configPathError{kind: kind, path: records[left].path})
+			case leftComplete || rightComplete:
+				path := records[left].path
+				if rightComplete {
+					path = records[right].path
+				}
+				consider(&configPathError{kind: configPathErrorShapeConflict, path: path})
 			}
+		}
+	}
+	if first == nil {
+		return nil
+	}
+	return first
+}
+
+func commonPathPrefix(left, right []string) int {
+	limit := min(len(left), len(right))
+	for index := 0; index < limit; index++ {
+		if !strings.EqualFold(left[index], right[index]) {
+			return index
+		}
+	}
+	return limit
+}
+
+func mergeMap(dst map[string]any, src map[string]any, parent string) error {
+	for _, candidate := range orderedKeys(src) {
+		value := src[candidate]
+		key := candidate
+		key = matchingKey(dst, key)
+		path := joinConfigPath(parent, strings.ToLower(key))
+		nested, incomingObject := value.(map[string]any)
+		existing, exists := dst[key]
+		existingObject, currentObject := existing.(map[string]any)
+		if exists && incomingObject != currentObject {
+			return &configPathError{kind: configPathErrorShapeConflict, path: path}
+		}
+		if incomingObject && exists {
+			if err := mergeMap(existingObject, nested, path); err != nil {
+				return err
+			}
+			continue
 		}
 		dst[key] = copyValue(value)
 	}
@@ -420,7 +559,7 @@ func mergeMap(dst map[string]any, src map[string]any, parent string) error {
 }
 
 func matchingKey(values map[string]any, candidate string) string {
-	for existing := range values {
+	for _, existing := range orderedKeys(values) {
 		if strings.EqualFold(existing, candidate) {
 			return existing
 		}
@@ -428,32 +567,58 @@ func matchingKey(values map[string]any, candidate string) string {
 	return candidate
 }
 
-func setNested(values map[string]any, parts []string, value any) {
+func insertPath(values map[string]any, parts []string, value any, parent string) error {
 	if len(parts) == 0 {
-		return
+		return &configPathError{kind: configPathErrorEmptySegment, path: parent}
+	}
+	path := joinConfigPath(parent, parts[0])
+	if parts[0] == "" {
+		return &configPathError{kind: configPathErrorEmptySegment, path: path}
 	}
 	if len(parts) == 1 {
+		if _, exists := values[parts[0]]; exists {
+			return &configPathError{kind: configPathErrorDuplicate, path: path}
+		}
 		values[parts[0]] = value
-		return
+		return nil
 	}
-	next, _ := values[parts[0]].(map[string]any)
-	if next == nil {
+	next, exists := values[parts[0]].(map[string]any)
+	if _, present := values[parts[0]]; present && !exists {
+		return &configPathError{kind: configPathErrorShapeConflict, path: path}
+	}
+	if !exists {
 		next = map[string]any{}
 		values[parts[0]] = next
 	}
-	setNested(next, parts[1:], value)
+	return insertPath(next, parts[1:], value, path)
 }
 
 func canonicalMap(values map[string]any) (map[string]any, error) {
+	return canonicalMapAt(values, "")
+}
+
+func canonicalMapAt(values map[string]any, parent string) (map[string]any, error) {
 	if values == nil {
 		return map[string]any{}, nil
 	}
 	out := make(map[string]any, len(values))
-	for key, value := range values {
+	keys := orderedKeys(values)
+	for index, key := range keys {
 		if strings.TrimSpace(key) == "" {
-			return nil, fmt.Errorf("configuration key is empty")
+			return nil, &configPathError{kind: configPathErrorEmptySegment, path: parent}
 		}
-		normalized, err := canonicalValue(value)
+		for previous := 0; previous < index; previous++ {
+			if strings.EqualFold(keys[previous], key) {
+				return nil, &configPathError{
+					kind: configPathErrorCaseCollision,
+					path: joinConfigPath(parent, strings.ToLower(key)),
+				}
+			}
+		}
+	}
+	for _, key := range keys {
+		path := joinConfigPath(parent, strings.ToLower(key))
+		normalized, err := canonicalValueAt(values[key], path)
 		if err != nil {
 			return nil, fmt.Errorf("config key %s: %w", key, err)
 		}
@@ -462,28 +627,24 @@ func canonicalMap(values map[string]any) (map[string]any, error) {
 	return out, nil
 }
 
-func canonicalValue(value any) (any, error) {
+func canonicalValueAt(value any, path string) (any, error) {
 	switch typed := value.(type) {
 	case map[string]any:
-		return canonicalMap(typed)
+		return canonicalMapAt(typed, path)
 	case map[any]any:
-		out := make(map[string]any, len(typed))
+		values := make(map[string]any, len(typed))
 		for key, nestedValue := range typed {
 			name, ok := key.(string)
 			if !ok || strings.TrimSpace(name) == "" {
 				return nil, fmt.Errorf("configuration object key must be a non-empty string")
 			}
-			normalized, err := canonicalValue(nestedValue)
-			if err != nil {
-				return nil, fmt.Errorf("config key %s: %w", name, err)
-			}
-			out[name] = normalized
+			values[name] = nestedValue
 		}
-		return out, nil
+		return canonicalMapAt(values, path)
 	case []any:
 		out := make([]any, len(typed))
 		for index, nestedValue := range typed {
-			normalized, err := canonicalValue(nestedValue)
+			normalized, err := canonicalValueAt(nestedValue, fmt.Sprintf("%s[%d]", path, index))
 			if err != nil {
 				return nil, fmt.Errorf("config list element %d: %w", index, err)
 			}
@@ -496,6 +657,29 @@ func canonicalValue(value any) (any, error) {
 	default:
 		return nil, fmt.Errorf("unsupported configuration value type %T", value)
 	}
+}
+
+func orderedKeys(values map[string]any) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		left := strings.ToLower(keys[i])
+		right := strings.ToLower(keys[j])
+		if left == right {
+			return keys[i] < keys[j]
+		}
+		return left < right
+	})
+	return keys
+}
+
+func joinConfigPath(parent, segment string) string {
+	if parent == "" {
+		return segment
+	}
+	return parent + "." + segment
 }
 
 func strictStringScalarHook(from reflect.Type, to reflect.Type, data any) (any, error) {

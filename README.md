@@ -69,7 +69,7 @@ go run ./cmd/app config init --force
 
 生成配置默认使用 SQLite `.data/app.db`、禁用共享 Cache、创建空资源的 I18n Translator，把 Storage 设为本地 `.data/storage`，启用 Todo 默认分页/标题限制，并让 HTTP 监听 `:8080`。切换远端 Database、Redis 或对象存储时必须明确填写 Driver，并通过环境变量提供 DSN、密码和密钥，不把凭据写入文件。
 
-环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。无参数模式只加载一次候选，所有 Kernel 与 application owner 在资源副作用前完成严格解码和校验；随后启动 Database、Cache、I18n、Storage、Todo migration 和 HTTP listener。只有 migration 完成、listener 已绑定、受监督 Serve runner 已确认运行且全部必需 owner 启动后，进程才 ready。未匹配请求仍返回 404。配置缺失、未知/重复字段、类型非法或资源不可达都会返回非零退出码；`Ctrl+C` 或 `SIGTERM` 会撤销 readiness 并触发有界反向停止。
+环境变量使用 `APP_` 前缀和双下划线表达嵌套字段，也可以覆盖文件配置，例如 `APP_DATABASE__DSN`、`APP_CACHE__REDIS__PASSWORD`、`APP_STORAGE__S3__SECRETACCESSKEY`、`APP_TODO__MAXLISTLIMIT`、`APP_HTTP__ADDR`。同一 EnvSource 的重复逻辑路径、大小写别名、空 segment 或祖先/后代路径会确定性失败；File/Env 之间只允许 object/object 递归合并或 non-object/non-object 覆盖，object 与 scalar、array、null 不得相互改形状。无参数模式只加载一次候选，所有 Kernel 与 application owner 在资源副作用前完成严格解码和校验；随后启动 Database、Cache、I18n、Storage、Todo migration 和 HTTP listener。只有 migration 完成、listener 已绑定、受监督 Serve runner 已确认运行且全部必需 owner 启动后，进程才 ready。未匹配请求仍返回 404。配置缺失、未知/重复字段、类型非法或资源不可达都会返回非零退出码；`Ctrl+C` 或 `SIGTERM` 会撤销 readiness 并触发有界反向停止。
 
 ## Todo 快速学习示例
 

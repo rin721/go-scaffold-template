@@ -74,6 +74,22 @@ type testAssembly struct {
 	plan        *app.Plan
 }
 
+type countingRuntimeComponent struct {
+	app.RuntimeComponent
+	stages int
+	builds int
+}
+
+func (c *countingRuntimeComponent) Stage(snapshot config.Snapshot) (bool, error) {
+	c.stages++
+	return c.RuntimeComponent.Stage(snapshot)
+}
+
+func (c *countingRuntimeComponent) Build(ctx context.Context) error {
+	c.builds++
+	return c.RuntimeComponent.Build(ctx)
+}
+
 func newTestAssembly(t *testing.T, source config.Source, options Options) *testAssembly {
 	t.Helper()
 	if options.Logging == nil {
@@ -152,6 +168,67 @@ func (a *testAssembly) installWith(t *testing.T, bindings ...config.Binding) {
 	a.coordinator, err = NewCoordinator(a.runtime, bindings...)
 	if err != nil {
 		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+}
+
+func newCountingAssembly(t *testing.T, sources ...config.Source) (*testAssembly, *countingRuntimeComponent) {
+	t.Helper()
+	runtime, err := New(config.New(sources...), Options{Logging: newTestLoggingManager(t)})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	assembly := &testAssembly{runtime: runtime, plan: app.NewPlan()}
+	assembly.add(t, "worker", app.KernelInstanceSwap, &eventLog{}, nil, nil)
+	frozen, err := assembly.plan.Freeze()
+	if err != nil {
+		t.Fatalf("Freeze() error = %v", err)
+	}
+	if err := runtime.Install(frozen); err != nil {
+		t.Fatalf("Install() error = %v", err)
+	}
+	counting := &countingRuntimeComponent{RuntimeComponent: runtime.components[0]}
+	runtime.components[0] = counting
+	assembly.coordinator, err = NewCoordinator(runtime)
+	if err != nil {
+		t.Fatalf("NewCoordinator() error = %v", err)
+	}
+	return assembly, counting
+}
+
+func TestCoordinatorRejectsSourceShapeConflictBeforeComponentWork(t *testing.T) {
+	assembly, counting := newCountingAssembly(t,
+		config.MapSource("file", map[string]any{"worker": map[string]any{"version": "v1"}}),
+		config.MapSource("env", map[string]any{"worker": "ambiguous"}),
+	)
+	if _, err := assembly.coordinator.Prepare(t.Context()); err == nil {
+		t.Fatal("Prepare(shape conflict) error = nil")
+	}
+	if counting.stages != 0 || counting.builds != 0 {
+		t.Fatalf("component attempts = stage:%d build:%d, want zero", counting.stages, counting.builds)
+	}
+	assembly.coordinator.mu.Lock()
+	prepared := assembly.coordinator.prepared
+	assembly.coordinator.mu.Unlock()
+	if prepared != nil {
+		t.Fatal("shape conflict left a prepared candidate")
+	}
+}
+
+func TestCoordinatorValidCandidateStillStagesAndBuildsOnce(t *testing.T) {
+	assembly, counting := newCountingAssembly(t,
+		config.MapSource("file", map[string]any{"worker": map[string]any{"version": "v1"}}),
+	)
+	if _, err := assembly.coordinator.Prepare(t.Context()); err != nil {
+		t.Fatalf("Prepare(valid candidate) error = %v", err)
+	}
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if counting.stages != 1 || counting.builds != 1 {
+		t.Fatalf("component attempts = stage:%d build:%d, want one each", counting.stages, counting.builds)
+	}
+	if err := assembly.coordinator.Stop(t.Context()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
 	}
 }
 

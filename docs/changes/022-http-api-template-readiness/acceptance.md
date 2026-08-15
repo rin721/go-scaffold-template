@@ -2,7 +2,7 @@
 
 ## 1. 用途
 
-本文件把研究结论转换成可复核门禁。生命周期目标证据已按 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 产生，统一运行诊断证据已按 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 产生；其他门禁仍由对应后续计划负责，不能从本轮测试外推为 Foundation-closed。
+本文件把研究结论转换成可复核门禁。生命周期目标证据已按 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 产生，统一运行诊断证据已按 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 产生，配置确定性证据已按 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md) 产生；其他门禁仍由对应后续计划负责，不能从本轮测试外推为 Foundation-closed。
 
 ## 2. 十一门当前矩阵
 
@@ -15,7 +15,7 @@
 | 生命周期门 | **通过（当前 profile）** | terminal timeout 可继续 Stop；candidate/retired/current terminal result cache；Supervisor/HTTP graceful-force；逐资源释放测试 | 新 retryable Adapter、hijacked/WebSocket 和部署信号政策仍需真实场景 | 新资源继续执行 capability assessment |
 | 一致性门 | 通过（当前 profile） | 同一候选、提交前原子；cleanup debt 保留 owner/generation；Host 单一视图合并 capability/participant/task 与共享 budget | sticky reconciliation 仍是 P1 | 后续 Foundation acceptance 复核 |
 | 错误门 | 通过（当前 profile） | error wrapping/join、typed cleanup error；owner-local error type 与 pending/failed/forced/finalized 分离 | 外部真实资源失败仍待总验收 | `FOUNDATION-ACCEPTANCE-001` |
-| 治理门 | 部分通过 | import graph、binding、route/participant 唯一性、terminal attempt/force 负向门禁 | EnvSource 冲突仍未闭环 | `FOUNDATION-CONFIG-001` |
+| 治理门 | 通过（当前 profile） | import graph、binding、route/participant 唯一性、terminal attempt/force 与 EnvSource/Loader 确定性负向门禁 | 无当前 profile 阻断 | `FOUNDATION-ACCEPTANCE-001` 总复核 |
 | 演进门 | 部分通过 | immutable generation、RestartRequired、cleanup debt 不覆盖 | sticky recovery 和受控 management recovery 未决定 | diagnostics 与 P1 reconciliation 研究 |
 | 复杂度门 | 通过 | 当前规模无需 Fx/Wire/general DAG | 防止借加固扩成万能框架 | Diff/ADR 证明只改必要状态与契约 |
 | 业务扩展门 | **未通过** | Todo 同步 HTTP/CLI profile | 底层 P0 未闭环；新模块 profile 未评估 | 第 4 节全部条件通过 |
@@ -50,8 +50,13 @@
 
 ### `FND-ACCEPT-004` 配置确定性
 
-- 同一 EnvSource 内 scalar/object、object/scalar、空 segment、大小写碰撞有唯一拒绝语义。
-- Source 间覆盖只允许同形值，并保留顺序和 provenance；任何冲突不进入 Build。
+施工级实现、置换矩阵、Build-zero 和验证证据见已实施的 [`FOUNDATION-CONFIG-001`](plans/foundation-config-001.md)。
+
+- 同一 EnvSource 内重复 logical path、ancestor/descendant 任意顺序、空 segment 和大小写碰撞有唯一拒绝语义；空 value 仍作为显式 scalar 交给 owner 校验。
+- Source 内同 scope 的大小写等价 sibling 必须拒绝；多个冲突同时存在时，首个安全 dotted path 不依赖 map 或环境枚举顺序。
+- Source 间 object/object 递归 merge，non-object/non-object 由高优先级整体替换；object 与 scalar/array/null 任一方向冲突都拒绝，并保留 File < Env 顺序和成功候选 provenance。
+- 冲突 error 包含 Source identity、path 和类别，不包含原始配置 value。
+- 冲突不产生 Snapshot，`Coordinator.Prepare` 失败且 Kernel component Stage/Build 计数为零。
 - 同一候选仍由所有 Kernel/application owner 严格校验后一次提交。
 
 ### `FND-ACCEPT-005` 验证层次
