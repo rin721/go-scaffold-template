@@ -70,11 +70,16 @@ func Configured[C any](path string, decode Decoder[C], defaults config.DefaultCo
 }
 
 type lifecycle[I any] struct {
-	start             func(context.Context, I) error
-	ready             func(context.Context, I) error
-	terminalFinalizer TerminalFinalizer[I]
-	activate          func(I)
-	deactivate        func(I)
+	start              func(context.Context, I) error
+	ready              func(context.Context, I) error
+	terminalFinalizer  TerminalFinalizer[I]
+	finalizationPolicy FinalizationPolicy
+	activate           func(I)
+	deactivate         func(I)
+}
+
+func newLifecycle[I any]() lifecycle[I] {
+	return lifecycle[I]{finalizationPolicy: NoFinalization}
 }
 
 // Option 为 Managed 组件按需附加真实生命周期契约。
@@ -118,6 +123,7 @@ func WithTerminalFinalizer[I any](finalize TerminalFinalizer[I]) Option[I] {
 			return fmt.Errorf("component terminal finalizer is duplicated")
 		}
 		target.terminalFinalizer = finalize
+		target.finalizationPolicy = DrainThenTerminalClose
 		return nil
 	}
 }

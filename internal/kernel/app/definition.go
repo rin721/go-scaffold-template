@@ -90,7 +90,7 @@ func ManagedConfiguredReplacement[C, T, I any](
 	if activate == nil || deactivate == nil {
 		return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s activation functions are required", id)
 	}
-	lifecycle := lifecycle[I]{}
+	lifecycle := newLifecycle[I]()
 	for index, option := range options {
 		if option == nil {
 			return ReplacementDefinition[T]{}, fmt.Errorf("replacement component %s option %d is nil", id, index)
@@ -174,7 +174,7 @@ func newManagedDefinition[C, D, I, O any](
 	if dependencies.decode == nil {
 		return Definition[O]{}, fmt.Errorf("component %s dependencies decoder is nil", id)
 	}
-	lifecycle := lifecycle[I]{}
+	lifecycle := newLifecycle[I]()
 	for index, option := range options {
 		if option == nil {
 			return Definition[O]{}, fmt.Errorf("component %s option %d is nil", id, index)

@@ -21,7 +21,7 @@ File/Env config
   -> API authority / protocol / security / management / delivery
 ```
 
-`cleanup-pending`、terminal-failed 与 forced 的生命周期最小语义已经由 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 实施；完整跨 Kernel/Supervisor management diagnostics 仍是后续目标。[R005](research/R005-resource-finalization-policy/report.md) 保留逐资源研究快照，本设计不复制施工正文。
+`cleanup-pending`、terminal-failed 与 forced 的生命周期最小语义已经由 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 实施；跨 Kernel/Supervisor diagnostics 数据源和实施前缺口由 [R006](research/R006-unified-runtime-diagnostics/report.md) 复核，施工级契约与结果由已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 唯一负责。[R005](research/R005-resource-finalization-policy/report.md) 保留逐资源研究快照，本设计不复制施工正文。
 
 ## 2. 继续保留的当前边界
 
@@ -109,6 +109,8 @@ serving
 ## 4. Phase F1：诊断、Supervisor 与配置确定性
 
 ### 4.1 结构化诊断
+
+当前实现证据入口为 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md)。它冻结并已实现 Host 单一 process snapshot、Kernel/Supervisor typed responsibility ledger、budget、terminal classification、release verification 和并发读取门禁；本节只保留 Program 级目标。
 
 在不泄露配置内容的前提下，目标诊断统一回答：
 

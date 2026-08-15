@@ -67,13 +67,12 @@ const (
 
 // Snapshot 是不包含配置和凭据的并发安全运行诊断。
 type Snapshot struct {
-	State               ProcessState
-	Ready               bool
-	Since               time.Time
-	LastError           string
-	PendingParticipants []string
-	PendingTasks        []string
-	ForcedParticipants  []string
+	State         ProcessState
+	Ready         bool
+	Since         time.Time
+	LastErrorType string
+	Budget        ShutdownBudgetSnapshot
+	Units         []UnitSnapshot
 }
 
 // UnexpectedCompletionError 标识长期任务在没有终止意图时提前成功返回。
@@ -81,6 +80,13 @@ type UnexpectedCompletionError struct{ Task string }
 
 func (e *UnexpectedCompletionError) Error() string {
 	return fmt.Sprintf("supervisor task %s completed unexpectedly", e.Task)
+}
+
+// IncompleteShutdownError 表示仍有非 clean terminal 责任时禁止返回成功。
+type IncompleteShutdownError struct{ Owners []string }
+
+func (e *IncompleteShutdownError) Error() string {
+	return fmt.Sprintf("supervisor shutdown has incomplete owners %v", e.Owners)
 }
 
 // Supervisor 管理一组进程级参与者和长期任务。
@@ -93,6 +99,7 @@ type Supervisor struct {
 	mu          sync.Mutex
 	state       supervisorState
 	diagnostics Snapshot
+	unitIndexes map[string]int
 	ready       chan struct{}
 	readyOnce   sync.Once
 }
@@ -114,8 +121,11 @@ func New(cfg Config, participants ...Participant) (*Supervisor, error) {
 		participants:    append([]Participant(nil), participants...),
 		shutdownTimeout: shutdownTimeout,
 		forceTimeout:    forceTimeout,
-		diagnostics:     Snapshot{State: StateNew, Since: time.Now()},
-		ready:           make(chan struct{}),
+		diagnostics: Snapshot{
+			State: StateNew, Since: time.Now(),
+			Budget: ShutdownBudgetSnapshot{Phase: ShutdownNotStarted},
+		},
+		ready: make(chan struct{}),
 	}, nil
 }
 
@@ -129,9 +139,6 @@ func (s *Supervisor) AddRunner(task Task) error {
 	if s == nil {
 		return fmt.Errorf("supervisor is nil")
 	}
-	if task.Run == nil {
-		return fmt.Errorf("supervisor task %q run function is nil", task.Name)
-	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state != supervisorCreated {
@@ -139,6 +146,12 @@ func (s *Supervisor) AddRunner(task Task) error {
 	}
 	if task.Name == "" {
 		return fmt.Errorf("supervisor task name is required")
+	}
+	if err := validateOwnerName(task.Name); err != nil {
+		return err
+	}
+	if task.Run == nil {
+		return fmt.Errorf("supervisor task %q run function is nil", task.Name)
 	}
 	for _, existing := range s.tasks {
 		if existing.Name == task.Name {
@@ -160,29 +173,34 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	}
 	started := make([]Participant, 0, len(participants))
 	for _, participant := range participants {
+		s.transitionUnit(participant.Name(), UnitPhaseStart, UnitRunning, true, nil)
 		if err := participant.Start(ctx); err != nil {
 			wrapped := fmt.Errorf("start participant %s: %w", participant.Name(), err)
-			s.setDiagnostics(StateDraining, false, wrapped, nil, nil, nil)
+			s.transitionUnit(participant.Name(), UnitPhaseStart, UnitFailed, false, err)
+			s.settleUnstartedUnits()
+			s.setDiagnostics(StateDraining, false, wrapped)
 			stopErr := s.shutdown(started, nil, nil, nil)
 			return s.complete(errors.Join(normalizeCancellation(ctx, wrapped), stopErr))
 		}
 		started = append(started, participant)
+		s.transitionUnit(participant.Name(), UnitPhaseReady, UnitReady, false, nil)
 	}
 
 	runnerCtx, cancelRunners := context.WithCancel(ctx)
-	results := startTasks(runnerCtx, tasks)
-	readyErr, completed := waitForReadiness(ctx, tasks, results)
+	results := s.startTasks(runnerCtx, tasks)
+	readyErr, completed := s.waitForReadiness(ctx, tasks, results)
 	var runErr error
 	if readyErr != nil {
 		runErr = readyErr
 	} else {
-		s.setDiagnostics(StateRunning, true, nil, nil, nil, nil)
-		runErr, completed = waitForTermination(ctx, tasks, results, completed)
+		s.setDiagnostics(StateRunning, true, nil)
+		runErr, completed = s.waitForTermination(ctx, tasks, results, completed)
 	}
-	s.setDiagnostics(StateDraining, false, runErr, nil, nil, nil)
+	normalizedRunErr := normalizeCancellation(ctx, runErr)
+	s.setDiagnostics(StateDraining, false, normalizedRunErr)
 	cancelRunners()
 	stopErr := s.shutdown(started, tasks, results, completed)
-	return s.complete(errors.Join(normalizeCancellation(ctx, runErr), stopErr))
+	return s.complete(errors.Join(normalizedRunErr, stopErr))
 }
 
 // RunOperation 正序启动参与者、同步执行一次操作，再在同一总期限内反序停止。
@@ -199,16 +217,20 @@ func (s *Supervisor) RunOperation(ctx context.Context, operation func(context.Co
 	}
 	started := make([]Participant, 0, len(participants))
 	for _, participant := range participants {
+		s.transitionUnit(participant.Name(), UnitPhaseStart, UnitRunning, true, nil)
 		if err := participant.Start(ctx); err != nil {
 			wrapped := fmt.Errorf("start participant %s: %w", participant.Name(), err)
-			s.setDiagnostics(StateDraining, false, wrapped, nil, nil, nil)
+			s.transitionUnit(participant.Name(), UnitPhaseStart, UnitFailed, false, err)
+			s.settleUnstartedUnits()
+			s.setDiagnostics(StateDraining, false, wrapped)
 			return s.complete(errors.Join(wrapped, s.shutdown(started, nil, nil, nil)))
 		}
 		started = append(started, participant)
+		s.transitionUnit(participant.Name(), UnitPhaseReady, UnitReady, false, nil)
 	}
-	s.setDiagnostics(StateRunning, true, nil, nil, nil, nil)
+	s.setDiagnostics(StateRunning, true, nil)
 	operationErr := operation(ctx)
-	s.setDiagnostics(StateDraining, false, operationErr, nil, nil, nil)
+	s.setDiagnostics(StateDraining, false, operationErr)
 	return s.complete(errors.Join(operationErr, s.shutdown(started, nil, nil, nil)))
 }
 
@@ -231,7 +253,8 @@ func (s *Supervisor) beginRun(allowTasks bool) ([]Participant, []Task, error) {
 		return nil, nil, fmt.Errorf("supervisor already run")
 	}
 	s.state = supervisorRunning
-	s.setDiagnosticsLocked(StateStarting, false, nil, nil, nil, nil)
+	s.initializeUnitsLocked(s.participants, s.tasks)
+	s.setDiagnosticsLocked(StateStarting, false, nil)
 	return append([]Participant(nil), s.participants...), append([]Task(nil), s.tasks...), nil
 }
 
@@ -240,22 +263,19 @@ type taskResult struct {
 	err  error
 }
 
-func startTasks(ctx context.Context, tasks []Task) <-chan taskResult {
+func (s *Supervisor) startTasks(ctx context.Context, tasks []Task) <-chan taskResult {
 	results := make(chan taskResult, len(tasks))
 	for _, task := range tasks {
 		task := task
+		s.transitionUnit(task.Name, UnitPhaseRun, UnitRunning, true, nil)
 		go func() {
-			err := task.Run(ctx)
-			if err != nil {
-				err = fmt.Errorf("run task %s: %w", task.Name, err)
-			}
-			results <- taskResult{name: task.Name, err: err}
+			results <- taskResult{name: task.Name, err: task.Run(ctx)}
 		}()
 	}
 	return results
 }
 
-func waitForReadiness(ctx context.Context, tasks []Task, results <-chan taskResult) (error, map[string]struct{}) {
+func (s *Supervisor) waitForReadiness(ctx context.Context, tasks []Task, results <-chan taskResult) (error, map[string]struct{}) {
 	completed := make(map[string]struct{})
 	for _, task := range tasks {
 		if task.Ready == nil {
@@ -266,17 +286,25 @@ func waitForReadiness(ctx context.Context, tasks []Task, results <-chan taskResu
 			return ctx.Err(), completed
 		case result := <-results:
 			completed[result.name] = struct{}{}
-			if result.err != nil {
-				return result.err, completed
+			if ctx.Err() != nil && (result.err == nil || isOnlyCancellation(result.err)) {
+				s.transitionUnit(result.name, UnitPhaseRun, UnitStopped, false, nil)
+				return ctx.Err(), completed
 			}
-			return &UnexpectedCompletionError{Task: result.name}, completed
+			if result.err != nil {
+				s.transitionUnit(result.name, UnitPhaseRun, UnitFailed, false, result.err)
+				return fmt.Errorf("run task %s: %w", result.name, result.err), completed
+			}
+			unexpected := &UnexpectedCompletionError{Task: result.name}
+			s.transitionUnit(result.name, UnitPhaseRun, UnitFailed, false, unexpected)
+			return unexpected, completed
 		case <-task.Ready:
+			s.transitionUnit(task.Name, UnitPhaseRun, UnitReady, false, nil)
 		}
 	}
 	return nil, completed
 }
 
-func waitForTermination(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) (error, map[string]struct{}) {
+func (s *Supervisor) waitForTermination(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) (error, map[string]struct{}) {
 	if len(tasks) == 0 {
 		<-ctx.Done()
 		return ctx.Err(), completed
@@ -286,100 +314,165 @@ func waitForTermination(ctx context.Context, tasks []Task, results <-chan taskRe
 		return ctx.Err(), completed
 	case result := <-results:
 		completed[result.name] = struct{}{}
-		if result.err != nil {
-			return result.err, completed
-		}
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && (result.err == nil || isOnlyCancellation(result.err)) {
+			s.transitionUnit(result.name, UnitPhaseRun, UnitStopped, false, nil)
 			return ctx.Err(), completed
 		}
-		return &UnexpectedCompletionError{Task: result.name}, completed
+		if result.err != nil {
+			s.transitionUnit(result.name, UnitPhaseRun, UnitFailed, false, result.err)
+			return fmt.Errorf("run task %s: %w", result.name, result.err), completed
+		}
+		unexpected := &UnexpectedCompletionError{Task: result.name}
+		s.transitionUnit(result.name, UnitPhaseRun, UnitFailed, false, unexpected)
+		return unexpected, completed
 	}
 }
 
 type participantStop struct {
 	participant Participant
 	result      <-chan error
+	phase       UnitPhase
 }
 
 func (s *Supervisor) shutdown(participants []Participant, tasks []Task, results <-chan taskResult, completed map[string]struct{}) error {
-	s.setDiagnostics(StateStopping, false, nil, nil, nil, nil)
+	s.setDiagnostics(StateStopping, false, nil)
 	startedAt := time.Now()
 	gracefulDeadline := startedAt.Add(s.shutdownTimeout - s.forceTimeout)
 	finalDeadline := startedAt.Add(s.shutdownTimeout)
+	s.mu.Lock()
+	s.diagnostics.Budget = ShutdownBudgetSnapshot{
+		Phase: ShutdownGraceful, StartedAt: startedAt,
+		GracefulDeadline: gracefulDeadline, FinalDeadline: finalDeadline,
+	}
+	s.mu.Unlock()
 	gracefulCtx, cancelGraceful := context.WithDeadline(context.Background(), gracefulDeadline)
 	defer cancelGraceful()
 
 	var joined error
 	pending := make(map[string]participantStop)
 	order := make([]string, 0, len(participants))
+	forceCandidates := make(map[string]Participant)
 	for index := len(participants) - 1; index >= 0; index-- {
 		participant := participants[index]
+		name := participant.Name()
+		order = append(order, name)
+		s.transitionUnit(name, UnitPhaseStop, UnitRunning, true, nil)
 		result := make(chan error, 1)
 		go func() { result <- participant.Stop(gracefulCtx) }()
 		select {
 		case err := <-result:
 			if err != nil {
-				joined = errors.Join(joined, fmt.Errorf("stop participant %s: %w", participant.Name(), err))
-				pending[participant.Name()] = participantStop{participant: participant, result: result}
-				order = append(order, participant.Name())
+				wrapped := fmt.Errorf("stop participant %s: %w", name, err)
+				joined = errors.Join(joined, wrapped)
+				s.transitionUnit(name, UnitPhaseStop, UnitFailed, false, err)
+				if _, ok := participant.(ForceStopper); ok {
+					forceCandidates[name] = participant
+				}
+			} else {
+				s.transitionUnit(name, UnitPhaseStop, UnitStopped, false, nil)
 			}
 		case <-gracefulCtx.Done():
-			joined = errors.Join(joined, fmt.Errorf("stop participant %s: %w", participant.Name(), gracefulCtx.Err()))
-			pending[participant.Name()] = participantStop{participant: participant, result: result}
-			order = append(order, participant.Name())
+			wrapped := fmt.Errorf("stop participant %s: %w", name, gracefulCtx.Err())
+			joined = errors.Join(joined, wrapped)
+			s.transitionUnit(name, UnitPhaseStop, UnitPending, false, gracefulCtx.Err())
+			pending[name] = participantStop{participant: participant, result: result, phase: UnitPhaseStop}
+			if _, ok := participant.(ForceStopper); ok {
+				forceCandidates[name] = participant
+			}
 		}
 	}
 
 	forceCtx, cancelForce := context.WithDeadline(context.Background(), finalDeadline)
 	defer cancelForce()
-	forced := make([]string, 0)
+	s.mu.Lock()
+	s.diagnostics.Budget.Phase = ShutdownForce
+	s.mu.Unlock()
 	for _, name := range order {
-		entry, exists := pending[name]
+		participant, exists := forceCandidates[name]
 		if !exists {
 			continue
 		}
-		force, ok := entry.participant.(ForceStopper)
-		if !ok {
-			continue
+		if entry, isPending := pending[name]; isPending {
+			select {
+			case err := <-entry.result:
+				delete(pending, name)
+				if err == nil {
+					s.transitionUnit(name, UnitPhaseStop, UnitStopped, false, nil)
+					continue
+				}
+				wrapped := fmt.Errorf("stop participant %s: %w", name, err)
+				joined = errors.Join(joined, wrapped)
+				s.transitionUnit(name, UnitPhaseStop, UnitFailed, false, err)
+			default:
+			}
 		}
+		force := participant.(ForceStopper)
+		s.transitionUnit(name, UnitPhaseForce, UnitRunning, true, nil)
 		result := make(chan error, 1)
 		go func() { result <- force.ForceStop(forceCtx) }()
 		select {
 		case err := <-result:
 			if err != nil {
-				joined = errors.Join(joined, fmt.Errorf("force stop participant %s: %w", name, err))
+				wrapped := fmt.Errorf("force stop participant %s: %w", name, err)
+				joined = errors.Join(joined, wrapped)
+				s.transitionUnit(name, UnitPhaseForce, UnitFailed, false, err)
+				delete(pending, name)
 				continue
 			}
-			forced = append(forced, name)
+			s.transitionUnit(name, UnitPhaseForce, UnitForced, false, nil)
 			delete(pending, name)
 			joined = errors.Join(joined, fmt.Errorf("participant %s required force stop", name))
 		case <-forceCtx.Done():
-			joined = errors.Join(joined, fmt.Errorf("force stop participant %s: %w", name, forceCtx.Err()))
+			wrapped := fmt.Errorf("force stop participant %s: %w", name, forceCtx.Err())
+			joined = errors.Join(joined, wrapped)
+			s.transitionUnit(name, UnitPhaseForce, UnitPending, false, forceCtx.Err())
+			pending[name] = participantStop{participant: participant, result: result, phase: UnitPhaseForce}
 		}
 	}
 
-	for name, entry := range pending {
+	for _, name := range order {
+		entry, exists := pending[name]
+		if !exists {
+			continue
+		}
 		select {
 		case err := <-entry.result:
+			delete(pending, name)
 			if err == nil {
-				delete(pending, name)
+				state := UnitStopped
+				if entry.phase == UnitPhaseForce {
+					state = UnitForced
+				}
+				s.transitionUnit(name, entry.phase, state, false, nil)
+			} else {
+				wrapped := fmt.Errorf("%s participant %s: %w", entry.phase, name, err)
+				joined = errors.Join(joined, wrapped)
+				s.transitionUnit(name, entry.phase, UnitFailed, false, err)
 			}
-		default:
+		case <-forceCtx.Done():
 		}
 	}
-	pendingTasks, waitErr := waitTasksUntil(forceCtx, tasks, results, completed)
+	waitErr := s.waitTasksUntil(forceCtx, tasks, results, completed)
 	joined = errors.Join(joined, waitErr)
-	pendingParticipants := orderedPending(order, pending)
-	s.setDiagnostics(StateStopping, false, joined, pendingParticipants, pendingTasks, forced)
+	s.mu.Lock()
+	s.diagnostics.Budget.Phase = ShutdownComplete
+	s.diagnostics.Budget.Exhausted = errors.Is(forceCtx.Err(), context.DeadlineExceeded)
+	s.mu.Unlock()
+	s.setDiagnostics(StateStopping, false, joined)
 	return joined
 }
 
-func waitTasksUntil(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) ([]string, error) {
+func (s *Supervisor) waitTasksUntil(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) error {
 	if len(tasks) == 0 {
-		return nil, nil
+		return nil
 	}
 	if completed == nil {
 		completed = make(map[string]struct{})
+	}
+	for _, task := range tasks {
+		if _, done := completed[task.Name]; !done {
+			s.transitionUnit(task.Name, UnitPhaseStop, UnitPending, false, nil)
+		}
 	}
 	var joined error
 	for len(completed) < len(tasks) {
@@ -387,14 +480,20 @@ func waitTasksUntil(ctx context.Context, tasks []Task, results <-chan taskResult
 		case result := <-results:
 			completed[result.name] = struct{}{}
 			if result.err != nil && !isOnlyCancellation(result.err) {
-				joined = errors.Join(joined, result.err)
+				joined = errors.Join(joined, fmt.Errorf("run task %s: %w", result.name, result.err))
+				s.transitionUnit(result.name, UnitPhaseStop, UnitFailed, false, result.err)
+			} else {
+				s.transitionUnit(result.name, UnitPhaseStop, UnitStopped, false, nil)
 			}
 		case <-ctx.Done():
 			pending := pendingTaskNames(tasks, completed)
-			return pending, errors.Join(joined, fmt.Errorf("wait supervisor tasks %v: %w", pending, ctx.Err()))
+			for _, name := range pending {
+				s.transitionUnit(name, UnitPhaseStop, UnitPending, false, ctx.Err())
+			}
+			return errors.Join(joined, fmt.Errorf("wait supervisor tasks %v: %w", pending, ctx.Err()))
 		}
 	}
-	return nil, joined
+	return joined
 }
 
 func pendingTaskNames(tasks []Task, completed map[string]struct{}) []string {
@@ -407,16 +506,6 @@ func pendingTaskNames(tasks []Task, completed map[string]struct{}) []string {
 	return pending
 }
 
-func orderedPending(order []string, pending map[string]participantStop) []string {
-	result := make([]string, 0, len(pending))
-	for _, name := range order {
-		if _, exists := pending[name]; exists {
-			result = append(result, name)
-		}
-	}
-	return result
-}
-
 func validateParticipants(participants []Participant) error {
 	seen := make(map[string]struct{}, len(participants))
 	for index, participant := range participants {
@@ -424,8 +513,8 @@ func validateParticipants(participants []Participant) error {
 			return fmt.Errorf("supervisor participant %d is nil", index)
 		}
 		name := participant.Name()
-		if name == "" {
-			return fmt.Errorf("supervisor participant %d name is required", index)
+		if err := validateOwnerName(name); err != nil {
+			return fmt.Errorf("supervisor participant %d: %w", index, err)
 		}
 		if _, exists := seen[name]; exists {
 			return fmt.Errorf("supervisor participant %q is duplicated", name)
@@ -441,8 +530,8 @@ func validateTaskOwnership(participants []Participant, tasks []Task) error {
 		seen[participant.Name()] = struct{}{}
 	}
 	for index, task := range tasks {
-		if task.Name == "" {
-			return fmt.Errorf("supervisor task %d name is required", index)
+		if err := validateOwnerName(task.Name); err != nil {
+			return fmt.Errorf("supervisor task %d: %w", index, err)
 		}
 		if task.Run == nil {
 			return fmt.Errorf("supervisor task %q run function is nil", task.Name)
@@ -455,13 +544,42 @@ func validateTaskOwnership(participants []Participant, tasks []Task) error {
 	return nil
 }
 
+func validateOwnerName(name string) error {
+	if name == "" {
+		return fmt.Errorf("supervisor owner name is required")
+	}
+	if len(name) > 128 {
+		return fmt.Errorf("supervisor owner name exceeds 128 bytes")
+	}
+	for index := 0; index < len(name); index++ {
+		character := name[index]
+		valid := character >= 'a' && character <= 'z' || character >= '0' && character <= '9'
+		if index > 0 {
+			valid = valid || character == '.' || character == '_' || character == '-'
+		}
+		if !valid {
+			return fmt.Errorf("supervisor owner name must use lowercase letters, digits, dot, underscore or hyphen")
+		}
+	}
+	return nil
+}
+
 func (s *Supervisor) complete(err error) error {
 	s.mu.Lock()
 	s.state = supervisorFinished
+	if err == nil && !unitsClean(s.diagnostics.Units) {
+		owners := make([]string, 0, len(s.diagnostics.Units))
+		for _, unit := range s.diagnostics.Units {
+			if unit.State != UnitStopped {
+				owners = append(owners, unit.Owner)
+			}
+		}
+		err = &IncompleteShutdownError{Owners: owners}
+	}
 	if err != nil {
-		s.setDiagnosticsLocked(StateFailed, false, err, s.diagnostics.PendingParticipants, s.diagnostics.PendingTasks, s.diagnostics.ForcedParticipants)
+		s.setDiagnosticsLocked(StateFailed, false, err)
 	} else {
-		s.setDiagnosticsLocked(StateStopped, false, nil, nil, nil, nil)
+		s.setDiagnosticsLocked(StateStopped, false, nil)
 	}
 	s.mu.Unlock()
 	return err
@@ -470,14 +588,12 @@ func (s *Supervisor) complete(err error) error {
 // Snapshot 返回当前进程监督状态的独立副本。
 func (s *Supervisor) Snapshot() Snapshot {
 	if s == nil {
-		return Snapshot{State: StateFailed, LastError: "supervisor is nil"}
+		return Snapshot{State: StateFailed, Budget: ShutdownBudgetSnapshot{Phase: ShutdownNotStarted}}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	copy := s.diagnostics
-	copy.PendingParticipants = append([]string(nil), copy.PendingParticipants...)
-	copy.PendingTasks = append([]string(nil), copy.PendingTasks...)
-	copy.ForcedParticipants = append([]string(nil), copy.ForcedParticipants...)
+	copy.Units = cloneUnits(copy.Units)
 	return copy
 }
 
@@ -491,21 +607,20 @@ func (s *Supervisor) Ready() <-chan struct{} {
 	return s.ready
 }
 
-func (s *Supervisor) setDiagnostics(state ProcessState, ready bool, err error, participants, tasks, forced []string) {
+func (s *Supervisor) setDiagnostics(state ProcessState, ready bool, err error) {
 	s.mu.Lock()
-	s.setDiagnosticsLocked(state, ready, err, participants, tasks, forced)
+	s.setDiagnosticsLocked(state, ready, err)
 	s.mu.Unlock()
 }
 
-func (s *Supervisor) setDiagnosticsLocked(state ProcessState, ready bool, err error, participants, tasks, forced []string) {
+func (s *Supervisor) setDiagnosticsLocked(state ProcessState, ready bool, err error) {
 	s.diagnostics.State = state
 	s.diagnostics.Ready = ready
 	s.diagnostics.Since = time.Now()
-	s.diagnostics.PendingParticipants = append([]string(nil), participants...)
-	s.diagnostics.PendingTasks = append([]string(nil), tasks...)
-	s.diagnostics.ForcedParticipants = append([]string(nil), forced...)
 	if err != nil {
-		s.diagnostics.LastError = fmt.Sprintf("%T", err)
+		s.diagnostics.LastErrorType = fmt.Sprintf("%T", err)
+	} else if state == StateRunning || state == StateStopped {
+		s.diagnostics.LastErrorType = ""
 	}
 	if state == StateRunning && ready {
 		s.readyOnce.Do(func() { close(s.ready) })

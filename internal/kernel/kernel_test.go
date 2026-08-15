@@ -339,11 +339,12 @@ func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
 	}
 	assertAccessVersion(t, access, "v2")
 	diagnostics := assembly.coordinator.Diagnostics()
-	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.RestartRequired || diagnostics.Generation != 2 || !diagnostics.CleanupRequired {
+	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.RestartRequired || diagnostics.ConfigGeneration != 2 || !diagnostics.CleanupRequired {
 		t.Fatalf("Diagnostics() = %#v, want degraded generation 2", diagnostics)
 	}
-	if len(diagnostics.Finalizations) != 1 || diagnostics.Finalizations[0].Phase != app.FinalizationPhaseRetired || diagnostics.Finalizations[0].Attempts != 1 {
-		t.Fatalf("Finalizations = %#v, want one retired terminal attempt", diagnostics.Finalizations)
+	retired := findOwnership(t, diagnostics.Ownerships, "service", app.FinalizationPhaseRetired)
+	if retired.Attempt != 1 || retired.State != app.OwnershipTerminalFailed {
+		t.Fatalf("retired ownership = %#v", retired)
 	}
 	source.set(versionValues("service", "v3"))
 	if _, err := assembly.coordinator.Reload(t.Context()); err == nil {
@@ -371,12 +372,24 @@ func TestTerminalFinalizerFailureIsCachedAndNeverReportedStopped(t *testing.T) {
 		t.Fatalf("events = %#v, want one terminal close attempt", got)
 	}
 	diagnostics := assembly.coordinator.Diagnostics()
-	if diagnostics.State != LifecycleFailed || !diagnostics.CleanupRequired || len(diagnostics.Finalizations) != 1 {
+	if diagnostics.State != LifecycleFailed || !diagnostics.CleanupRequired {
 		t.Fatalf("Diagnostics() = %#v", diagnostics)
 	}
-	if diagnostics.Finalizations[0].State != app.FinalizationTerminalFailed || diagnostics.Finalizations[0].Attempts != 1 {
-		t.Fatalf("Finalizations = %#v", diagnostics.Finalizations)
+	current := findOwnership(t, diagnostics.Ownerships, "service", app.FinalizationPhaseCurrent)
+	if current.State != app.OwnershipTerminalFailed || current.Attempt != 1 {
+		t.Fatalf("current ownership = %#v", current)
 	}
+}
+
+func findOwnership(t *testing.T, snapshots []app.OwnershipSnapshot, componentID app.ID, phase app.FinalizationPhase) app.OwnershipSnapshot {
+	t.Helper()
+	for _, snapshot := range snapshots {
+		if snapshot.ComponentID == componentID && snapshot.Phase == phase {
+			return snapshot
+		}
+	}
+	t.Fatalf("ownership %s/%s not found in %#v", componentID, phase, snapshots)
+	return app.OwnershipSnapshot{}
 }
 
 func TestReloadAndStopCloseEachGenerationOnce(t *testing.T) {

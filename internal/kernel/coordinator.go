@@ -26,18 +26,18 @@ const (
 	LifecycleStopped        LifecycleState = "stopped"
 )
 
-// Diagnostics 是配置候选、代际和不可回滚清理状态的安全快照。
-type Diagnostics struct {
-	State           LifecycleState
-	Ready           bool
-	Generation      uint64
-	Digest          string
-	Provenance      []string
-	LastFailureType string
-	RestartRequired bool
-	CleanupRequired bool
-	Finalizations   []app.FinalizationSnapshot
-	Since           time.Time
+// CoordinatorDiagnostics 是配置候选、代际和不可回滚清理状态的安全快照。
+type CoordinatorDiagnostics struct {
+	State            LifecycleState
+	Ready            bool
+	ConfigGeneration uint64
+	ConfigDigest     string
+	ConfigProvenance []string
+	LastFailureType  string
+	RestartRequired  bool
+	CleanupRequired  bool
+	Ownerships       []app.OwnershipSnapshot
+	Since            time.Time
 }
 
 // Coordinator 是 Loader 的唯一进程级调用者，并把同一不可变候选交给 Kernel。
@@ -49,7 +49,7 @@ type Coordinator struct {
 
 	operationMu sync.Mutex
 	mu          sync.Mutex
-	diagnostics Diagnostics
+	diagnostics CoordinatorDiagnostics
 	prepared    *config.Snapshot
 	current     config.Snapshot
 }
@@ -75,7 +75,7 @@ func NewCoordinator(runtime *Kernel, applicationBindings ...config.Binding) (*Co
 		loader:             runtime.loader,
 		bindings:           bindings,
 		kernelBindingCount: len(runtime.configurations),
-		diagnostics:        Diagnostics{State: LifecycleNew, Since: time.Now()},
+		diagnostics:        CoordinatorDiagnostics{State: LifecycleNew, Since: time.Now()},
 	}, nil
 }
 
@@ -145,11 +145,10 @@ func (c *Coordinator) Start(ctx context.Context) error {
 	}
 	if err != nil {
 		c.update(LifecycleFailed, false, err, false, config.Snapshot{}, false)
-		finalizations := c.runtime.Finalizations()
-		if len(finalizations) > 0 {
+		ownerships := c.runtime.ownerships()
+		if hasIncompleteOwnership(ownerships) {
 			c.mu.Lock()
 			c.diagnostics.CleanupRequired = true
-			c.diagnostics.Finalizations = finalizations
 			c.mu.Unlock()
 		}
 		return err
@@ -221,19 +220,17 @@ func (c *Coordinator) Reload(ctx context.Context) (ReloadResult, error) {
 			c.update(LifecycleDegraded, false, err, result.Applied, snapshot, true)
 			c.mu.Lock()
 			c.diagnostics.CleanupRequired = true
-			c.diagnostics.Finalizations = c.runtime.Finalizations()
 			c.mu.Unlock()
 		case errors.Is(err, app.ErrRestartRequired):
 			c.update(LifecycleRunning, true, err, false, config.Snapshot{}, true)
 		default:
-			finalizations := c.runtime.Finalizations()
-			if len(finalizations) == 0 {
+			ownerships := c.runtime.ownerships()
+			if !hasIncompleteOwnership(ownerships) {
 				c.update(LifecycleRunning, true, err, false, config.Snapshot{}, false)
 			} else {
 				c.update(LifecycleDegraded, false, err, false, config.Snapshot{}, true)
 				c.mu.Lock()
 				c.diagnostics.CleanupRequired = true
-				c.diagnostics.Finalizations = finalizations
 				c.mu.Unlock()
 			}
 		}
@@ -264,28 +261,26 @@ func (c *Coordinator) Stop(ctx context.Context) error {
 		}
 		c.mu.Lock()
 		c.diagnostics.CleanupRequired = true
-		c.diagnostics.Finalizations = c.runtime.Finalizations()
 		c.mu.Unlock()
 		return err
 	}
 	c.update(LifecycleStopped, false, nil, false, config.Snapshot{}, false)
 	c.mu.Lock()
 	c.diagnostics.CleanupRequired = false
-	c.diagnostics.Finalizations = nil
 	c.mu.Unlock()
 	return nil
 }
 
 // Diagnostics 返回不包含原始配置值的独立诊断快照。
-func (c *Coordinator) Diagnostics() Diagnostics {
+func (c *Coordinator) Diagnostics() CoordinatorDiagnostics {
 	if c == nil {
-		return Diagnostics{State: LifecycleFailed, LastFailureType: "nil coordinator"}
+		return CoordinatorDiagnostics{State: LifecycleFailed}
 	}
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	result := c.diagnostics
-	result.Provenance = append([]string(nil), result.Provenance...)
-	result.Finalizations = append([]app.FinalizationSnapshot(nil), result.Finalizations...)
+	result.ConfigProvenance = append([]string(nil), result.ConfigProvenance...)
+	c.mu.Unlock()
+	result.Ownerships = c.runtime.ownerships()
 	return result
 }
 
@@ -299,15 +294,25 @@ func (c *Coordinator) update(state LifecycleState, ready bool, failure error, co
 		c.diagnostics.LastFailureType = fmt.Sprintf("%T", failure)
 	}
 	if committed {
-		if snapshot.Digest() != c.diagnostics.Digest {
-			c.diagnostics.Generation++
-			c.diagnostics.Digest = snapshot.Digest()
-			c.diagnostics.Provenance = snapshot.Provenance()
+		if snapshot.Digest() != c.diagnostics.ConfigDigest {
+			c.diagnostics.ConfigGeneration++
+			c.diagnostics.ConfigDigest = snapshot.Digest()
+			c.diagnostics.ConfigProvenance = snapshot.Provenance()
 		}
 	}
 	if restart {
 		c.diagnostics.RestartRequired = true
 	}
+}
+
+func hasIncompleteOwnership(snapshots []app.OwnershipSnapshot) bool {
+	for _, snapshot := range snapshots {
+		switch snapshot.State {
+		case app.OwnershipWaitingForDrain, app.OwnershipFinalizationPending, app.OwnershipFinalizing, app.OwnershipTerminalFailed:
+			return true
+		}
+	}
+	return false
 }
 
 var _ interface {

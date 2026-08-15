@@ -2,7 +2,7 @@
 
 ## 1. 用途
 
-本文件把研究结论转换成可复核门禁。生命周期目标证据已按 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 产生；其他门禁仍由对应后续计划负责，不能从本轮测试外推为 Foundation-closed。
+本文件把研究结论转换成可复核门禁。生命周期目标证据已按 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 产生，统一运行诊断证据已按 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 产生；其他门禁仍由对应后续计划负责，不能从本轮测试外推为 Foundation-closed。
 
 ## 2. 十一门当前矩阵
 
@@ -13,8 +13,8 @@
 | 边界门 | 部分通过 | business/kernel/http/third-party import 边界 | Runner/Health/new resource 场景无模块接入契约 | 真实需求触发时完成 capability assessment |
 | 装配门 | 当前 profile 通过 | application composition + forward-only Plan | 后台 profile 未证明 | 同步 profile 复制验收；异步 profile 单独验收 |
 | 生命周期门 | **通过（当前 profile）** | terminal timeout 可继续 Stop；candidate/retired/current terminal result cache；Supervisor/HTTP graceful-force；逐资源释放测试 | 新 retryable Adapter、hijacked/WebSocket 和部署信号政策仍需真实场景 | 新资源继续执行 capability assessment |
-| 一致性门 | 部分通过 | 同一候选、提交前原子；cleanup debt 保留 owner/generation 并阻断后续 reload | 跨 Kernel/Supervisor 统一 management view 未实现 | `FOUNDATION-DIAGNOSTICS-001` |
-| 错误门 | 部分通过 | error wrapping/join、typed cleanup error | 缺 owner/generation/pending diagnostics | 结构化安全诊断与 error chain 同时验收 |
+| 一致性门 | 通过（当前 profile） | 同一候选、提交前原子；cleanup debt 保留 owner/generation；Host 单一视图合并 capability/participant/task 与共享 budget | sticky reconciliation 仍是 P1 | 后续 Foundation acceptance 复核 |
+| 错误门 | 通过（当前 profile） | error wrapping/join、typed cleanup error；owner-local error type 与 pending/failed/forced/finalized 分离 | 外部真实资源失败仍待总验收 | `FOUNDATION-ACCEPTANCE-001` |
 | 治理门 | 部分通过 | import graph、binding、route/participant 唯一性、terminal attempt/force 负向门禁 | EnvSource 冲突仍未闭环 | `FOUNDATION-CONFIG-001` |
 | 演进门 | 部分通过 | immutable generation、RestartRequired、cleanup debt 不覆盖 | sticky recovery 和受控 management recovery 未决定 | diagnostics 与 P1 reconciliation 研究 |
 | 复杂度门 | 通过 | 当前规模无需 Fx/Wire/general DAG | 防止借加固扩成万能框架 | Diff/ADR 证明只改必要状态与契约 |
@@ -41,7 +41,9 @@
 
 ### `FND-ACCEPT-003` Supervisor 与长期责任
 
-- Participant Stop 和 Task Run 忽略 context 时，分别在 `PendingParticipants` 与 `PendingTasks` 中保留 owner；显式 force 结果进入 `ForcedParticipants`。
+施工级场景、终态分类与验证结果见已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md)。
+
+- Participant Stop 和 Task Run 忽略 context 时，以 typed unit state `pending` 保留 owner；显式 force 结果以 `forced` 终态记录，不再依赖 names-only 列表。
 - Supervisor 在总 shutdown budget 内返回，且不会把仍运行的 goroutine 描述为已停止。
 - Service 与 CLI 使用同一参与者顺序、错误聚合和最终清理不变量。
 - 独立 CLI 启动的新进程不能声称关闭了运行中服务的资源；未来 retry/force command 必须通过受控 management operation 定位 owner/generation。
@@ -83,4 +85,4 @@
 
 ## 6. 当前结果
 
-截至 2026-08-15：`Foundation-closed = FAIL`，`Business-extension = BLOCKED`，`Production HTTP API-ready = FAIL`。失败是计划输入，不是实现失败声明；本轮未执行源码测试或运行时故障注入。
+截至 2026-08-15：`FOUNDATION-DIAGNOSTICS-001 = PASS`，但 `Foundation-closed = FAIL`、`Business-extension = BLOCKED`、`Production HTTP API-ready = FAIL`。统一 diagnostics 的 typed state、budget、pending/failed/forced、脱敏和并发读取已经实现并验证；EnvSource 冲突与完整 Foundation acceptance 仍未完成。

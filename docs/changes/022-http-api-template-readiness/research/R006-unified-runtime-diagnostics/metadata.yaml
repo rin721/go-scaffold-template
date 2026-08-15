@@ -1,0 +1,41 @@
+schema_version: 1
+id: R006
+title: "Kernel、Coordinator 与 Supervisor 统一运行诊断"
+question: "生命周期 P0 实施后，当前 Kernel/Coordinator/Supervisor/Host 分别能证明哪些 owner、generation、phase、budget 与终态事实，哪些缺口阻止形成安全、统一且可并发读取的 management diagnostics？"
+research_type: current-project
+topics: ["runtime diagnostics", "responsibility ownership", "shutdown budget", "terminal state", "management snapshot", "redaction"]
+keywords: ["Coordinator.Diagnostics", "Host.Diagnostics", "Supervisor.Snapshot", "FinalizationSnapshot", "PendingParticipants", "PendingTasks", "ForcedParticipants"]
+languages: ["Go"]
+frameworks: ["net/http"]
+technologies: ["Kernel", "Coordinator", "Supervisor", "Host", "stable Lease", "graceful-to-force"]
+applicable_scenarios: ["FOUNDATION-DIAGNOSTICS-001", "FND-RUNTIME-002", "FND-DIAGNOSTICS-001", "FND-DIAGNOSTICS-002", "FND-ACCEPT-003"]
+non_applicable_scenarios: ["实现 management listener", "新增运行中 retry 或 force 命令", "决定部署平台第二次信号政策", "声明 Foundation-closed"]
+status: needs-refresh
+summary: "生命周期实现已分别保留 Kernel finalization 与 Supervisor pending/forced 事实，但 Host 仍返回两份并列快照；Supervisor 只保留名称列表并混淆已返回错误与仍未返回，Kernel 不保留成功或 no-finalization 终态，场景策略、释放验证和 shutdown budget 也未形成统一安全视图。应由 Host 组合唯一 process diagnostics，底层继续保留各自 typed owner ledger。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "call-site-trace", "concurrency-analysis"]
+  primary_sources:
+    - title: "生命周期实现后的 Kernel、Coordinator 与 Host"
+      locator: "internal/kernel/app; internal/kernel/kernel.go; internal/kernel/coordinator.go; internal/kernel/host.go"
+      snapshot: "HEAD 7d64f8634c59375a522e66b5b989dd40b557ee9d, verified 2026-08-15"
+    - title: "Supervisor owner、budget 与终态实现"
+      locator: "pkg/supervisor/supervisor.go; pkg/supervisor/supervisor_test.go"
+      snapshot: "HEAD 7d64f8634c59375a522e66b5b989dd40b557ee9d, verified 2026-08-15"
+    - title: "Service、CLI 与 Host 消费路径"
+      locator: "internal/composition/service.go; internal/composition/todo.go; cmd/app/main.go"
+      snapshot: "HEAD 7d64f8634c59375a522e66b5b989dd40b557ee9d, verified 2026-08-15"
+    - title: "当前诊断相关测试基线"
+      locator: "go test ./internal/kernel/... ./pkg/supervisor ./pkg/httpx"
+      snapshot: "passed on Windows, Go 1.25.7, 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["FOUNDATION-DIAGNOSTICS-001 已实施，当前实现事实转由代码、测试和计划实施证据负责", "Host diagnostics 或 health authority 再次变化", "Supervisor owner/budget 状态机变化", "Kernel ownership snapshot 变化", "新增 management transport 或运行中 recovery operation"]
+relations:
+  extends: ["022-R002", "022-R004", "022-R005"]
+  related: ["022-R003"]
+  supersedes: []
+  superseded_by: []
+report: report.md

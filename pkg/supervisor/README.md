@@ -10,6 +10,7 @@ Participant 按登记顺序启动并按反向顺序停止。任一 Task 失败�
 - `AddTask(name, run)`：在运行前登记长期 Task。
 - `Run(ctx)`：顺序启动、等待 Task、传播失败、反向停止并聚合错误。
 - `RunOperation(ctx, operation)`：顺序启动、执行一次 operation、反向停止并聚合 operation/cleanup 错误；只允许没有长期 Task 的 one-shot 流程。
+- `Snapshot()`：返回 process state、ready、共享 shutdown budget 和按注册顺序排列的 typed responsibility units；不返回原始 error 文本、配置或用户对象。
 - `SignalContext(parent)`：创建监听 `SIGINT` 和 `SIGTERM` 的 context。
 
 ## 基础示例
@@ -62,11 +63,14 @@ func Run(server *Server) error {
 - Task 失败会取消其他 Task；调用方主动取消 context 视为正常退出，但停止错误仍会返回。
 - 没有 Task 时，`Run` 会持续等待 context 结束，而不是在 Participant 启动后立即退出。
 - `ShutdownTimeout <= 0` 使用默认总预算 10 秒，`ForceTimeout <= 0` 使用默认预留 1 秒；force 预留必须小于总预算。
-- Participant 共享同一组绝对 deadline，不会按组件重建完整 timeout。只有显式实现 `ForceStopper` 的 pending Participant 才进入 force 阶段；forced、pending Participant 与 pending Task 分别进入安全快照，forced 不伪装为 graceful success。
+- Participant 共享同一组绝对 deadline，不会按组件重建完整 timeout。只有显式实现 `ForceStopper` 的 Participant 才进入 force 阶段；force policy 在注册时由真实接口冻结，普通 Participant 不会被推断为可强制停止。
+- `Snapshot.Units` 以 `participant/task`、`start/ready/run/stop/force`、`pending/running/ready/stopped/forced/failed` 和 exit policy 结构化表达每项责任。Stop/Task 已返回 error 是 `failed`；只有 goroutine 在最终 deadline 仍未返回才是 `pending`；`forced` 不伪装为 graceful success。
+- `Snapshot.Budget` 暴露同一次 shutdown 的 started/graceful/final deadline、当前 phase 和耗尽结果。只有所有已启动责任 clean stopped 且聚合错误为空，process 才报告 `stopped`。
+- owner name 是诊断身份，不是任意描述文本：必须以小写字母或数字开头，只能包含小写字母、数字、点、下划线或连字符，最长 128 bytes；禁止把地址、配置值或凭据放入名称。
 - one-shot CLI 使用 `RunOperation` 时不会为了凑长期 Task 启动空 goroutine；operation 结束后立即进入同一套有界反向停止。
 
 ## 与 Kernel 的边界
 
-使用 Kernel 的长期 Service 应通过 `kernel.NewHost` 接入进程监督。Host 固定先启动 Kernel、再启动上层 Participant，并把可选配置监听登记为 Task；停止顺序自动反转。Application CLI 可把 Coordinator 与 migration Participant 交给 `RunOperation`，但仍由 application composition root 明确拥有它们。
+使用 Kernel 的长期 Service 应通过 `kernel.NewHost` 接入进程监督。Host 固定先启动 Kernel、再启动上层 Participant，并把可选配置监听登记为 Task；停止顺序自动反转。`Host.Diagnostics()` 把 Supervisor units 与 Kernel ownerships 组合成唯一 process view。Application CLI 可把 Coordinator 与 migration Participant 交给 `RunOperation`，但仍由 application composition root 明确拥有它们。
 
 `pkg/supervisor` 不导入也不感知 `internal/kernel`。Kernel 的候选实例构造、租约排空、重载回滚和原子发布仍由 Kernel 自身负责，不能用 Supervisor 替代。

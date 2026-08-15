@@ -7,7 +7,7 @@
 1. 当前底层何时形成配置、装配、资源、运行、重载、排空、停止、诊断和验证的真实闭环，从而允许后续业务模块进入详细设计；
 2. 项目何时可以诚实声明为成熟 Go Server HTTP API 后端脚手架。
 
-当前事实依据为 [R002](research/R002-foundation-closure-audit/report.md)，外部实践为 [R003](research/R003-go-runtime-practices/report.md)，综合取舍为 [R004](research/R004-foundation-closure-synthesis/report.md)，逐资源 Close/retry/force 语义由 [R005](research/R005-resource-finalization-policy/report.md) 支撑，整体 HTTP 差距继续由 [R001](research/R001-current-readiness-reassessment/report.md) 与 [019-R002](../019-http-api-maturity-gap-assessment/research/R002-http-api-maturity-reference/report.md) 支撑。生命周期施工级契约、文件和测试由已实施的 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 唯一负责；其余要求仍是后续 Program 门禁。
+生命周期实施前事实依据为 [R002](research/R002-foundation-closure-audit/report.md)，外部实践为 [R003](research/R003-go-runtime-practices/report.md)，综合取舍为 [R004](research/R004-foundation-closure-synthesis/report.md)，逐资源 Close/retry/force 语义由 [R005](research/R005-resource-finalization-policy/report.md) 支撑，生命周期实施后的 diagnostics 实施前事实由 [R006](research/R006-unified-runtime-diagnostics/report.md) 支撑；整体 HTTP 差距继续由 [R001](research/R001-current-readiness-reassessment/report.md) 与 [019-R002](../019-http-api-maturity-gap-assessment/research/R002-http-api-maturity-reference/report.md) 支撑。生命周期施工级契约、文件和测试由已实施的 [`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 唯一负责；统一诊断施工级范围与实施证据由已实施的 [`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 唯一负责，其余要求仍是后续 Program 门禁。
 
 ## 2. 标签定义
 

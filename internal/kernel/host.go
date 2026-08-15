@@ -96,7 +96,7 @@ func (h *Host) Health(ctx context.Context) health.Snapshot {
 }
 
 func (h *Host) liveness(context.Context) health.Result {
-	state := h.supervisor.Snapshot().State
+	state := h.Diagnostics().ProcessState
 	status := health.StatusPass
 	if state == supervisor.StateFailed || state == supervisor.StateStopped {
 		status = health.StatusFail
@@ -105,12 +105,12 @@ func (h *Host) liveness(context.Context) health.Result {
 }
 
 func (h *Host) readiness(context.Context) health.Result {
-	kernelState, processState := h.Diagnostics()
+	diagnostics := h.Diagnostics()
 	status := health.StatusFail
-	if kernelState.Ready && processState.Ready {
+	if diagnostics.Ready {
 		status = health.StatusPass
 	}
-	return health.Result{Kind: health.KindReadiness, Status: status, Message: string(processState.State)}
+	return health.Result{Kind: health.KindReadiness, Status: status, Message: string(diagnostics.ProcessState)}
 }
 
 // Run 委托 Supervisor 完整执行启动、任务等待和反向停止。
@@ -131,10 +131,10 @@ func (h *Host) Ready() <-chan struct{} {
 	return h.supervisor.Ready()
 }
 
-// Diagnostics 返回配置协调与进程监督的安全状态快照。
-func (h *Host) Diagnostics() (Diagnostics, supervisor.Snapshot) {
-	if h == nil {
-		return Diagnostics{State: LifecycleFailed}, supervisor.Snapshot{State: supervisor.StateFailed}
+// Diagnostics 返回配置协调与进程监督的唯一安全状态快照。
+func (h *Host) Diagnostics() ProcessDiagnostics {
+	if h == nil || h.coordinator == nil || h.supervisor == nil {
+		return ProcessDiagnostics{ProcessState: supervisor.StateFailed, KernelState: LifecycleFailed}
 	}
-	return h.coordinator.Diagnostics(), h.supervisor.Snapshot()
+	return composeProcessDiagnostics(h.coordinator.Diagnostics(), h.supervisor.Snapshot())
 }

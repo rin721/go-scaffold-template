@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -27,6 +28,22 @@ func TestSupervisorStartsAndStopsParticipantsInOrder(t *testing.T) {
 	want := []string{"start:database", "start:server", "stop:server", "stop:database"}
 	if !reflect.DeepEqual(events, want) {
 		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+	snapshot := supervisor.Snapshot()
+	if len(snapshot.Units) != 3 || snapshot.Units[0].Owner != "database" || snapshot.Units[1].Owner != "server" || snapshot.Units[2].Owner != "shutdown" {
+		t.Fatalf("Units = %#v, want stable registration order", snapshot.Units)
+	}
+	for _, unit := range snapshot.Units {
+		if unit.State != UnitStopped {
+			t.Fatalf("unit = %#v, want stopped", unit)
+		}
+	}
+	if snapshot.LastErrorType != "" {
+		t.Fatalf("LastErrorType = %q after clean stop", snapshot.LastErrorType)
+	}
+	snapshot.Units[0].Owner = "mutated"
+	if got := supervisor.Snapshot().Units[0].Owner; got != "database" {
+		t.Fatalf("snapshot mutation changed owner to %q", got)
 	}
 }
 
@@ -120,8 +137,12 @@ func TestSupervisorBoundsUncooperativeRunnerAndReportsOwner(t *testing.T) {
 		t.Fatalf("Run() error = %v, want shutdown deadline", err)
 	}
 	snapshot := process.Snapshot()
-	if snapshot.State != StateFailed || !reflect.DeepEqual(snapshot.PendingTasks, []string{"stuck"}) {
+	stuck := findUnit(t, snapshot, "stuck")
+	if snapshot.State != StateFailed || stuck.Kind != UnitTask || stuck.State != UnitPending || stuck.Phase != UnitPhaseStop {
 		t.Fatalf("Snapshot() = %#v, want failed stuck owner", snapshot)
+	}
+	if snapshot.Budget.Phase != ShutdownComplete || !snapshot.Budget.Exhausted || !snapshot.Budget.GracefulDeadline.Before(snapshot.Budget.FinalDeadline) {
+		t.Fatalf("Budget = %#v", snapshot.Budget)
 	}
 	close(release)
 }
@@ -270,6 +291,10 @@ func TestSupervisorRunOperationBoundsStop(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("RunOperation() error = %v, want shutdown deadline", err)
 	}
+	unit := findUnit(t, process.Snapshot(), "blocking")
+	if unit.State != UnitPending || unit.Phase != UnitPhaseStop {
+		t.Fatalf("unit = %#v, want pending Stop", unit)
+	}
 	close(release)
 }
 
@@ -347,6 +372,18 @@ func TestSupervisorRejectsNilContextAndSecondRun(t *testing.T) {
 	}
 }
 
+func TestSupervisorRejectsUnsafeOwnerNamesBeforeExecution(t *testing.T) {
+	unsafe := "postgres://user:secret@example.invalid/database"
+	process := newTestSupervisor(t, Config{})
+	if err := process.AddTask(unsafe, func(context.Context) error { return nil }); err == nil || strings.Contains(err.Error(), "secret@example") {
+		t.Fatalf("AddTask(unsafe owner) error = %v", err)
+	}
+	participantProcess := newTestSupervisor(t, Config{}, &recordParticipant{name: "Unsafe Owner"})
+	if err := participantProcess.Run(t.Context()); err == nil {
+		t.Fatal("Run(unsafe participant owner) error = nil")
+	}
+}
+
 func TestSupervisorUsesDefaultShutdownTimeoutForNonPositiveValues(t *testing.T) {
 	for _, timeout := range []time.Duration{0, -time.Second} {
 		process := newTestSupervisor(t, Config{ShutdownTimeout: timeout})
@@ -370,12 +407,96 @@ func TestSupervisorRecordsExplicitForceStop(t *testing.T) {
 		t.Fatal("RunOperation() error = nil, want forced result")
 	}
 	snapshot := process.Snapshot()
-	if !reflect.DeepEqual(snapshot.ForcedParticipants, []string{"http"}) || len(snapshot.PendingParticipants) != 0 {
+	httpUnit := findUnit(t, snapshot, "http")
+	if httpUnit.State != UnitForced || httpUnit.Phase != UnitPhaseForce || httpUnit.ExitPolicy != ExitGracefulThenForce {
 		t.Fatalf("Snapshot() = %#v", snapshot)
 	}
 	if participant.forceCalls != 1 {
 		t.Fatalf("ForceStop() calls = %d, want 1", participant.forceCalls)
 	}
+}
+
+func TestSupervisorRecordsForceFailureAsTerminalFailed(t *testing.T) {
+	forceErr := errors.New("force failed")
+	participant := &forceParticipant{name: "http", forceErr: forceErr}
+	process := newTestSupervisor(t, Config{ShutdownTimeout: 80 * time.Millisecond, ForceTimeout: 40 * time.Millisecond}, participant)
+	err := process.RunOperation(t.Context(), func(context.Context) error { return nil })
+	if !errors.Is(err, forceErr) {
+		t.Fatalf("RunOperation() error = %v, want force failure", err)
+	}
+	unit := findUnit(t, process.Snapshot(), "http")
+	if unit.State != UnitFailed || unit.Phase != UnitPhaseForce || unit.Attempt != 1 {
+		t.Fatalf("unit = %#v", unit)
+	}
+}
+
+func TestSupervisorRecordsUncooperativeForceAsPending(t *testing.T) {
+	release := make(chan struct{})
+	participant := &blockingForceParticipant{release: release}
+	process := newTestSupervisor(t, Config{ShutdownTimeout: 30 * time.Millisecond, ForceTimeout: 10 * time.Millisecond}, participant)
+	err := process.RunOperation(t.Context(), func(context.Context) error { return nil })
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("RunOperation() error = %v, want shutdown deadline", err)
+	}
+	unit := findUnit(t, process.Snapshot(), "http")
+	if unit.State != UnitPending || unit.Phase != UnitPhaseForce || unit.ExitPolicy != ExitGracefulThenForce {
+		t.Fatalf("unit = %#v", unit)
+	}
+	close(release)
+}
+
+func TestSupervisorDistinguishesReturnedStopErrorFromPending(t *testing.T) {
+	stopErr := errors.New("stop failed")
+	process := newTestSupervisor(t, Config{}, &recordParticipant{name: "database", stopErr: stopErr})
+	if err := process.RunOperation(t.Context(), func(context.Context) error { return nil }); !errors.Is(err, stopErr) {
+		t.Fatalf("RunOperation() error = %v", err)
+	}
+	unit := findUnit(t, process.Snapshot(), "database")
+	if unit.State != UnitFailed || unit.Phase != UnitPhaseStop || unit.Attempt != 1 {
+		t.Fatalf("unit = %#v, want returned stop failure", unit)
+	}
+}
+
+func TestSupervisorNeverReportsCleanStopWithIncompleteUnit(t *testing.T) {
+	process := newTestSupervisor(t, Config{}, &recordParticipant{name: "database"})
+	process.mu.Lock()
+	process.initializeUnitsLocked(process.participants, nil)
+	process.state = supervisorRunning
+	process.mu.Unlock()
+	err := process.complete(nil)
+	var incomplete *IncompleteShutdownError
+	if !errors.As(err, &incomplete) || !reflect.DeepEqual(incomplete.Owners, []string{"database"}) {
+		t.Fatalf("complete() error = %#v", err)
+	}
+	if snapshot := process.Snapshot(); snapshot.State != StateFailed {
+		t.Fatalf("Snapshot() = %#v", snapshot)
+	}
+}
+
+func TestSupervisorRecordsFailedTaskOwner(t *testing.T) {
+	taskErr := errors.New("task failed")
+	process := newTestSupervisor(t, Config{})
+	if err := process.AddTask("consumer", func(context.Context) error { return taskErr }); err != nil {
+		t.Fatalf("AddTask() error = %v", err)
+	}
+	if err := process.Run(t.Context()); !errors.Is(err, taskErr) {
+		t.Fatalf("Run() error = %v", err)
+	}
+	unit := findUnit(t, process.Snapshot(), "consumer")
+	if unit.Kind != UnitTask || unit.State != UnitFailed || unit.LastErrorType == "" {
+		t.Fatalf("unit = %#v", unit)
+	}
+}
+
+func findUnit(t *testing.T, snapshot Snapshot, owner string) UnitSnapshot {
+	t.Helper()
+	for _, unit := range snapshot.Units {
+		if unit.Owner == owner {
+			return unit
+		}
+	}
+	t.Fatalf("unit %q not found in %#v", owner, snapshot.Units)
+	return UnitSnapshot{}
 }
 
 func newTestSupervisor(t *testing.T, cfg Config, participants ...Participant) *Supervisor {
@@ -402,13 +523,27 @@ type blockingStopParticipant struct{ release <-chan struct{} }
 type forceParticipant struct {
 	name       string
 	forceCalls int
+	forceErr   error
 }
+
+type blockingForceParticipant struct{ release <-chan struct{} }
 
 func (p *forceParticipant) Name() string                 { return p.name }
 func (*forceParticipant) Start(context.Context) error    { return nil }
 func (*forceParticipant) Stop(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
 func (p *forceParticipant) ForceStop(context.Context) error {
 	p.forceCalls++
+	return p.forceErr
+}
+
+func (*blockingForceParticipant) Name() string                { return "http" }
+func (*blockingForceParticipant) Start(context.Context) error { return nil }
+func (*blockingForceParticipant) Stop(ctx context.Context) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+func (p *blockingForceParticipant) ForceStop(context.Context) error {
+	<-p.release
 	return nil
 }
 

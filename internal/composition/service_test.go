@@ -14,6 +14,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
+	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
 func TestExampleConfigSatisfiesApplicationBindings(t *testing.T) {
@@ -111,6 +112,51 @@ func TestApplicationLifecycleUsesInjectedLogger(t *testing.T) {
 	if len(entries) != 2 || entries[0].Message != "application started" || entries[1].Message != "application stopping" {
 		t.Fatalf("entries = %#v", entries)
 	}
+}
+
+func TestTodoOperationSupervisorPreservesCompositionOrderAndTerminalState(t *testing.T) {
+	events := make([]string, 0, 5)
+	owner, err := newTodoOperationSupervisor([]supervisor.Participant{
+		&compositionParticipant{name: "kernel", events: &events},
+		&compositionParticipant{name: "todo-migration", events: &events},
+	})
+	if err != nil {
+		t.Fatalf("newTodoOperationSupervisor() error = %v", err)
+	}
+	if err := owner.RunOperation(t.Context(), func(context.Context) error {
+		events = append(events, "operation")
+		return nil
+	}); err != nil {
+		t.Fatalf("RunOperation() error = %v", err)
+	}
+	want := []string{"start:kernel", "start:todo-migration", "operation", "stop:todo-migration", "stop:kernel"}
+	if fmt.Sprint(events) != fmt.Sprint(want) {
+		t.Fatalf("events = %#v, want %#v", events, want)
+	}
+	snapshot := owner.Snapshot()
+	if snapshot.State != supervisor.StateStopped || len(snapshot.Units) != 2 || snapshot.Units[0].Owner != "kernel" || snapshot.Units[1].Owner != "todo-migration" {
+		t.Fatalf("Snapshot() = %#v", snapshot)
+	}
+	for _, unit := range snapshot.Units {
+		if unit.State != supervisor.UnitStopped {
+			t.Fatalf("unit = %#v, want stopped", unit)
+		}
+	}
+}
+
+type compositionParticipant struct {
+	name   string
+	events *[]string
+}
+
+func (p *compositionParticipant) Name() string { return p.name }
+func (p *compositionParticipant) Start(context.Context) error {
+	*p.events = append(*p.events, "start:"+p.name)
+	return nil
+}
+func (p *compositionParticipant) Stop(context.Context) error {
+	*p.events = append(*p.events, "stop:"+p.name)
+	return nil
 }
 
 func TestReloadErrorReporterClassifiesAndRedacts(t *testing.T) {

@@ -387,17 +387,17 @@ func terminalDrainReverse(ctx context.Context, components []app.RuntimeComponent
 	return joined
 }
 
-// Finalizations 返回所有仍由 Kernel 持有的终结责任安全快照。
-func (k *Kernel) Finalizations() []app.FinalizationSnapshot {
+// ownerships 返回所有由 Kernel 管理的实例责任安全快照。
+func (k *Kernel) ownerships() []app.OwnershipSnapshot {
 	if k == nil {
 		return nil
 	}
 	k.mu.Lock()
 	components := append([]app.RuntimeComponent(nil), k.components...)
 	k.mu.Unlock()
-	var snapshots []app.FinalizationSnapshot
+	var snapshots []app.OwnershipSnapshot
 	for _, component := range components {
-		snapshots = append(snapshots, component.Finalizations()...)
+		snapshots = append(snapshots, component.Ownerships()...)
 	}
 	return snapshots
 }

@@ -2,16 +2,17 @@
 
 ## 当前状态
 
-- 任务类型：研究、规划与已确认的生命周期 P0 实施。
-- 研究门禁：已通过。R001 复核整体 HTTP API 成熟度，R002 审计当前底层链路，R003 对照成熟 Go 项目，R004 给出综合结论，R005 逐项确认资源终结、重试、force 和验证语义。
+- 任务类型：研究、规划，以及已确认并实施的生命周期与统一诊断 P0。
+- 研究门禁：已通过。R001 复核整体 HTTP API 成熟度，R002 审计生命周期实施前的底层链路，R003 对照成熟 Go 项目，R004 给出综合结论，R005 逐项确认资源终结政策，R006 在生命周期实施后重新追踪统一 diagnostics 数据源与缺口。
 - 生命周期计划：[`FOUNDATION-LIFECYCLE-001`](plans/foundation-lifecycle-001.md) 已确认并实施完成；`LFC-001` 至 `LFC-010` 的代码、测试和权威文档已同步。
+- 诊断计划：[`FOUNDATION-DIAGNOSTICS-001`](plans/foundation-diagnostics-001.md) 已确认并实施完成；`DGN-001` 至 `DGN-009` 的 typed ledger、Host 单一快照、测试和权威文档已同步。
 - 当前判断：**底层主链已形成但未完全闭环；Production HTTP API-ready 未通过；新的业务模块详细设计尚未解锁。**
-- 实施基线：HEAD `b868893`；本轮在该基线上完成 lifecycle 变更与全量 test/race/vet/build，不启动服务、不部署、不推送。
+- 当前代码基线：HEAD `7d64f8634c59375a522e66b5b989dd40b557ee9d`；生命周期变更已在该提交完成，统一诊断计划以此为快照，不启动服务、不部署、不推送。
 - 与既有任务的关系：019 是旧身份下的 HTTP 差距快照；020 已确定 copy-owned 产品形态；021 完成 canonical identity；022 现在同时是底层闭环和 HTTP 成熟化的当前计划入口。
 
 ## 一句话结论
 
-当前项目**还不能称为成熟的 Go Server HTTP API 后端脚手架模板**。生命周期 P0 已修复终止排空超时、清理失败责任丢失和 HTTP 暗中 force；但统一 management diagnostics、EnvSource 冲突和完整 Foundation acceptance 尚未完成，因此整体仍只能称为 **Foundation-partial**。
+当前项目**还不能称为成熟的 Go Server HTTP API 后端脚手架模板**。生命周期 P0 已修复终止排空超时、清理失败责任丢失和 HTTP 暗中 force，统一 diagnostics 也已覆盖 Kernel capability、Supervisor Participant/Task、共享 budget 和真实终态；但 EnvSource 冲突和完整 Foundation acceptance 尚未完成，因此整体仍只能称为 **Foundation-partial**。
 
 推荐不是推倒重来：
 
@@ -29,7 +30,7 @@
 | 运行、ready 与错误传播 | 通过（当前 profile） | Supervisor 拥有长期任务，HTTP/watcher ready 和错误链已接入 |
 | Reload 一致性 | 通过（生命周期范围） | 提交前原子、旧代可恢复；提交后 cleanup debt 保留 retired owner/generation 并阻断后续 reload |
 | Drain 与 Stop | 通过（当前 profile） | terminal drain 超时保持 cleanup-pending；后续 Stop 继续同一 drain，terminal attempt 失败保留责任 |
-| 诊断与治理 | 部分通过 | Kernel finalization 与 Supervisor pending/forced 已分类；跨 owner management view、policy/verification 和 EnvSource 门禁仍缺 |
+| 诊断与治理 | 通过（diagnostics 范围） | Host 提供单一 `ProcessDiagnostics`；owner kind/generation/phase/policy/attempt/budget/pending/terminal/verification 已结构化且脱敏；EnvSource 属于独立配置门禁 |
 | 业务扩展 | **未通过** | Todo 只证明同步 HTTP/CLI/migration profile；Runner/Health/new resource 需先做能力评估 |
 | HTTP API 产品治理 | 未通过 | API authority、统一协议、安全、管理面、遥测、迁移和 release 仍缺 |
 
@@ -43,17 +44,19 @@
 
 ## 阅读顺序
 
-1. [R002：当前底层闭环审计](research/R002-foundation-closure-audit/report.md)
-2. [R003：成熟 Go 项目实践对照](research/R003-go-runtime-practices/report.md)
-3. [R004：综合结论与业务解锁条件](research/R004-foundation-closure-synthesis/report.md)
-4. [R005：逐资源终结、重试与强制关闭策略](research/R005-resource-finalization-policy/report.md)
-5. [R001：整体 HTTP API 成熟度复核](research/R001-current-readiness-reassessment/report.md)
-6. [需求：闭环与成熟标签门禁](requirements.md)
-7. [设计：保留架构下的加固路线](design.md)
-8. [FOUNDATION-LIFECYCLE-001：生命周期闭环独立实施计划](plans/foundation-lifecycle-001.md)
-9. [验收：十一门与业务解锁矩阵](acceptance.md)
-10. [任务：实施 Program 与确认边界](tasks.md)
+1. [R006：统一运行诊断实施前审计](research/R006-unified-runtime-diagnostics/report.md)
+2. [FOUNDATION-DIAGNOSTICS-001：统一运行责任诊断实施计划](plans/foundation-diagnostics-001.md)
+3. [R002：生命周期实施前的底层闭环审计](research/R002-foundation-closure-audit/report.md)
+4. [R003：成熟 Go 项目实践对照](research/R003-go-runtime-practices/report.md)
+5. [R004：综合结论与业务解锁条件](research/R004-foundation-closure-synthesis/report.md)
+6. [R005：逐资源终结、重试与强制关闭策略](research/R005-resource-finalization-policy/report.md)
+7. [R001：整体 HTTP API 成熟度复核](research/R001-current-readiness-reassessment/report.md)
+8. [需求：闭环与成熟标签门禁](requirements.md)
+9. [设计：保留架构下的加固路线](design.md)
+10. [FOUNDATION-LIFECYCLE-001：生命周期闭环独立实施计划](plans/foundation-lifecycle-001.md)
+11. [验收：十一门与业务解锁矩阵](acceptance.md)
+12. [任务：实施 Program 与确认边界](tasks.md)
 
 ## 当前授权边界
 
-用户已在计划报告后的后续消息确认 `FOUNDATION-LIFECYCLE-001`，因此本轮只实施并提交 `LFC-001` 至 `LFC-010`。服务启动、部署、推送、tag、release、外部写入和其他 Program item 均不在授权范围；后续事项仍须各自研究、计划并确认。
+`FOUNDATION-LIFECYCLE-001` 已按既有确认完成；用户已在 diagnostics 计划报告后的后续消息确认 `FOUNDATION-DIAGNOSTICS-001`，因此本轮只实施并提交 `DGN-001` 至 `DGN-009`。服务启动、部署、推送、tag、release、外部写入和其他 Program item 均不在授权范围。

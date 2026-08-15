@@ -122,7 +122,7 @@ func (l *lease[I]) beginOrContinueDrain(terminal bool) (<-chan struct{}, error) 
 		l.drained = make(chan struct{})
 		l.drainDone = false
 		if l.current != nil {
-			l.current.state = FinalizationWaitingForDrain
+			l.current.transition(FinalizationPhaseCurrent, OwnershipWaitingForDrain)
 		}
 		if l.activeUses == 0 {
 			close(l.drained)
@@ -162,11 +162,21 @@ func (l *lease[I]) resume() {
 	}
 	l.state = leaseServing
 	if l.current != nil {
-		l.current.state = FinalizationPending
+		l.current.transition(FinalizationPhaseCurrent, OwnershipServing)
 	}
 	close(l.transition)
 	l.drained = nil
 	l.drainDone = false
+}
+
+func (l *lease[I]) currentSnapshot(componentID ID) *OwnershipSnapshot {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.current == nil {
+		return nil
+	}
+	snapshot := l.current.snapshot(componentID)
+	return &snapshot
 }
 
 func (l *lease[I]) stopPending() {

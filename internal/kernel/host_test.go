@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -65,9 +66,17 @@ func TestHostReadinessAndHealthFollowSupervisedLifecycle(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- host.Run(ctx) }()
 	<-host.Ready()
-	kernelState, processState := host.Diagnostics()
-	if !kernelState.Ready || !processState.Ready {
-		t.Fatalf("Diagnostics() = %#v / %#v, want ready", kernelState, processState)
+	diagnostics := host.Diagnostics()
+	if !diagnostics.Ready || diagnostics.KernelState != LifecycleRunning {
+		t.Fatalf("Diagnostics() = %#v, want ready", diagnostics)
+	}
+	capability := findResponsibility(t, diagnostics, OwnerCapability, "service")
+	if capability.Generation != 1 || capability.State != ResponsibilityServing || capability.ExitPolicy != ExitDrainThenTerminalClose {
+		t.Fatalf("capability responsibility = %#v", capability)
+	}
+	participant := findResponsibility(t, diagnostics, OwnerParticipant, "kernel")
+	if participant.State != ResponsibilityReady || participant.ExitPolicy != ExitGracefulShutdown {
+		t.Fatalf("kernel participant responsibility = %#v", participant)
 	}
 	if snapshot := host.Health(t.Context()); snapshot.Status != pkghealth.StatusPass {
 		t.Fatalf("Health() = %#v, want pass", snapshot)
@@ -79,6 +88,17 @@ func TestHostReadinessAndHealthFollowSupervisedLifecycle(t *testing.T) {
 	if snapshot := host.Health(t.Context()); snapshot.Status != pkghealth.StatusFail {
 		t.Fatalf("Health() after stop = %#v, want fail", snapshot)
 	}
+}
+
+func findResponsibility(t *testing.T, diagnostics ProcessDiagnostics, kind OwnerKind, owner string) ResponsibilitySnapshot {
+	t.Helper()
+	for _, responsibility := range diagnostics.Responsibilities {
+		if responsibility.Kind == kind && responsibility.Owner == owner {
+			return responsibility
+		}
+	}
+	t.Fatalf("responsibility %s/%s not found in %#v", kind, owner, diagnostics.Responsibilities)
+	return ResponsibilitySnapshot{}
 }
 
 func TestNewHostValidatesExplicitWatchOptions(t *testing.T) {
@@ -131,8 +151,26 @@ func TestHostWatchReloadsCapabilityAndStopsOnCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- host.Run(ctx) }()
+	diagnosticsCtx, stopDiagnostics := context.WithCancel(t.Context())
+	diagnosticsDone := make(chan struct{})
+	go func() {
+		defer close(diagnosticsDone)
+		for {
+			select {
+			case <-diagnosticsCtx.Done():
+				return
+			default:
+				_ = host.Diagnostics()
+				runtime.Gosched()
+			}
+		}
+	}()
 	waitForAccessVersion(t, access, "v1")
 	waitForLogMessage(t, baseline, "kernel reload unchanged")
+	watchTask := findResponsibility(t, host.Diagnostics(), OwnerTask, configWatchTaskName)
+	if watchTask.ExitPolicy != ExitCancelAndWait {
+		t.Fatalf("watch task responsibility = %#v", watchTask)
+	}
 
 	writeHostVersionFile(t, path, "v2")
 	waitForAccessVersion(t, access, "v2")
@@ -151,6 +189,8 @@ func TestHostWatchReloadsCapabilityAndStopsOnCancellation(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("Host did not stop after cancellation")
 	}
+	stopDiagnostics()
+	<-diagnosticsDone
 }
 
 func waitForLogMessage(t *testing.T, logging *pkglogger.TestLogger, message string) {

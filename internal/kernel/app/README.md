@@ -63,6 +63,8 @@ definition, err := app.ManagedConfigured(
 - `build` 接收 Context、typed 配置和 typed 依赖，返回 Kernel 私有实例。
 - `newAccess` 把 `app.Lease[I]` 收窄为组件自己的 Access；不得泄漏 `I` 的关闭权。
 - `WithStart`、`WithReady` 与 `WithTerminalFinalizer` 全部可选，只声明真实行为；不拥有终结动作的值不注册空函数。terminal finalizer 在 admission 关闭并排空后每个实例代际至多执行一次，失败会缓存错误并保留 owner/reference，不承诺 retry 或 force。
+- Managed Definition 在冻结时从真实 finalizer 契约确定 `NoFinalization` 或 `DrainThenTerminalClose`。`Ownerships()` 可并发读取 current/candidate/retired、drain、finalizing、finalized 与 terminal-failed 状态，并只保留最近一个安全 terminal tombstone；不保留实例或无界历史。
+- finalizer 返回 nil 只证明终结动作完成。没有运行时资源专用 verifier 的当前资源标为 `VerificationNotProven`；无 finalizer 的纯值标为 `VerificationNotRequired`，不会把重复 Close 或 nil error 伪装成物理释放证明。
 - 普通 Definition 不允许用隐藏 Activation 接管其他能力；CLI 由独立 Bootstrap composition 拥有，不是组件 contribution。
 - Builder 返回 typed nil 会失败，实例不会发布。
 

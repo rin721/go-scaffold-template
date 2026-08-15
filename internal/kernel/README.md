@@ -119,13 +119,21 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 | `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
 | `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
 
-候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 finalization snapshot 并阻断后续 Reload。
+候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 ownership snapshot 并阻断后续 Reload。
 
 `WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
 
 Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`，因此环境变量覆盖文件。Reload 比较的是合并后的有效配置段摘要：如果文件字段已被环境变量覆盖，文件变化不会重建相关组件。运行中只能重新读取进程启动时继承的环境，另一个 shell 后续设置的变量不会进入该进程。
 
 `NativeAtomicReload`、`ComponentHandoff`、切换观察期与健康失败自动回切尚未实现；当前成功切换后立即清理旧代。
+
+## 统一运行诊断
+
+`Host.Diagnostics()` 是当前唯一 process-level management authority。它把 Coordinator 的 Kernel state、config generation/digest/provenance、restart/cleanup required 和 component ownerships，与 Supervisor 的 process state、共享 shutdown budget、Participant/Task units 组合为一份 `ProcessDiagnostics`。Health 也只消费这份视图，不再自行拼接两份快照。
+
+`Responsibilities` 使用专用类型区分 capability、participant 和 task，并表达 generation、phase、state、exit policy、attempt、release verification、error type 与 since；`PendingUnits` 只从仍在 drain/finalize/Stop 等待中的责任确定性派生。Stop 已返回 error 是 failed，显式 force 是 forced，只有实际仍未返回的 operation 是 pending。clean `stopped` 要求全部已启动 process responsibility clean terminal，Kernel 当前代也已 finalized。
+
+快照只包含稳定 owner ID、有限状态、摘要、来源名、时间和 Go error type；不保存 config value、实例、指针、原始 error text、DSN 或凭据。当前没有 management listener、HTTP diagnostics endpoint、跨进程 CLI recovery、retry/force operation 或持久化审计；这些仍属于后续独立设计。
 
 ## 运行示例
 
