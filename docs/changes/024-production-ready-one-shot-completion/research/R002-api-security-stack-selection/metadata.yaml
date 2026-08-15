@@ -1,0 +1,47 @@
+schema_version: 1
+id: R002
+title: "API、安全与观测技术栈选型"
+question: "如何在保留 Chi、项目自有业务契约和 copy-owned 边界的前提下，单轨建立 OpenAPI authority、严格协议、认证授权、management 与 observability？"
+research_type: external-primary-and-current-fit
+topics: ["OpenAPI authority", "code generation", "Problem Details", "JWT/JWKS", "management", "observability"]
+keywords: ["oapi-codegen", "OpenAPI 3.0.3", "RFC 9457", "jwx v4", "OpenTelemetry", "Prometheus", "oasdiff"]
+languages: ["Go", "YAML"]
+frameworks: ["Chi"]
+technologies: ["OpenAPI", "JWT", "JWKS", "OpenTelemetry", "Prometheus"]
+applicable_scenarios: ["024 API authority", "024 security", "024 management and observability"]
+non_applicable_scenarios: ["browser session product", "mTLS-only service mesh", "WebSocket/HTTP3", "specific OIDC vendor"]
+status: active
+summary: "选择 OpenAPI 3.0.3 spec-first + oapi-codegen strict Chi，生成物纳入 Git 并用 oasdiff 阻断 breaking change；安全采用项目自有 Principal/Policy 与 jwx v4 JWT/JWKS Adapter；trace 使用稳定 OTel 1.x，metrics 使用稳定 Prometheus Go client，日志只做 trace/request correlation。"
+evidence:
+  types: ["official-specification", "official-documentation", "official-source", "release-metadata", "current-project-fit"]
+  primary_sources:
+    - title: "oapi-codegen official repository and releases"
+      locator: "https://github.com/oapi-codegen/oapi-codegen"
+      snapshot: "strict Chi, OpenAPI 3.0 stable; v2.8 configuration and generated-code review guidance, verified 2026-08-15"
+    - title: "oasdiff official breaking-change documentation"
+      locator: "https://github.com/oasdiff/oasdiff/blob/main/docs/BREAKING-CHANGES.md"
+      snapshot: "breaking/changelog CI commands; v1.22 current line, verified 2026-08-15"
+    - title: "RFC 9457 Problem Details"
+      locator: "https://www.rfc-editor.org/rfc/rfc9457.html"
+      snapshot: "Standards Track, reused from active 019-R002"
+    - title: "lestrrat-go jwx official repository"
+      locator: "https://github.com/lestrrat-go/jwx"
+      snapshot: "v4 requires Go 1.26 and implements JWT/JWK/JWS, verified 2026-08-15"
+    - title: "OpenTelemetry Go official repository and exporters"
+      locator: "https://github.com/open-telemetry/opentelemetry-go; https://opentelemetry.io/docs/languages/go/exporters/"
+      snapshot: "traces/metrics stable, logs beta; 1.44 release line supports Go 1.25/1.26, verified 2026-08-15"
+    - title: "Prometheus Go client official repository"
+      locator: "https://github.com/prometheus/client_golang"
+      snapshot: "v1.24.1, Go 1.25/1.26 support, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: reviewed-primary-sources
+  review_after: "2026-11-15"
+  refresh_triggers: ["oapi-codegen stable OpenAPI 3.1/3.2 support", "Go/tool dependency major change", "actor model changes", "OTel signal stability changes"]
+relations:
+  extends: ["019-R002", "022-R001"]
+  related: ["024-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

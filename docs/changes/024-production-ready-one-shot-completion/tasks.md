@@ -1,0 +1,123 @@
+# 任务：生产就绪模板一次性竣工
+
+## 1. 门禁状态
+
+- 024 研究门禁：已通过，证据见 `R001..R003`。
+- 024 计划状态：**待确认**。
+- 当前标签：`Foundation-closed(current synchronous HTTP/CLI profile)`；Production HTTP API-ready 未通过。
+- 当前授权：只允许研究、计划、文档验证与本次文档提交；不允许非文档实施、进程/容器/数据库变更或外部发布。
+- 后续实施：用户在本计划报告之后一次明确确认 `ONE-001..025` 后，可按依赖连续施工与检查点提交；外部副作用仍须同一消息单独授权。
+
+## 2. 单轨任务账本
+
+| ID | 工作量 | 依赖 | 内容 | 完成条件 | 状态 |
+| --- | --- | --- | --- | --- | --- |
+| `ONE-001` | S | 用户确认 | 仲裁 023/024 与工作区 authority，固定 HEAD、用户修改和实施范围 | 只有 024 为当前施工 authority；可复用成果有 Commit/证据映射；用户修改不混入 | 待确认 |
+| `ONE-002` | M | `ONE-001` | 升级 Go 1.26.5、固定 LF 与 Windows/Linux validation manifest | go.mod/CI/builder/release 同版；两平台 tidy 语义一致；无 CRLF 漂移 | 待确认 |
+| `ONE-003` | M | `ONE-002` | 固定新增依赖、工具、Action、许可证与安全基线 | 版本与 checksum/commit SHA 可追踪；无未使用依赖；选型符合 ADR-003 | 待确认 |
+| `ONE-004` | L | `ONE-003` | 建立稳定 file candidate、全 owner Validate/Build 与补偿账本 | 候选读取稳定；任何副作用前完成严格校验；部分构造无资源遗忘 | 待确认 |
+| `ONE-005` | XL | `ONE-004` | 实现 typed immutable `ApplicationGeneration` 与完整资源 owner | 同 Snapshot 构造现有七节及 auth/management/observability；无 locator/全局可变资源 | 待确认 |
+| `ONE-006` | XL | `ONE-005` | 实现 process-level `ListenerHub` 和 request/connection generation lease | Windows/Linux admission、切换、pending connection、drain、shutdown 测试通过 | 待确认 |
+| `ONE-007` | L | `ONE-006` | 迁移 reload/Host/Service/CLI 并删除旧 restart/server swap authority | candidate reject 保旧代；commit 后 cleanup debt 可诊断；旧路径/符号/文档无残留 | 待确认 |
+| `ONE-008` | L | `ONE-007` | 建立 OpenAPI 3.0.3 spec、oapi-codegen strict Chi 与 operation inventory | Todo contract 完整；生成物可重复；每个 operation security/Problem/operationId 完整 | 待确认 |
+| `ONE-009` | XL | `ONE-008` | 迁移 strict handler/Router/DTO mapping，删除 `module.Route` | 所有 HTTP 调用方只走生成 binding；core 无 transport/第三方类型；旧 authority 搜索为零 | 待确认 |
+| `ONE-010` | L | `ONE-009` | 实现 RFC 9457 presenter 与 strict request/response protocol | validation/404/405/panic/middleware/auth/dependency 统一；协议负向 contract 通过 | 待确认 |
+| `ONE-011` | L | `ONE-010` | 完成 trusted proxy、budget、limits、CORS、rate/overload | 安全默认、429/503/Retry-After、取消与低敏诊断测试通过 | 待确认 |
+| `ONE-012` | XL | `ONE-008`、`ONE-005` | 实现安全契约、operation policy 与 jwx v4 JWT/JWKS Adapter | issuer/audience/alg/time/key refresh/fail-closed 测试通过；无第三方类型泄漏 | 待确认 |
+| `ONE-013` | XL | `ONE-010`、`ONE-012`、`ONE-016` | Todo `owner_subject`、对象授权、CLI actor 与 audit | expand/backfill/contract 完成；跨 actor 拒绝；HTTP/CLI 同 policy；敏感信息不泄露 | 待确认 |
+| `ONE-014` | L | `ONE-007`、`ONE-012` | 实现独立 management listener 与 probes/build/diagnostics | startup/live/ready 分离；management budget/scope 生效；pprof 默认不存在 | 待确认 |
+| `ONE-015` | XL | `ONE-009`、`ONE-014` | 接入 OTel trace、Prometheus metrics 与日志关联 | 低基数/脱敏、传播、drop/flush/self-diagnostics、重复 generation 注册测试通过 | 待确认 |
+| `ONE-016` | XL | `ONE-003`、`ONE-005` | 建立三 driver versioned SQL、migration Adapter 与独立 CLI | fresh/incremental/idempotent/lock/dirty/version contract 通过；Todo owner migration 可执行 | 待确认 |
+| `ONE-017` | L | `ONE-016` | 删除 startup AutoMigrate/Schema authority，建立 schema readiness | service 不改 schema；too-old/too-new/dirty fail closed；旧接口/依赖/测试无残留 | 待确认 |
+| `ONE-018` | L | `ONE-002`、`ONE-014`、`ONE-017` | 可重复 build、build info、distroless nonroot image 与 runtime smoke | linux/amd64 image digest pin、read-only/mount/probe/SIGTERM/无 shell 验收通过 | 待确认 |
+| `ONE-019` | XL | `ONE-011`、`ONE-013`、`ONE-015`、`ONE-017`、`ONE-018` | 建立 generation、quality、security、DB、container CI | pinned Actions；所有 gate fail closed；无 continue-on-error/环境绕过 | 待确认 |
+| `ONE-020` | L | `ONE-018`、`ONE-019` | GoReleaser、Syft、Cosign、checksum 与 local RC 验证 | Windows/Linux artifact、SPDX SBOM、bundle/signature 与 build/source digest 对应 | 待确认 |
+| `ONE-021` | M | `ONE-020` | 完成 copy-owned 指南、identity manifest、migration/rollback/security Runbook | 干净环境可按文档执行；不依赖本机路径、未跟踪文件或隐式 secret | 待确认 |
+| `ONE-022` | L | `ONE-021` | 创建“保留 Todo”隔离副本并全门禁验收 | identity 迁移、三 DB、两平台/容器/API/security/release smoke 通过 | 待确认 |
+| `ONE-023` | XL | `ONE-021` | 创建“移除 Todo”隔离副本并全门禁验收 | Todo 代码/路由/spec/config/migration/docs/dependency 无残留，模板仍完整通过 | 待确认 |
+| `ONE-024` | XL | `ONE-022`、`ONE-023` | 执行双平台、容器和完整失败矩阵总验收 | `ACC-REQ-001..006` 全有真实证据；未执行项不标通过 | 待确认 |
+| `ONE-025` | L | `ONE-024` | 同步唯一权威文档、清理旧轨、汇总 Commit 与发布结论 | 三标签一致；024 无残留 diff；local RC 或明确授权后的 remote release 可验证 | 待确认 |
+
+## 3. 检查点与提交边界
+
+| 检查点 | 任务 | 推荐 Conventional Commit | 必须通过后才能继续 |
+| --- | --- | --- | --- |
+| C1 | `ONE-001..003` | `build: align production toolchain` | tidy/build/governance/dependency audit |
+| C2 | `ONE-004..007` | `feat(runtime): switch immutable application generations` | generation/listener/reload/race/failure tests |
+| C3 | `ONE-008..011` | `feat(api): establish strict OpenAPI transport` | generated clean diff、contract、oasdiff、protocol/edge tests |
+| C4 | `ONE-012..013` | `feat(security): enforce actor authorization` | JWT/JWKS、policy、Todo ownership/audit、migration compatibility |
+| C5 | `ONE-014..015` | `feat(ops): add management observability` | probes/diagnostics/trace/metrics/exporter failure/race |
+| C6 | `ONE-016..017` | `feat(database): adopt versioned migrations` | three-driver migration + schema readiness |
+| C7 | `ONE-018..021` | `build(release): add verifiable delivery pipeline` | container/CI/local RC/checksum/SBOM/signature/docs |
+| C8 | `ONE-022..025` | `docs(release): close production template acceptance` | two copies/two platforms/full failure matrix/authority/diff |
+
+推荐 message 只表达 scope；实际提交前由 Conventional Commit 门禁根据真实 diff 校准。不得 squash 掉会妨碍回滚和证据定位的施工检查点，也不得把用户范围外文件带入。
+
+## 4. 精确验证清单
+
+### 4.1 每个检查点
+
+```powershell
+gofmt -l .
+go mod tidy -diff
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./cmd/app
+git diff --check
+```
+
+在 Linux 原生环境执行同义命令；`go test -race` 受平台支持限制时必须在 linux/amd64 CI 真实执行，不能删除该 gate。
+
+### 4.2 生成、API 与安全
+
+```powershell
+go generate ./...
+git diff --exit-code
+govulncheck ./...
+gosec ./...
+go test ./... -run 'Contract|Protocol|Problem|JWT|JWKS|Authorization|Audit'
+```
+
+另执行固定版本 OpenAPI lint、`oasdiff breaking`、secret/artifact scan 与 bounded fuzz；命令最终落入仓库验证脚本/CI，不能依赖 Agent 临时记忆。
+
+### 4.3 数据、容器与发布
+
+- SQLite/PostgreSQL/MySQL：fresh up、incremental、重复 up、lock timeout、dirty、too-old/too-new、Todo expand/backfill/contract；
+- container：nonroot、read-only、显式 writable mount、business/management probe、reload、SIGTERM、无凭据、image scan；
+- release：GoReleaser snapshot/RC、archive smoke、checksum、SPDX SBOM、Cosign bundle/signature verify、build info/source Commit；
+- copy：保留 Todo 与移除 Todo 两个隔离目录分别运行 Windows/Linux/DB/container/API/security/release gate。
+
+### 4.4 文档与提交
+
+- 检查 `docs/**/research/**/metadata.yaml` 必需字段、status/snapshot/refresh/supersedes；
+- 检查 Markdown 相对链接，排除 fenced code 与 inline code；
+- 搜索旧 Route、AutoMigrate、restart-only、旧标签、旧配置键、旧依赖与绝对路径；
+- `git diff --check`、完整 diff、staged diff、staged file list 和 post-commit status；
+- 只在所有 024 验收完成后将状态改为完成。
+
+## 5. 逐轮证据
+
+| 轮次 | 日期 | 完成任务 | 证据 | Commit | 剩余风险 |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 2026-08-15 | `RES-001..003`、024 requirements/design/tasks | HEAD `e251b73518a457ec97c529d067ddfffe77be203a`；代码/配置/CI/平台审计；官方主源；ADR-003 | 本次文档提交 | 非文档 `ONE-001..025` 待确认；本机无 Docker/可运行 WSL；远端发布未授权 |
+
+后续每个检查点必须补充命令、平台、退出码、artifact/digest、Commit 与未通过项。只有最终总验收可以把任务状态改为完成。
+
+## 6. 后续确认格式
+
+如果接受当前计划，可在后续消息中明确：
+
+> 确认 024 当前计划，连续实施 `ONE-001..025`、本地与 CI 验证和检查点提交；允许使用临时本地容器与测试数据库。是否允许 push、tag、GitHub Release、GHCR 和外部 attestation 在本消息中单独写明。
+
+若不授权外部发布，施工终点是验证通过的 local `v1.0.0-rc.1` release candidate 和 clean 024 worktree；不会声称远端已发布。
+
+## 7. 停止条件
+
+- 用户尚未在本计划报告之后确认；
+- 命中 ADR-003 重新确认触发器；
+- 发现 023/用户修改无法可靠隔离；
+- 必需 Linux/container/DB/release 验收环境不可获得；
+- 任何安全、migration、artifact 或签名 gate 失败。
+
+停止时保留已通过检查点和完整错误证据，不绕过 gate，不把未通过项改写为风险后宣布竣工。

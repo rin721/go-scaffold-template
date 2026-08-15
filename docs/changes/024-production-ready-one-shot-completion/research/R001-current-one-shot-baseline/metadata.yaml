@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前一次性竣工基线"
+question: "022 Foundation 闭环后，当前代码、CI、文档与并行 reload 草案还缺哪些事实才能一次连续施工到 Production HTTP API-ready 与 Copy-ready？"
+research_type: current-project
+topics: ["production readiness", "one-shot completion", "application generation", "API contract", "management", "delivery"]
+keywords: ["Foundation-closed", "module.Route", "StatusError", "ProcessDiagnostics", "AutoMigrate", "GitHub Actions", "023"]
+languages: ["Go", "PowerShell", "YAML"]
+frameworks: ["net/http", "chi", "GORM"]
+technologies: ["Kernel", "Supervisor", "GitHub Actions", "OpenAPI"]
+applicable_scenarios: ["024 竣工范围", "一次性实施依赖排序", "023 authority 协调"]
+non_applicable_scenarios: ["证明 024 已实施", "授权外部发布", "替生产业务选择云与身份提供方"]
+status: active
+summary: "Foundation 已在当前同步 HTTP/CLI profile 闭环，但 API 仍由手写 Route 与 ad-hoc JSON error 驱动，Health/Diagnostics 无 management transport，Todo 启动时迁移，CI 无 contract/security/release 门禁，本机也没有 Docker 或可运行 WSL。并行未跟踪 023 草案暴露完整应用代际需求；一次性竣工必须先吸收该运行时迁移，再沿 API、安全、管理、数据、交付和复制验收单轨推进。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "git-status", "workflow", "local-environment"]
+  primary_sources:
+    - title: "当前代码与文档"
+      locator: "cmd/app; internal/composition; internal/module; internal/kernel; pkg/httpx; pkg/health; docs/changes/022-http-api-template-readiness"
+      snapshot: "HEAD e251b73518a457ec97c529d067ddfffe77be203a, verified 2026-08-15"
+    - title: "当前 CI"
+      locator: ".github/workflows/database.yml"
+      snapshot: "SQLite test/race/vet/tidy/build plus PostgreSQL/MySQL database contracts, verified 2026-08-15"
+    - title: "并行 023 草案"
+      locator: "untracked docs/changes/023-full-configuration-seamless-reload in current worktree"
+      snapshot: "read-only inspected and excluded from 024 diff, 2026-08-15"
+    - title: "当前本机环境"
+      locator: "go version; docker command probe; wsl.exe --status; gh --version"
+      snapshot: "Go 1.25.7 windows/amd64; Docker absent; no runnable WSL distro; gh 2.93.0, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["023 committed or removed", "API/auth/management/migration implementation", "CI or local container environment changes", "first release published"]
+relations:
+  extends: ["022-R001", "022-R008", "020-R003"]
+  related: ["untracked-023-R001", "untracked-023-R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

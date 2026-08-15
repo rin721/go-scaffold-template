@@ -25,5 +25,6 @@
 - [020 复制型脚手架产品形态](020-scaffold-product-form/README.md)：已完成 copy-owned 单轨决策、两个独立副本的身份迁移、Todo 保留/移除和 Windows 门禁；Linux、正式复制指南与 release 能力仍待独立实施。
 - [021 仓库身份迁移](021-repository-identity-migration/README.md)：已将 canonical remote、Go module/import、运行品牌与当前使用文档统一为 `go-scaffold-template`；另一个 `go-scaffold` 仓库未进入范围。
 - [022 HTTP API 脚手架成熟就绪度](022-http-api-template-readiness/README.md)：`Foundation-closed(current synchronous HTTP/CLI profile)` 已通过；API 契约、安全、管理、遥测、交付、portability 和 release 仍待后续独立计划。
+- [024 生产就绪模板一次性竣工](024-production-ready-one-shot-completion/README.md)：研究和单轨施工计划已完成，状态待确认；后续一次确认可连续实施，外部发布副作用仍须明确授权。
 
-下一个任务序号为 `023`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `025`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
