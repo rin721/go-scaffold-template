@@ -2,10 +2,13 @@ package config
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/fsnotify/fsnotify"
 )
 
 func TestWatchFilesDebouncesChanges(t *testing.T) {
@@ -161,3 +164,32 @@ func TestWatchFilesFailsWhenParentDirectoryCannotBeRegistered(t *testing.T) {
 		t.Fatal("WatchFiles(missing parent) error = nil")
 	}
 }
+
+func TestWatchFilesPreservesAddAndCloseErrors(t *testing.T) {
+	addErr := errors.New("add failed")
+	closeErr := errors.New("close failed")
+	backend := &fakeWatchBackend{
+		events:   make(chan fsnotify.Event),
+		errors:   make(chan error),
+		addErr:   addErr,
+		closeErr: closeErr,
+	}
+	err := watchFiles(t.Context(), []string{filepath.Join(t.TempDir(), "config.yaml")}, time.Millisecond, WatchCallbacks{
+		OnReady: func() {}, OnChange: func() {},
+	}, func() (watchBackend, error) { return backend, nil })
+	if !errors.Is(err, addErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("watchFiles() error = %v, want add and close errors", err)
+	}
+}
+
+type fakeWatchBackend struct {
+	events   chan fsnotify.Event
+	errors   chan error
+	addErr   error
+	closeErr error
+}
+
+func (b *fakeWatchBackend) Add(string) error              { return b.addErr }
+func (b *fakeWatchBackend) Events() <-chan fsnotify.Event { return b.events }
+func (b *fakeWatchBackend) Errors() <-chan error          { return b.errors }
+func (b *fakeWatchBackend) Close() error                  { return b.closeErr }

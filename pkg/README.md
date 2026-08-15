@@ -16,7 +16,7 @@
 | 能力 | 当前底层技术 | 项目边界 |
 | --- | --- | --- |
 | `logger` | `go.uber.org/zap` | 业务依赖窄 Logger；构造方通过 Resource 独占 Sync/Close 和文件 sink；提供 noop/test logger 和审计字段。 |
-| `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；Server 由单一 owner 预绑定、阻塞 Serve、有界 Shutdown/Close/Wait；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。 |
+| `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；Server 由单一 owner 预绑定、阻塞 Serve，并显式拆分 graceful Stop 与有损 ForceStop；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。 |
 | `i18n` | `go-i18n/v2` + `x/text/language` + `yaml.v3` | 构造翻译器并加载本地化资源；Kernel 组合输出身份稳定、内部可换代的 Translator facade。 |
 | `database` | `gorm`、SQLite、PostgreSQL、MySQL | 提供项目自有 Schema、Repository、事务、迁移与资源契约，不暴露 GORM 类型。 |
 | `cache` | `go-cache`、`go-redis/v9`、`msgpack` | 构造调用方拥有的泛型缓存客户端；Kernel 可治理 disabled/Redis 后端与连接生命周期。 |
@@ -24,12 +24,11 @@
 | `storage` | 本地文件系统、AWS SDK v2 S3 兼容对象存储、文件辅助库 | 构造对象存储和本地文件工具；Kernel 只治理对象存储 Manager，公开接口不泄漏第三方类型或共享资源关闭权。 |
 | `validation` | `go-playground/validator/v10` | 构造结构体验证器，输出项目自有字段错误。 |
 | `fault` | 标准库 `errors` | 封装错误码、分类、可重试、取消/超时、关闭错误聚合和脱敏输出。 |
-| `supervisor` | `context`、`os/signal`、`errgroup` | 监督进程级 Participant 和长期 runner，等待运行确认，统一处理信号、异常完成、失败取消与有界反向停止。 |
+| `supervisor` | `context`、`os/signal`、`errgroup` | 监督进程级 Participant 和长期 runner，共享总 shutdown budget，并分类记录 graceful、forced、pending Participant 与 pending Task。 |
 | `health` | 标准库 | 构造健康检查 registry，提供超时、快照、liveness/readiness/startup 分类和 degraded 状态。 |
 | `idgen` | `google/uuid` | 构造 ID generator，提供请求和资源 ID。 |
 | `clock` | 标准库 `time` | 构造系统时钟或固定时钟，封装时间格式边界。 |
 | `secrets` | 标准库 `crypto/rand`、`crypto/hmac`、`crypto/pbkdf2` | 封装敏感值、脱敏、随机 token、HMAC、KDF 和 secret source。 |
-| `resource` | 标准库 `io`、`errors`、`sync` | 构造资源注册表，管理所有权、共享资源标记、反向释放顺序和关闭错误聚合。 |
 | `resilience` | 标准库 | 提供 retry、timeout 和 circuit breaker 策略执行器。 |
 | `concurrency` | `x/sync` + 标准库 | 提供 errgroup 包装、singleflight、固定 worker pool 和 context 感知任务执行。 |
 | `codec` | `encoding/json`、`yaml.v3`、`msgpack` | 构造 JSON/YAML/msgpack 编解码器，提供内容类型、大小限制和统一错误语义。 |

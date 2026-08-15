@@ -45,6 +45,8 @@ type kernelState uint8
 const (
 	kernelCreated kernelState = iota
 	kernelRunning
+	kernelDraining
+	kernelFailed
 	kernelStopped
 )
 
@@ -316,12 +318,13 @@ func (k *Kernel) Stop(ctx context.Context) error {
 	defer k.operationMu.Unlock()
 
 	k.mu.Lock()
-	if k.state == kernelStopped {
+	state := k.state
+	if state == kernelStopped {
 		k.mu.Unlock()
 		return nil
 	}
 	components := append([]app.RuntimeComponent(nil), k.components...)
-	if k.state == kernelCreated {
+	if state == kernelCreated {
 		k.state = kernelStopped
 		k.mu.Unlock()
 		for _, component := range components {
@@ -329,45 +332,74 @@ func (k *Kernel) Stop(ctx context.Context) error {
 		}
 		return nil
 	}
+	if state == kernelRunning {
+		k.state = kernelDraining
+	}
 	k.mu.Unlock()
 
-	drained, drainErr := terminalDrainReverse(ctx, components)
-	for _, component := range drained {
-		component.PrepareStop()
+	if state != kernelFailed {
+		drainErr := terminalDrainReverse(ctx, components)
+		if drainErr != nil {
+			return &DrainIncompleteError{Err: drainErr}
+		}
+		for index := len(components) - 1; index >= 0; index-- {
+			components[index].PrepareStop()
+		}
 	}
-	k.mu.Lock()
-	k.state = kernelStopped
-	k.mu.Unlock()
 	var joined error
-	for _, component := range drained {
-		joined = errors.Join(joined, component.StopCurrent(ctx))
-	}
-	if joined == nil {
-		k.options.Logging.Info("kernel stopped")
-	}
-	return errors.Join(drainErr, joined)
-}
-
-func terminalDrainReverse(ctx context.Context, components []app.RuntimeComponent) ([]app.RuntimeComponent, error) {
-	drained := make([]app.RuntimeComponent, 0, len(components))
-	var joined error
-drainLoop:
 	for index := len(components) - 1; index >= 0; index-- {
 		component := components[index]
-		ready, err := component.BeginDrain()
+		joined = errors.Join(joined,
+			component.DiscardCandidate(ctx),
+			component.StopPrevious(ctx),
+			component.StopCurrent(ctx),
+		)
+	}
+	k.mu.Lock()
+	if joined != nil {
+		k.state = kernelFailed
+	} else {
+		k.state = kernelStopped
+	}
+	k.mu.Unlock()
+	if joined != nil {
+		return joined
+	}
+	k.options.Logging.Info("kernel stopped")
+	return nil
+}
+
+func terminalDrainReverse(ctx context.Context, components []app.RuntimeComponent) error {
+	var joined error
+	for index := len(components) - 1; index >= 0; index-- {
+		component := components[index]
+		ready, err := component.BeginTerminalDrain()
 		if err != nil {
 			joined = errors.Join(joined, fmt.Errorf("drain component %s: %w", component.ID(), err))
-			break
+			continue
 		}
 		select {
 		case <-ctx.Done():
-			joined = errors.Join(joined, fmt.Errorf("wait component %s terminal drain: %w", component.ID(), ctx.Err()))
-			break drainLoop
+			return errors.Join(joined, fmt.Errorf("wait component %s terminal drain: %w", component.ID(), ctx.Err()))
 		case <-ready:
-			drained = append(drained, component)
 		}
 	}
-	return drained, joined
+	return joined
+}
+
+// Finalizations 返回所有仍由 Kernel 持有的终结责任安全快照。
+func (k *Kernel) Finalizations() []app.FinalizationSnapshot {
+	if k == nil {
+		return nil
+	}
+	k.mu.Lock()
+	components := append([]app.RuntimeComponent(nil), k.components...)
+	k.mu.Unlock()
+	var snapshots []app.FinalizationSnapshot
+	for _, component := range components {
+		snapshots = append(snapshots, component.Finalizations()...)
+	}
+	return snapshots
 }
 
 func discardCandidatesAfterFailure(parent context.Context, timeout time.Duration, components []app.RuntimeComponent) error {

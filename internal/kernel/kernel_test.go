@@ -118,7 +118,7 @@ func (a *testAssembly) add(t *testing.T, name string, policy app.ReloadPolicy, l
 			log.add("start:" + name + ":" + instance.version)
 			return nil
 		}),
-		app.WithStop(func(_ context.Context, instance *testInstance) error {
+		app.WithTerminalFinalizer(func(_ context.Context, instance *testInstance) error {
 			log.add("stop:" + name + ":" + instance.version)
 			if stop != nil {
 				return stop(instance)
@@ -339,14 +339,44 @@ func TestReloadCleanupErrorKeepsCommittedCandidate(t *testing.T) {
 	}
 	assertAccessVersion(t, access, "v2")
 	diagnostics := assembly.coordinator.Diagnostics()
-	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.RestartRequired || diagnostics.Generation != 2 {
+	if diagnostics.State != LifecycleDegraded || diagnostics.Ready || !diagnostics.RestartRequired || diagnostics.Generation != 2 || !diagnostics.CleanupRequired {
 		t.Fatalf("Diagnostics() = %#v, want degraded generation 2", diagnostics)
+	}
+	if len(diagnostics.Finalizations) != 1 || diagnostics.Finalizations[0].Phase != app.FinalizationPhaseRetired || diagnostics.Finalizations[0].Attempts != 1 {
+		t.Fatalf("Finalizations = %#v, want one retired terminal attempt", diagnostics.Finalizations)
 	}
 	source.set(versionValues("service", "v3"))
 	if _, err := assembly.coordinator.Reload(t.Context()); err == nil {
 		t.Fatal("Reload() after committed cleanup failure error = nil")
 	}
 	assertAccessVersion(t, access, "v2")
+}
+
+func TestTerminalFinalizerFailureIsCachedAndNeverReportedStopped(t *testing.T) {
+	closeErr := errors.New("terminal close failed")
+	source := &mutableSource{values: versionValues("service", "v1")}
+	assembly := newTestAssembly(t, source, Options{})
+	log := &eventLog{}
+	assembly.add(t, "service", app.KernelInstanceSwap, log, nil, func(*testInstance) error { return closeErr })
+	assembly.install(t)
+	if err := assembly.coordinator.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := assembly.coordinator.Stop(t.Context()); !errors.Is(err, closeErr) {
+			t.Fatalf("Stop(%d) error = %v", attempt, err)
+		}
+	}
+	if got := log.snapshot(); len(got) != 3 || got[2] != "stop:service:v1" {
+		t.Fatalf("events = %#v, want one terminal close attempt", got)
+	}
+	diagnostics := assembly.coordinator.Diagnostics()
+	if diagnostics.State != LifecycleFailed || !diagnostics.CleanupRequired || len(diagnostics.Finalizations) != 1 {
+		t.Fatalf("Diagnostics() = %#v", diagnostics)
+	}
+	if diagnostics.Finalizations[0].State != app.FinalizationTerminalFailed || diagnostics.Finalizations[0].Attempts != 1 {
+		t.Fatalf("Finalizations = %#v", diagnostics.Finalizations)
+	}
 }
 
 func TestReloadAndStopCloseEachGenerationOnce(t *testing.T) {
@@ -402,9 +432,7 @@ func TestTerminalDrainTimeoutDoesNotResumeOrForceCloseActiveLease(t *testing.T) 
 	if err := assembly.coordinator.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Stop() error = %v, want terminal drain deadline", err)
 	}
-	blockedCtx, blockedCancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
-	defer blockedCancel()
-	if err := access.Use(blockedCtx, func(*testInstance) error { return nil }); !errors.Is(err, context.DeadlineExceeded) {
+	if err := access.Use(t.Context(), func(*testInstance) error { return nil }); !errors.Is(err, app.ErrStopped) {
 		t.Fatalf("Use() after terminal drain error = %v, want not resumed", err)
 	}
 	if got := log.snapshot(); containsEvent(got, "stop:service:v1") {
@@ -413,6 +441,12 @@ func TestTerminalDrainTimeoutDoesNotResumeOrForceCloseActiveLease(t *testing.T) 
 	close(release)
 	if err := <-useDone; err != nil {
 		t.Fatalf("active Use() error = %v", err)
+	}
+	if err := assembly.coordinator.Stop(t.Context()); err != nil {
+		t.Fatalf("second Stop() error = %v", err)
+	}
+	if got := log.snapshot(); !containsEvent(got, "stop:service:v1") {
+		t.Fatalf("second Stop() did not finalize released instance: %#v", got)
 	}
 }
 

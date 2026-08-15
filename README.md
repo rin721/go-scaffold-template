@@ -17,7 +17,7 @@
 
 - `logger`、`httpx`、`i18n`、`database`、`cache`、`cli`、`storage`
 - `validation`、`fault`、`supervisor`、`health`
-- `idgen`、`clock`、`secrets`、`resource`
+- `idgen`、`clock`、`secrets`
 - `resilience`、`concurrency`、`codec`、`testkit`
 
 ## 包入口

@@ -15,14 +15,15 @@ import (
 type LifecycleState string
 
 const (
-	LifecycleNew       LifecycleState = "new"
-	LifecycleStarting  LifecycleState = "starting"
-	LifecycleRunning   LifecycleState = "running"
-	LifecycleReloading LifecycleState = "reloading"
-	LifecycleDraining  LifecycleState = "draining"
-	LifecycleDegraded  LifecycleState = "degraded"
-	LifecycleFailed    LifecycleState = "failed"
-	LifecycleStopped   LifecycleState = "stopped"
+	LifecycleNew            LifecycleState = "new"
+	LifecycleStarting       LifecycleState = "starting"
+	LifecycleRunning        LifecycleState = "running"
+	LifecycleReloading      LifecycleState = "reloading"
+	LifecycleDraining       LifecycleState = "draining"
+	LifecycleCleanupPending LifecycleState = "cleanup-pending"
+	LifecycleDegraded       LifecycleState = "degraded"
+	LifecycleFailed         LifecycleState = "failed"
+	LifecycleStopped        LifecycleState = "stopped"
 )
 
 // Diagnostics 是配置候选、代际和不可回滚清理状态的安全快照。
@@ -34,6 +35,8 @@ type Diagnostics struct {
 	Provenance      []string
 	LastFailureType string
 	RestartRequired bool
+	CleanupRequired bool
+	Finalizations   []app.FinalizationSnapshot
 	Since           time.Time
 }
 
@@ -142,6 +145,13 @@ func (c *Coordinator) Start(ctx context.Context) error {
 	}
 	if err != nil {
 		c.update(LifecycleFailed, false, err, false, config.Snapshot{}, false)
+		finalizations := c.runtime.Finalizations()
+		if len(finalizations) > 0 {
+			c.mu.Lock()
+			c.diagnostics.CleanupRequired = true
+			c.diagnostics.Finalizations = finalizations
+			c.mu.Unlock()
+		}
 		return err
 	}
 	c.update(LifecycleRunning, true, nil, true, snapshot, false)
@@ -209,10 +219,23 @@ func (c *Coordinator) Reload(ctx context.Context) (ReloadResult, error) {
 		switch {
 		case errors.As(err, &committed):
 			c.update(LifecycleDegraded, false, err, result.Applied, snapshot, true)
+			c.mu.Lock()
+			c.diagnostics.CleanupRequired = true
+			c.diagnostics.Finalizations = c.runtime.Finalizations()
+			c.mu.Unlock()
 		case errors.Is(err, app.ErrRestartRequired):
 			c.update(LifecycleRunning, true, err, false, config.Snapshot{}, true)
 		default:
-			c.update(LifecycleRunning, true, err, false, config.Snapshot{}, false)
+			finalizations := c.runtime.Finalizations()
+			if len(finalizations) == 0 {
+				c.update(LifecycleRunning, true, err, false, config.Snapshot{}, false)
+			} else {
+				c.update(LifecycleDegraded, false, err, false, config.Snapshot{}, true)
+				c.mu.Lock()
+				c.diagnostics.CleanupRequired = true
+				c.diagnostics.Finalizations = finalizations
+				c.mu.Unlock()
+			}
 		}
 		return result, err
 	}
@@ -233,10 +256,23 @@ func (c *Coordinator) Stop(ctx context.Context) error {
 	c.update(LifecycleDraining, false, nil, false, config.Snapshot{}, false)
 	err := c.runtime.Stop(ctx)
 	if err != nil {
-		c.update(LifecycleFailed, false, err, false, config.Snapshot{}, false)
+		var pending *DrainIncompleteError
+		if errors.As(err, &pending) {
+			c.update(LifecycleCleanupPending, false, err, false, config.Snapshot{}, false)
+		} else {
+			c.update(LifecycleFailed, false, err, false, config.Snapshot{}, false)
+		}
+		c.mu.Lock()
+		c.diagnostics.CleanupRequired = true
+		c.diagnostics.Finalizations = c.runtime.Finalizations()
+		c.mu.Unlock()
 		return err
 	}
 	c.update(LifecycleStopped, false, nil, false, config.Snapshot{}, false)
+	c.mu.Lock()
+	c.diagnostics.CleanupRequired = false
+	c.diagnostics.Finalizations = nil
+	c.mu.Unlock()
 	return nil
 }
 
@@ -249,6 +285,7 @@ func (c *Coordinator) Diagnostics() Diagnostics {
 	defer c.mu.Unlock()
 	result := c.diagnostics
 	result.Provenance = append([]string(nil), result.Provenance...)
+	result.Finalizations = append([]app.FinalizationSnapshot(nil), result.Finalizations...)
 	return result
 }
 

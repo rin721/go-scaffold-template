@@ -86,7 +86,6 @@ func Definition() (app.Definition[Access], error) {
 		app.Leased(newAccess),
 		app.KernelInstanceSwap,
 		app.WithReady(ready),
-		app.WithStop(stop),
 	)
 }
 
@@ -179,13 +178,6 @@ func ready(ctx context.Context, manager *pkgstorage.StorageManager) error {
 		}
 	}
 	return joined
-}
-
-func stop(_ context.Context, manager *pkgstorage.StorageManager) error {
-	if manager == nil {
-		return pkgstorage.ErrClientUnavailable
-	}
-	return manager.Close()
 }
 
 func decode(snapshot config.Snapshot) (Config, error) {

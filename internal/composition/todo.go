@@ -78,7 +78,10 @@ func (a *Application) executeTodo(ctx context.Context, operation func(service.Us
 	participants := make([]supervisor.Participant, 0, len(prepared.module.Contribution.Participants)+1)
 	participants = append(participants, prepared.coordinator)
 	participants = append(participants, prepared.module.Contribution.Participants...)
-	owner := supervisor.New(supervisor.Config{}, participants...)
+	owner, err := supervisor.New(supervisor.Config{}, participants...)
+	if err != nil {
+		return fmt.Errorf("create todo operation supervisor: %w", err)
+	}
 	if err := owner.RunOperation(ctx, func(context.Context) error {
 		return operation(prepared.module.Service)
 	}); err != nil {

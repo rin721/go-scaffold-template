@@ -92,7 +92,7 @@ func Definition() (app.Definition[Access], error) {
 		app.Leased(newAccess),
 		app.RestartRequired,
 		app.WithReady(ready),
-		app.WithStop(stop),
+		app.WithTerminalFinalizer(stop),
 	)
 }
 

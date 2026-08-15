@@ -110,7 +110,7 @@ func TestBuildAndReadyLocalManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build() error = %v", err)
 	}
-	t.Cleanup(func() { _ = stop(context.Background(), manager) })
+	t.Cleanup(func() { _ = manager.Close() })
 	if err := ready(t.Context(), manager); err != nil {
 		t.Fatalf("ready() error = %v", err)
 	}

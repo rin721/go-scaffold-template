@@ -11,7 +11,7 @@ import (
 func TestSupervisorStartsAndStopsParticipantsInOrder(t *testing.T) {
 	var events []string
 	ctx, cancel := context.WithCancel(t.Context())
-	supervisor := New(Config{},
+	supervisor := newTestSupervisor(t, Config{},
 		&recordParticipant{name: "database", events: &events},
 		&recordParticipant{name: "server", events: &events},
 	)
@@ -34,7 +34,7 @@ func TestSupervisorStopsStartedParticipantsAfterStartFailure(t *testing.T) {
 	startErr := errors.New("server start failed")
 	stopErr := errors.New("database stop failed")
 	var events []string
-	supervisor := New(Config{},
+	supervisor := newTestSupervisor(t, Config{},
 		&recordParticipant{name: "database", events: &events, stopErr: stopErr},
 		&recordParticipant{name: "server", events: &events, startErr: startErr},
 	)
@@ -54,7 +54,7 @@ func TestSupervisorTaskFailureCancelsSiblingAndStopsParticipants(t *testing.T) {
 	siblingStarted := make(chan struct{})
 	siblingCanceled := make(chan struct{})
 	participant := &recordParticipant{name: "database"}
-	supervisor := New(Config{}, participant)
+	supervisor := newTestSupervisor(t, Config{}, participant)
 	if err := supervisor.AddTask("sibling", func(ctx context.Context) error {
 		close(siblingStarted)
 		<-ctx.Done()
@@ -85,7 +85,7 @@ func TestSupervisorTaskFailureCancelsSiblingAndStopsParticipants(t *testing.T) {
 }
 
 func TestSupervisorTreatsEarlyNilCompletionAsFailure(t *testing.T) {
-	process := New(Config{})
+	process := newTestSupervisor(t, Config{})
 	if err := process.AddTask("server", func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("AddTask() error = %v", err)
 	}
@@ -103,7 +103,7 @@ func TestSupervisorBoundsUncooperativeRunnerAndReportsOwner(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
-	process := New(Config{ShutdownTimeout: 20 * time.Millisecond})
+	process := newTestSupervisor(t, Config{ShutdownTimeout: 20 * time.Millisecond, ForceTimeout: 5 * time.Millisecond})
 	if err := process.AddTask("stuck", func(context.Context) error {
 		close(started)
 		<-release
@@ -120,7 +120,7 @@ func TestSupervisorBoundsUncooperativeRunnerAndReportsOwner(t *testing.T) {
 		t.Fatalf("Run() error = %v, want shutdown deadline", err)
 	}
 	snapshot := process.Snapshot()
-	if snapshot.State != StateFailed || !reflect.DeepEqual(snapshot.PendingUnits, []string{"stuck"}) {
+	if snapshot.State != StateFailed || !reflect.DeepEqual(snapshot.PendingTasks, []string{"stuck"}) {
 		t.Fatalf("Snapshot() = %#v, want failed stuck owner", snapshot)
 	}
 	close(release)
@@ -129,7 +129,7 @@ func TestSupervisorBoundsUncooperativeRunnerAndReportsOwner(t *testing.T) {
 func TestSupervisorWaitsForRunnerReadyAcknowledgement(t *testing.T) {
 	ready := make(chan struct{})
 	ctx, cancel := context.WithCancel(t.Context())
-	process := New(Config{})
+	process := newTestSupervisor(t, Config{})
 	if err := process.AddRunner(Task{
 		Name:  "server",
 		Ready: ready,
@@ -164,7 +164,7 @@ func TestSupervisorWithoutTasksWaitsForCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	started := make(chan struct{})
 	participant := &recordParticipant{name: "database", onStart: func() { close(started) }}
-	supervisor := New(Config{}, participant)
+	supervisor := newTestSupervisor(t, Config{}, participant)
 	done := make(chan error, 1)
 	go func() { done <- supervisor.Run(ctx) }()
 
@@ -187,7 +187,7 @@ func TestSupervisorWithoutTasksWaitsForCancellation(t *testing.T) {
 
 func TestSupervisorRunOperationStartsExecutesAndStopsInOrder(t *testing.T) {
 	var events []string
-	process := New(Config{},
+	process := newTestSupervisor(t, Config{},
 		&recordParticipant{name: "database", events: &events},
 		&recordParticipant{name: "schema", events: &events},
 	)
@@ -210,7 +210,7 @@ func TestSupervisorRunOperationStartsExecutesAndStopsInOrder(t *testing.T) {
 func TestSupervisorRunOperationJoinsOperationAndStopErrors(t *testing.T) {
 	operationErr := errors.New("operation failed")
 	stopErr := errors.New("stop failed")
-	process := New(Config{}, &recordParticipant{name: "database", stopErr: stopErr})
+	process := newTestSupervisor(t, Config{}, &recordParticipant{name: "database", stopErr: stopErr})
 	err := process.RunOperation(t.Context(), func(context.Context) error { return operationErr })
 	if !errors.Is(err, operationErr) || !errors.Is(err, stopErr) {
 		t.Fatalf("RunOperation() error = %v, want operation and stop errors", err)
@@ -223,7 +223,7 @@ func TestSupervisorRunOperationJoinsOperationAndStopErrors(t *testing.T) {
 func TestSupervisorRunOperationStopsStartedParticipantsAfterStartFailure(t *testing.T) {
 	startErr := errors.New("schema start failed")
 	var events []string
-	process := New(Config{},
+	process := newTestSupervisor(t, Config{},
 		&recordParticipant{name: "database", events: &events},
 		&recordParticipant{name: "schema", events: &events, startErr: startErr},
 	)
@@ -241,20 +241,20 @@ func TestSupervisorRunOperationStopsStartedParticipantsAfterStartFailure(t *test
 }
 
 func TestSupervisorRunOperationRejectsInvalidUse(t *testing.T) {
-	if err := New(Config{}).RunOperation(nil, func(context.Context) error { return nil }); err == nil {
+	if err := newTestSupervisor(t, Config{}).RunOperation(nil, func(context.Context) error { return nil }); err == nil {
 		t.Fatal("RunOperation(nil context) error = nil")
 	}
-	if err := New(Config{}).RunOperation(t.Context(), nil); err == nil {
+	if err := newTestSupervisor(t, Config{}).RunOperation(t.Context(), nil); err == nil {
 		t.Fatal("RunOperation(nil operation) error = nil")
 	}
-	withTask := New(Config{})
+	withTask := newTestSupervisor(t, Config{})
 	if err := withTask.AddTask("runner", func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("AddTask() error = %v", err)
 	}
 	if err := withTask.RunOperation(t.Context(), func(context.Context) error { return nil }); err == nil {
 		t.Fatal("RunOperation(with task) error = nil")
 	}
-	process := New(Config{})
+	process := newTestSupervisor(t, Config{})
 	if err := process.RunOperation(t.Context(), func(context.Context) error { return nil }); err != nil {
 		t.Fatalf("first RunOperation() error = %v", err)
 	}
@@ -265,7 +265,7 @@ func TestSupervisorRunOperationRejectsInvalidUse(t *testing.T) {
 
 func TestSupervisorRunOperationBoundsStop(t *testing.T) {
 	release := make(chan struct{})
-	process := New(Config{ShutdownTimeout: 20 * time.Millisecond}, blockingStopParticipant{release: release})
+	process := newTestSupervisor(t, Config{ShutdownTimeout: 20 * time.Millisecond, ForceTimeout: 5 * time.Millisecond}, blockingStopParticipant{release: release})
 	err := process.RunOperation(t.Context(), func(context.Context) error { return nil })
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("RunOperation() error = %v, want shutdown deadline", err)
@@ -277,7 +277,7 @@ func TestSupervisorJoinsParticipantStopErrors(t *testing.T) {
 	firstErr := errors.New("first stop failed")
 	secondErr := errors.New("second stop failed")
 	ctx, cancel := context.WithCancel(t.Context())
-	supervisor := New(Config{ShutdownTimeout: time.Second},
+	supervisor := newTestSupervisor(t, Config{ShutdownTimeout: time.Second, ForceTimeout: 100 * time.Millisecond},
 		&recordParticipant{name: "first", stopErr: firstErr},
 		&recordParticipant{name: "second", stopErr: secondErr},
 	)
@@ -297,7 +297,7 @@ func TestSupervisorJoinsParticipantStopErrors(t *testing.T) {
 func TestSupervisorPreservesTaskErrorJoinedWithIntentionalCancellation(t *testing.T) {
 	taskErr := errors.New("task cleanup failed")
 	ctx, cancel := context.WithCancel(t.Context())
-	process := New(Config{})
+	process := newTestSupervisor(t, Config{})
 	if err := process.AddTask("consumer", func(ctx context.Context) error {
 		cancel()
 		<-ctx.Done()
@@ -314,7 +314,7 @@ func TestSupervisorPreservesTaskErrorJoinedWithIntentionalCancellation(t *testin
 
 func TestSupervisorKeepsFailedDiagnosticsAfterRuntimeError(t *testing.T) {
 	runtimeFailure := errors.New("runtime failure")
-	s := New(Config{}, &recordParticipant{name: "application"})
+	s := newTestSupervisor(t, Config{}, &recordParticipant{name: "application"})
 	if err := s.AddTask("runner", func(context.Context) error { return runtimeFailure }); err != nil {
 		t.Fatalf("add task: %v", err)
 	}
@@ -330,7 +330,7 @@ func TestSupervisorKeepsFailedDiagnosticsAfterRuntimeError(t *testing.T) {
 }
 
 func TestSupervisorRejectsNilContextAndSecondRun(t *testing.T) {
-	supervisor := New(Config{})
+	supervisor := newTestSupervisor(t, Config{})
 	if err := supervisor.Run(nil); err == nil {
 		t.Fatal("Run(nil) error = nil")
 	}
@@ -349,11 +349,42 @@ func TestSupervisorRejectsNilContextAndSecondRun(t *testing.T) {
 
 func TestSupervisorUsesDefaultShutdownTimeoutForNonPositiveValues(t *testing.T) {
 	for _, timeout := range []time.Duration{0, -time.Second} {
-		process := New(Config{ShutdownTimeout: timeout})
-		if process.timeout != defaultShutdownTimeout {
-			t.Fatalf("timeout = %s, want %s", process.timeout, defaultShutdownTimeout)
+		process := newTestSupervisor(t, Config{ShutdownTimeout: timeout})
+		if process.shutdownTimeout != defaultShutdownTimeout {
+			t.Fatalf("timeout = %s, want %s", process.shutdownTimeout, defaultShutdownTimeout)
 		}
 	}
+}
+
+func TestSupervisorRejectsForceBudgetWithoutGracefulWindow(t *testing.T) {
+	if _, err := New(Config{ShutdownTimeout: time.Second, ForceTimeout: time.Second}); err == nil {
+		t.Fatal("New() error = nil")
+	}
+}
+
+func TestSupervisorRecordsExplicitForceStop(t *testing.T) {
+	participant := &forceParticipant{name: "http"}
+	process := newTestSupervisor(t, Config{ShutdownTimeout: 80 * time.Millisecond, ForceTimeout: 40 * time.Millisecond}, participant)
+	err := process.RunOperation(t.Context(), func(context.Context) error { return nil })
+	if err == nil {
+		t.Fatal("RunOperation() error = nil, want forced result")
+	}
+	snapshot := process.Snapshot()
+	if !reflect.DeepEqual(snapshot.ForcedParticipants, []string{"http"}) || len(snapshot.PendingParticipants) != 0 {
+		t.Fatalf("Snapshot() = %#v", snapshot)
+	}
+	if participant.forceCalls != 1 {
+		t.Fatalf("ForceStop() calls = %d, want 1", participant.forceCalls)
+	}
+}
+
+func newTestSupervisor(t *testing.T, cfg Config, participants ...Participant) *Supervisor {
+	t.Helper()
+	process, err := New(cfg, participants...)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	return process
 }
 
 type recordParticipant struct {
@@ -367,6 +398,19 @@ type recordParticipant struct {
 }
 
 type blockingStopParticipant struct{ release <-chan struct{} }
+
+type forceParticipant struct {
+	name       string
+	forceCalls int
+}
+
+func (p *forceParticipant) Name() string                 { return p.name }
+func (*forceParticipant) Start(context.Context) error    { return nil }
+func (*forceParticipant) Stop(ctx context.Context) error { <-ctx.Done(); return ctx.Err() }
+func (p *forceParticipant) ForceStop(context.Context) error {
+	p.forceCalls++
+	return nil
+}
 
 func (blockingStopParticipant) Name() string                { return "blocking" }
 func (blockingStopParticipant) Start(context.Context) error { return nil }

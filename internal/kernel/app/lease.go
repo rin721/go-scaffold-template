@@ -18,12 +18,13 @@ const (
 type lease[I any] struct {
 	mu sync.Mutex
 
-	state      leaseState
-	instance   I
-	activeUses int
-	transition chan struct{}
-	drained    chan struct{}
-	drainDone  bool
+	state         leaseState
+	current       *instanceSlot[I]
+	activeUses    int
+	transition    chan struct{}
+	drained       chan struct{}
+	drainDone     bool
+	terminalDrain bool
 }
 
 func newLease[I any]() *lease[I] {
@@ -52,11 +53,23 @@ func (l *lease[I]) acquire(ctx context.Context) (I, func(), error) {
 		switch l.state {
 		case leaseServing:
 			l.activeUses++
-			instance := l.instance
+			instance := l.current.instance
 			l.mu.Unlock()
 			var once sync.Once
 			return instance, func() { once.Do(l.release) }, nil
-		case leasePending, leaseDraining:
+		case leasePending:
+			transition := l.transition
+			l.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return zero, nil, ctx.Err()
+			case <-transition:
+			}
+		case leaseDraining:
+			if l.terminalDrain {
+				l.mu.Unlock()
+				return zero, nil, ErrStopped
+			}
 			transition := l.transition
 			l.mu.Unlock()
 			select {
@@ -87,52 +100,70 @@ func (l *lease[I]) release() {
 	}
 }
 
-func (l *lease[I]) publishInitial(instance I) {
+func (l *lease[I]) publishInitial(slot *instanceSlot[I]) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.state != leasePending {
+	if l.state != leasePending || slot == nil {
 		panic("component lease initial publish from invalid state")
 	}
-	l.instance = instance
+	l.current = slot
 	l.state = leaseServing
 	close(l.transition)
 }
 
-func (l *lease[I]) beginDrain() (<-chan struct{}, error) {
+func (l *lease[I]) beginOrContinueDrain(terminal bool) (<-chan struct{}, error) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.state != leaseServing {
+	switch l.state {
+	case leaseServing:
+		l.state = leaseDraining
+		l.terminalDrain = terminal
+		l.transition = make(chan struct{})
+		l.drained = make(chan struct{})
+		l.drainDone = false
+		if l.current != nil {
+			l.current.state = FinalizationWaitingForDrain
+		}
+		if l.activeUses == 0 {
+			close(l.drained)
+			l.drainDone = true
+		}
+		return l.drained, nil
+	case leaseDraining:
+		if terminal {
+			l.terminalDrain = true
+		}
+		return l.drained, nil
+	case leaseStopped:
+		closed := make(chan struct{})
+		close(closed)
+		return closed, nil
+	default:
 		return nil, fmt.Errorf("component lease cannot drain from state %d", l.state)
 	}
-	l.state = leaseDraining
-	l.transition = make(chan struct{})
-	l.drained = make(chan struct{})
-	l.drainDone = false
-	if l.activeUses == 0 {
-		close(l.drained)
-		l.drainDone = true
-	}
-	return l.drained, nil
 }
 
-func (l *lease[I]) replaceWhileDraining(instance I) I {
+func (l *lease[I]) replaceWhileDraining(slot *instanceSlot[I]) *instanceSlot[I] {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.state != leaseDraining || !l.drainDone {
-		panic("component lease replace before drain completed")
+	if l.state != leaseDraining || !l.drainDone || slot == nil || l.terminalDrain {
+		panic("component lease replace before reload drain completed")
 	}
-	previous := l.instance
-	l.instance = instance
+	previous := l.current
+	l.current = slot
 	return previous
 }
 
 func (l *lease[I]) resume() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.state != leaseDraining {
+	if l.state != leaseDraining || l.terminalDrain {
 		panic("component lease resume from invalid state")
 	}
 	l.state = leaseServing
+	if l.current != nil {
+		l.current.state = FinalizationPending
+	}
 	close(l.transition)
 	l.drained = nil
 	l.drainDone = false
@@ -148,15 +179,15 @@ func (l *lease[I]) stopPending() {
 	close(l.transition)
 }
 
-func (l *lease[I]) takeWhileDraining() I {
+func (l *lease[I]) takeWhileDraining() *instanceSlot[I] {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.state != leaseDraining || !l.drainDone {
-		panic("component lease stop before drain completed")
+		panic("component lease stop before terminal drain completed")
 	}
-	previous := l.instance
-	var zero I
-	l.instance = zero
+	l.terminalDrain = true
+	previous := l.current
+	l.current = nil
 	l.state = leaseStopped
 	close(l.transition)
 	l.drained = nil

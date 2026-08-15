@@ -41,7 +41,7 @@ func Replacement() (app.ReplacementDefinition[kernellogging.Target], error) {
 		build,
 		activate,
 		deactivate,
-		app.WithStop(stop),
+		app.WithTerminalFinalizer(stop),
 	)
 }
 

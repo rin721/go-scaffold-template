@@ -2,7 +2,7 @@
 
 ## 1. 研究问题与口径
 
-本报告回答：完成 copy-owned 产品形态和 repository identity 迁移后，当前项目是否已经达到“复制后即可作为成熟 Go Server HTTP API 后端起点”的程度。
+本报告回答：完成 copy-owned 产品形态和 repository identity 迁移后，当前项目是否已经达到“复制后即可作为成熟 Go Server HTTP API 后端起点”的程度。其整体 HTTP 结论保持有效；底层生命周期由后续 [R002](../R002-foundation-closure-audit/report.md) 深入审计并修正原先过于乐观的 Foundation 判断。
 
 成熟度按可验证保证判定，不按包数量判定：一个能力只有同时拥有唯一 owner、稳定契约、配置和安全默认、失败与生命周期语义、诊断及验收证据，才算模板基线已经提供。存在工具函数、README 意向或单元测试，不等于 production composition 已获得该保证。
 
@@ -10,7 +10,7 @@
 
 ## 2. 快照、方法与验证
 
-- 代码快照：`main@fa349ab95a66ab641304dd9bfb31993d65cc04a6`。
+- 当前文档 HEAD：`main@b868893`；本报告原动态验证对应的生产源码快照为 `fa349ab95a66ab641304dd9bfb31993d65cc04a6`，两者之间只增加 022 文档。
 - 环境：Go 1.25.7、Windows/amd64、CGO enabled。
 - 路径：`README -> cmd/app -> internal/composition -> internal/module -> pkg/httpx -> Kernel/Host -> migration -> CI/release assets`。
 - 搜索：OpenAPI/Swagger、Problem Details、Principal/authn/authz、management probes、metrics/trace、pprof、容器、部署、release、SBOM 和 vulnerability gate。
@@ -35,8 +35,8 @@
 
 | 平面 | 当前事实 | 判定 | 阻塞成熟标签的原因 |
 | --- | --- | --- | --- |
-| 进程与资源 | Coordinator、Kernel、Supervisor、HTTP listener ready、反向 Stop、degraded/restart-required 已实现 | 通过 | 无；这是应保留的底座 |
-| 模块边界 | Contribution 验证 module/route/participant 唯一性，Todo 有 HTTP/CLI/DB 闭环 | 通过 | 只有一个真实业务模块，跨模块政策体验尚未证明 |
+| 进程与资源 | Coordinator、Kernel、Supervisor、HTTP listener ready、反向 Stop、degraded/restart-required 已实现 | **部分通过** | terminal drain timeout 和 cleanup failure 会丢失最终清理责任；详见 R002 |
+| 模块边界 | Contribution 验证 module/route/participant 唯一性，Todo 有 HTTP/CLI/DB 主链 | **部分通过** | 只证明同步 HTTP/CLI/migration profile；Runner/Health/new resource 未证明 |
 | Product/identity | copy-owned ADR、两个隔离副本和 canonical module 已完成 | 部分通过 | Linux、正式复制指南、release/tag/provenance 未完成 |
 | API authority | `module.Route` 只有 Method、Path、Handler、Middlewares | 未通过 | 无 operation ID/schema/security/version/deprecation、OpenAPI 和兼容 diff |
 | 请求/错误协议 | `BindJSON` 与 `{error,message}` 可用，Todo 手工映射业务错误 | 未通过 | 严格 JSON、统一 problem、404/405、validation details 和提交边界未统一 |
@@ -73,19 +73,20 @@
 ## 7. 实现计划影响
 
 1. 020 已关闭产品形态决策，不再研究 generator 或外部 Runtime library。
-2. 第一条关键路径仍是 API authority：先比较 spec-first 与 typed code-first，再单轨建立 Operation/OpenAPI/compatibility。
-3. Windows 行尾可重复性是独立且低耦合的交付缺口，可与 API authority 研究并行，但必须单独计划和确认。
-4. 错误、edge policy、身份政策与 telemetry 都应消费同一个 operation identity；不能先各建一份 metadata。
-5. management 和 versioned migration 可以独立研究，但其 production 实施必须与 deployment/release 验收汇合。
-6. 成熟标签必须由两个独立复制副本、Windows/Linux、可部署产物和失败场景共同验收，不能在当前仓库单测通过后提前宣布。
+2. 第一条关键路径调整为 Foundation lifecycle/diagnostics/config/acceptance；底层闭环前不继续细化新业务模块。
+3. Foundation 通过后，API authority 才进入产品关键路径：比较 spec-first 与 typed code-first，再单轨建立 Operation/OpenAPI/compatibility。
+4. Windows 行尾可重复性是独立且低耦合的交付缺口，可并行研究，但必须单独计划和确认。
+5. 错误、edge policy、身份政策与 telemetry 都应消费同一个 operation identity；不能先各建一份 metadata。
+6. management 和 versioned migration 可以独立研究，但其 production 实施必须与 lifecycle/deployment/release 验收汇合。
+7. 成熟标签必须由两个独立复制副本、Windows/Linux、可部署产物和失败场景共同验收，不能在当前仓库单测通过后提前宣布。
 
 ## 8. 局限与刷新条件
 
 - 本轮没有做容量、渗透、漏洞、容器、Linux、远端服务或真实部署测试。
 - 只有 Todo 一个真实领域，认证 actor、租户和出站 API 仍不存在，不能据此选择具体产品。
 - 当前没有 template release/tag，无法验证消费者从正式版本复制和追踪安全公告的流程。
-- Route、错误、安全、management、migration、delivery 或首个 release 发生变化时必须刷新本报告。
+- Kernel terminal cleanup、Route、错误、安全、management、migration、delivery 或首个 release 发生变化时必须刷新本报告。
 
 ## 9. 研究结论
 
-研究门禁通过。当前项目的进程底座已经明显高于示例仓库，但整体成熟度被 API 产品治理和生产交付的系统性缺口阻塞。结论不是“推倒重来”，而是保留现有 composition/lifecycle 边界，按单一 API authority 驱动协议、安全、管理、观测、迁移与 release 门禁逐层闭环。
+研究门禁通过。当前项目的进程底座明显高于示例仓库，但不能再把正向主链等同于完整 Foundation-ready：R002 已证明终止与清理所有权仍有阻断缺口。结论仍不是“推倒重来”，而是先保留并加固现有 composition/lifecycle 边界，再按单一 API authority 驱动协议、安全、管理、观测、迁移与 release 门禁逐层闭环。

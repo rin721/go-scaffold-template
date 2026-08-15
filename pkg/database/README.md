@@ -24,8 +24,14 @@ if err != nil {
 }
 defer resource.Close()
 
+if err := resource.Ping(ctx); err != nil {
+	return err
+}
+
 client := resource.Client()
 ```
+
+`NewGORM` 只创建并配置连接池，不执行网络探测；Kernel 在 candidate 已转交 owner 后由 Ready 执行唯一 Ping。`Resource.Close` 是一次 terminal attempt，重复调用返回第一次结果，不表示失败步骤可安全重试。
 
 PostgreSQL 与 MySQL 应通过环境变量注入真实 DSN，不把凭据写入配置、源码或日志。
 

@@ -1,0 +1,38 @@
+schema_version: 1
+id: R004
+title: "底层闭环综合结论与业务解锁条件"
+question: "综合当前代码和外部实践，哪些能力已闭环、哪些必须补齐、哪些只需局部优化，以及何时允许进入新业务模块详细设计？"
+research_type: synthesis
+topics: ["closure synthesis", "architecture decision", "business unlock", "implementation sequencing"]
+keywords: ["keep", "fill", "optimize", "redesign", "acceptance gate", "pending cleanup"]
+languages: ["Go"]
+frameworks: ["net/http"]
+technologies: ["Kernel", "Supervisor", "Host", "module Contribution"]
+applicable_scenarios: ["022 最终判断", "后续任务排序", "业务模块详细设计门禁"]
+non_applicable_scenarios: ["声明计划已实现", "跨过确认门禁修改源码", "替真实业务决定场景能力"]
+status: active
+summary: "建议保留现有显式装配和不可变资源代际，不做框架级重构；先补齐 terminal cleanup、清理债务诊断、EnvSource 冲突和故障验收，再按业务 profile 解锁模块设计。当前底层为 partial closure，业务扩展门未通过。"
+evidence:
+  types: ["synthesis", "current-project", "external-primary", "tradeoff-analysis"]
+  primary_sources:
+    - title: "当前底层闭环审计"
+      locator: "022-R002"
+      snapshot: "verified 2026-08-15"
+    - title: "成熟 Go 项目实践对照"
+      locator: "022-R003"
+      snapshot: "verified 2026-08-15"
+    - title: "HTTP API 成熟度复核"
+      locator: "022-R001; 019-R002"
+      snapshot: "verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: decision-input
+  review_after: "2026-09-15"
+  refresh_triggers: ["P0 foundation closure 已实现", "新增业务 module plan", "引入新资源或后台任务", "DI 或生命周期边界调整"]
+relations:
+  extends: ["022-R001", "022-R002", "022-R003"]
+  related: ["022-R005"]
+  supersedes: []
+  superseded_by: []
+report: report.md

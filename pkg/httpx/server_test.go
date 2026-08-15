@@ -2,6 +2,7 @@ package httpx
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -119,6 +120,59 @@ func TestServerConcurrentStopSharesOneCompletion(t *testing.T) {
 	if err := <-runDone; err != nil {
 		t.Fatalf("run after concurrent stop: %v", err)
 	}
+}
+
+func TestServerGracefulTimeoutRequiresExplicitForce(t *testing.T) {
+	requestStarted := make(chan struct{})
+	handler := http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		close(requestStarted)
+		<-request.Context().Done()
+	})
+	server, err := NewServer(&ServerConfig{Addr: "127.0.0.1:0"}, handler)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	if err := server.Start(t.Context()); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	runDone := make(chan error, 1)
+	go func() { runDone <- server.Run(t.Context()) }()
+	<-server.Running()
+	address, _ := server.Addr()
+	requestDone := make(chan error, 1)
+	go func() {
+		response, requestErr := http.Get("http://" + address.String())
+		if response != nil {
+			_ = response.Body.Close()
+		}
+		requestDone <- requestErr
+	}()
+	<-requestStarted
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancelStop()
+	if err := server.Stop(stopCtx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop() error = %v, want deadline", err)
+	}
+	if server.state != serverStopping {
+		t.Fatalf("state after graceful timeout = %d, want stopping", server.state)
+	}
+	forceCtx, cancelForce := context.WithTimeout(t.Context(), time.Second)
+	defer cancelForce()
+	if err := server.ForceStop(forceCtx); err != nil {
+		t.Fatalf("ForceStop() error = %v", err)
+	}
+	if err := <-runDone; err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	<-requestDone
+	if server.state != serverForced {
+		t.Fatalf("state after ForceStop = %d, want forced", server.state)
+	}
+	rebound, err := net.Listen("tcp", address.String())
+	if err != nil {
+		t.Fatalf("listener cannot be rebound: %v", err)
+	}
+	_ = rebound.Close()
 }
 
 func TestNewServerRejectsInvalidConfig(t *testing.T) {

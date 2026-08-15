@@ -18,9 +18,10 @@ type WatchOptions struct {
 
 // HostOptions 配置 Kernel Host 的进程监督和可选配置监听。
 type HostOptions struct {
-	ShutdownTimeout time.Duration
-	Watch           *WatchOptions
-	Runners         []supervisor.Task
+	ShutdownTimeout      time.Duration
+	ForceShutdownTimeout time.Duration
+	Watch                *WatchOptions
+	Runners              []supervisor.Task
 }
 
 // Host 使用 Supervisor 管理 Kernel、上层参与者和长期任务。
@@ -42,7 +43,13 @@ func NewHost(coordinator *Coordinator, options HostOptions, participants ...supe
 	ordered := make([]supervisor.Participant, 0, len(participants)+1)
 	ordered = append(ordered, coordinator)
 	ordered = append(ordered, participants...)
-	processSupervisor := supervisor.New(supervisor.Config{ShutdownTimeout: options.ShutdownTimeout}, ordered...)
+	processSupervisor, err := supervisor.New(supervisor.Config{
+		ShutdownTimeout: options.ShutdownTimeout,
+		ForceTimeout:    options.ForceShutdownTimeout,
+	}, ordered...)
+	if err != nil {
+		return nil, fmt.Errorf("create process supervisor: %w", err)
+	}
 	for index, runner := range options.Runners {
 		if err := processSupervisor.AddRunner(runner); err != nil {
 			return nil, fmt.Errorf("register host runner %d: %w", index, err)

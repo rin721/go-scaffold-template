@@ -215,4 +215,6 @@ func (g *Gateway) Find(ctx context.Context, id string, out any) error {
 }
 ```
 
-首版不实现熔断、限流、链路追踪、OpenAPI、TLS 证书管理、HTTP/2 特化配置或服务发现。需要这些能力时，应在明确场景后单独扩展，并继续保持业务侧只依赖 `httpx` 的项目契约。
+`Server.Stop(ctx)` 只执行 `http.Server.Shutdown` 并等待 Serve 完成，不会在超时后暗中强关连接。进程 owner 只有在 graceful 失败且预算仍允许时，才通过 `Server.ForceStop(ctx)` 显式调用 `Close`；forced 会作为有损结果上报。当前 Server 不治理 hijacked/WebSocket 连接，出现真实升级协议时必须增加独立 owner。
+
+首版不实现熔断、链路追踪、OpenAPI、TLS 证书管理、HTTP/2 特化配置或服务发现。需要这些能力时，应在明确场景后单独扩展，并继续保持业务侧只依赖 `httpx` 的项目契约。

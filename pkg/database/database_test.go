@@ -411,9 +411,14 @@ func TestConfigAndQueryValidation(t *testing.T) {
 		t.Fatalf("ValidateConfig() error = %v", err)
 	}
 	secret := "postgres://user:top-secret@example.invalid/app"
-	_, err := NewGORM(context.Background(), &Config{Driver: DriverPostgres, DSN: secret, PingTimeout: time.Millisecond})
+	resource, err := NewGORM(context.Background(), &Config{Driver: DriverPostgres, DSN: secret, PingTimeout: time.Millisecond})
+	if err != nil {
+		t.Fatalf("NewGORM() should not ping: %v", err)
+	}
+	defer resource.Close()
+	err = resource.Ping(context.Background())
 	if err == nil {
-		t.Fatal("NewGORM() returned nil error")
+		t.Fatal("Ping() returned nil error")
 	}
 	if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "top-secret") {
 		t.Fatalf("error leaks DSN: %v", err)
@@ -451,6 +456,23 @@ func TestConfigAndQueryValidation(t *testing.T) {
 		if _, err := resolveSchema(schema); !errors.Is(err, ErrInvalidSchema) {
 			t.Fatalf("resolveSchema(%+v) error = %v, want ErrInvalidSchema", schema, err)
 		}
+	}
+}
+
+func TestResourceCloseCachesFirstTerminalResult(t *testing.T) {
+	cause := errors.New("close failed")
+	attempts := 0
+	resource := &gormResource{client: &gormClient{}, close: func() error {
+		attempts++
+		return cause
+	}}
+	first := resource.Close()
+	second := resource.Close()
+	if !errors.Is(first, cause) || !errors.Is(second, cause) {
+		t.Fatalf("Close() errors = %v / %v, want cause", first, second)
+	}
+	if attempts != 1 {
+		t.Fatalf("Close() attempts = %d, want 1", attempts)
 	}
 }
 

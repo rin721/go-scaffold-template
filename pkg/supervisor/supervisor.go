@@ -1,4 +1,4 @@
-// Package supervisor 负责进程级参与者、长期任务、信号和优雅退出监督。
+// Package supervisor 负责进程级参与者、长期任务、信号和有界退出监督。
 package supervisor
 
 import (
@@ -12,13 +12,22 @@ import (
 	"time"
 )
 
-const defaultShutdownTimeout = 10 * time.Second
+const (
+	defaultShutdownTimeout = 10 * time.Second
+	defaultForceTimeout    = time.Second
+)
 
 // Participant 表示由 Supervisor 统一启动和停止的参与者。
 type Participant interface {
 	Name() string
 	Start(context.Context) error
 	Stop(context.Context) error
+}
+
+// ForceStopper 表示协议明确支持有损终止的 Participant。
+// 普通 Participant 不会因为 Stop 失败而被推断为支持 force。
+type ForceStopper interface {
+	ForceStop(context.Context) error
 }
 
 // Task 表示一个由 Supervisor 拥有并受 context 控制的长期任务。
@@ -29,9 +38,10 @@ type Task struct {
 	Ready <-chan struct{}
 }
 
-// Config 配置进程监督器的关闭边界。
+// Config 配置进程监督器共享的总关闭预算和 force 预留。
 type Config struct {
 	ShutdownTimeout time.Duration
+	ForceTimeout    time.Duration
 }
 
 type supervisorState uint8
@@ -57,11 +67,13 @@ const (
 
 // Snapshot 是不包含配置和凭据的并发安全运行诊断。
 type Snapshot struct {
-	State        ProcessState
-	Ready        bool
-	Since        time.Time
-	LastError    string
-	PendingUnits []string
+	State               ProcessState
+	Ready               bool
+	Since               time.Time
+	LastError           string
+	PendingParticipants []string
+	PendingTasks        []string
+	ForcedParticipants  []string
 }
 
 // UnexpectedCompletionError 标识长期任务在没有终止意图时提前成功返回。
@@ -73,9 +85,10 @@ func (e *UnexpectedCompletionError) Error() string {
 
 // Supervisor 管理一组进程级参与者和长期任务。
 type Supervisor struct {
-	participants []Participant
-	tasks        []Task
-	timeout      time.Duration
+	participants    []Participant
+	tasks           []Task
+	shutdownTimeout time.Duration
+	forceTimeout    time.Duration
 
 	mu          sync.Mutex
 	state       supervisorState
@@ -84,18 +97,26 @@ type Supervisor struct {
 	readyOnce   sync.Once
 }
 
-// New 创建尚未运行的 Supervisor。
-func New(cfg Config, participants ...Participant) *Supervisor {
-	timeout := cfg.ShutdownTimeout
-	if timeout <= 0 {
-		timeout = defaultShutdownTimeout
+// New 创建尚未运行的 Supervisor，并拒绝无法保留 graceful 阶段的预算。
+func New(cfg Config, participants ...Participant) (*Supervisor, error) {
+	shutdownTimeout := cfg.ShutdownTimeout
+	if shutdownTimeout <= 0 {
+		shutdownTimeout = defaultShutdownTimeout
+	}
+	forceTimeout := cfg.ForceTimeout
+	if forceTimeout <= 0 {
+		forceTimeout = defaultForceTimeout
+	}
+	if forceTimeout >= shutdownTimeout {
+		return nil, fmt.Errorf("supervisor force timeout must be less than shutdown timeout")
 	}
 	return &Supervisor{
-		participants: append([]Participant(nil), participants...),
-		timeout:      timeout,
-		diagnostics:  Snapshot{State: StateNew, Since: time.Now()},
-		ready:        make(chan struct{}),
-	}
+		participants:    append([]Participant(nil), participants...),
+		shutdownTimeout: shutdownTimeout,
+		forceTimeout:    forceTimeout,
+		diagnostics:     Snapshot{State: StateNew, Since: time.Now()},
+		ready:           make(chan struct{}),
+	}, nil
 }
 
 // AddTask 注册长期任务。必须在 Run 前完成注册。
@@ -105,22 +126,23 @@ func (s *Supervisor) AddTask(name string, run func(context.Context) error) error
 
 // AddRunner 注册带可选运行确认的长期任务。必须在 Run 前完成注册。
 func (s *Supervisor) AddRunner(task Task) error {
-	name := task.Name
-	run := task.Run
-	if run == nil {
-		return fmt.Errorf("supervisor task %q run function is nil", name)
+	if s == nil {
+		return fmt.Errorf("supervisor is nil")
+	}
+	if task.Run == nil {
+		return fmt.Errorf("supervisor task %q run function is nil", task.Name)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.state != supervisorCreated {
 		return fmt.Errorf("supervisor already run")
 	}
-	if name == "" {
+	if task.Name == "" {
 		return fmt.Errorf("supervisor task name is required")
 	}
-	for _, task := range s.tasks {
-		if task.Name == name {
-			return fmt.Errorf("supervisor task %q is duplicated", name)
+	for _, existing := range s.tasks {
+		if existing.Name == task.Name {
+			return fmt.Errorf("supervisor task %q is duplicated", task.Name)
 		}
 	}
 	s.tasks = append(s.tasks, task)
@@ -128,48 +150,21 @@ func (s *Supervisor) AddRunner(task Task) error {
 }
 
 // Run 完整执行参与者启动、任务等待和反向停止。
-//
-// Run 只能调用一次。传入 context 被主动取消时视为正常退出；参与者、任务和
-// 停止阶段的其他错误会保留原始错误链并向上返回。
 func (s *Supervisor) Run(ctx context.Context) error {
 	if ctx == nil {
 		return fmt.Errorf("supervisor context is nil")
 	}
-
-	if err := validateParticipants(s.participants); err != nil {
+	participants, tasks, err := s.beginRun(true)
+	if err != nil {
 		return err
 	}
-	if err := validateTaskOwnership(s.participants, s.tasks); err != nil {
-		return err
-	}
-	s.mu.Lock()
-	if s.state != supervisorCreated {
-		s.mu.Unlock()
-		return fmt.Errorf("supervisor already run")
-	}
-	s.state = supervisorRunning
-	s.setDiagnosticsLocked(StateStarting, false, nil, nil)
-	participants := append([]Participant(nil), s.participants...)
-	tasks := append([]Task(nil), s.tasks...)
-	s.mu.Unlock()
-
 	started := make([]Participant, 0, len(participants))
 	for _, participant := range participants {
-		if participant == nil {
-			continue
-		}
 		if err := participant.Start(ctx); err != nil {
 			wrapped := fmt.Errorf("start participant %s: %w", participant.Name(), err)
-			s.setDiagnostics(StateDraining, false, wrapped, nil)
-			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
-			stopErr := s.stopStarted(shutdownCtx, started)
-			cancel()
-			finalErr := errors.Join(normalizeCancellation(ctx, wrapped), stopErr)
-			if finalErr != nil {
-				s.setDiagnostics(StateFailed, false, finalErr, nil)
-			}
-			s.finish()
-			return finalErr
+			s.setDiagnostics(StateDraining, false, wrapped, nil, nil, nil)
+			stopErr := s.shutdown(started, nil, nil, nil)
+			return s.complete(errors.Join(normalizeCancellation(ctx, wrapped), stopErr))
 		}
 		started = append(started, participant)
 	}
@@ -181,28 +176,16 @@ func (s *Supervisor) Run(ctx context.Context) error {
 	if readyErr != nil {
 		runErr = readyErr
 	} else {
-		s.setDiagnostics(StateRunning, true, nil, nil)
+		s.setDiagnostics(StateRunning, true, nil, nil, nil, nil)
 		runErr, completed = waitForTermination(ctx, tasks, results, completed)
 	}
-	s.setDiagnostics(StateDraining, false, runErr, nil)
+	s.setDiagnostics(StateDraining, false, runErr, nil, nil, nil)
 	cancelRunners()
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
-	s.setDiagnostics(StateStopping, false, runErr, nil)
-	stopErr := s.stopStarted(shutdownCtx, started)
-	waitErr, pending := waitTasks(shutdownCtx, tasks, results, completed)
-	cancelShutdown()
-	finalErr := errors.Join(normalizeCancellation(ctx, runErr), stopErr, waitErr)
-	if finalErr != nil {
-		s.setDiagnostics(StateFailed, false, finalErr, pending)
-	}
-	s.finish()
-	return finalErr
+	stopErr := s.shutdown(started, tasks, results, completed)
+	return s.complete(errors.Join(normalizeCancellation(ctx, runErr), stopErr))
 }
 
 // RunOperation 正序启动参与者、同步执行一次操作，再在同一总期限内反序停止。
-//
-// one-shot operation 与长期 Task 语义互斥：正常返回表示操作完成，不会被解释为
-// UnexpectedCompletionError。RunOperation 只能调用一次，并完整保留操作与清理错误。
 func (s *Supervisor) RunOperation(ctx context.Context, operation func(context.Context) error) error {
 	if ctx == nil {
 		return fmt.Errorf("supervisor context is nil")
@@ -210,52 +193,46 @@ func (s *Supervisor) RunOperation(ctx context.Context, operation func(context.Co
 	if operation == nil {
 		return fmt.Errorf("supervisor operation is nil")
 	}
-	if err := validateParticipants(s.participants); err != nil {
+	participants, _, err := s.beginRun(false)
+	if err != nil {
 		return err
 	}
-	s.mu.Lock()
-	if len(s.tasks) != 0 {
-		s.mu.Unlock()
-		return fmt.Errorf("supervisor operation does not accept long-running tasks")
-	}
-	if s.state != supervisorCreated {
-		s.mu.Unlock()
-		return fmt.Errorf("supervisor already run")
-	}
-	s.state = supervisorRunning
-	s.setDiagnosticsLocked(StateStarting, false, nil, nil)
-	participants := append([]Participant(nil), s.participants...)
-	s.mu.Unlock()
-
 	started := make([]Participant, 0, len(participants))
 	for _, participant := range participants {
 		if err := participant.Start(ctx); err != nil {
 			wrapped := fmt.Errorf("start participant %s: %w", participant.Name(), err)
-			s.setDiagnostics(StateDraining, false, wrapped, nil)
-			shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
-			stopErr := s.stopStarted(shutdownCtx, started)
-			cancel()
-			finalErr := errors.Join(wrapped, stopErr)
-			s.setDiagnostics(StateFailed, false, finalErr, nil)
-			s.finish()
-			return finalErr
+			s.setDiagnostics(StateDraining, false, wrapped, nil, nil, nil)
+			return s.complete(errors.Join(wrapped, s.shutdown(started, nil, nil, nil)))
 		}
 		started = append(started, participant)
 	}
-
-	s.setDiagnostics(StateRunning, true, nil, nil)
+	s.setDiagnostics(StateRunning, true, nil, nil, nil, nil)
 	operationErr := operation(ctx)
-	s.setDiagnostics(StateDraining, false, operationErr, nil)
-	shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.timeout)
-	s.setDiagnostics(StateStopping, false, operationErr, nil)
-	stopErr := s.stopStarted(shutdownCtx, started)
-	cancel()
-	finalErr := errors.Join(operationErr, stopErr)
-	if finalErr != nil {
-		s.setDiagnostics(StateFailed, false, finalErr, nil)
+	s.setDiagnostics(StateDraining, false, operationErr, nil, nil, nil)
+	return s.complete(errors.Join(operationErr, s.shutdown(started, nil, nil, nil)))
+}
+
+func (s *Supervisor) beginRun(allowTasks bool) ([]Participant, []Task, error) {
+	if s == nil {
+		return nil, nil, fmt.Errorf("supervisor is nil")
 	}
-	s.finish()
-	return finalErr
+	if err := validateParticipants(s.participants); err != nil {
+		return nil, nil, err
+	}
+	if err := validateTaskOwnership(s.participants, s.tasks); err != nil {
+		return nil, nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !allowTasks && len(s.tasks) != 0 {
+		return nil, nil, fmt.Errorf("supervisor operation does not accept long-running tasks")
+	}
+	if s.state != supervisorCreated {
+		return nil, nil, fmt.Errorf("supervisor already run")
+	}
+	s.state = supervisorRunning
+	s.setDiagnosticsLocked(StateStarting, false, nil, nil, nil, nil)
+	return append([]Participant(nil), s.participants...), append([]Task(nil), s.tasks...), nil
 }
 
 type taskResult struct {
@@ -319,25 +296,91 @@ func waitForTermination(ctx context.Context, tasks []Task, results <-chan taskRe
 	}
 }
 
-func (s *Supervisor) stopStarted(stopCtx context.Context, participants []Participant) error {
+type participantStop struct {
+	participant Participant
+	result      <-chan error
+}
+
+func (s *Supervisor) shutdown(participants []Participant, tasks []Task, results <-chan taskResult, completed map[string]struct{}) error {
+	s.setDiagnostics(StateStopping, false, nil, nil, nil, nil)
+	startedAt := time.Now()
+	gracefulDeadline := startedAt.Add(s.shutdownTimeout - s.forceTimeout)
+	finalDeadline := startedAt.Add(s.shutdownTimeout)
+	gracefulCtx, cancelGraceful := context.WithDeadline(context.Background(), gracefulDeadline)
+	defer cancelGraceful()
+
 	var joined error
+	pending := make(map[string]participantStop)
+	order := make([]string, 0, len(participants))
 	for index := len(participants) - 1; index >= 0; index-- {
 		participant := participants[index]
 		result := make(chan error, 1)
-		go func() { result <- participant.Stop(stopCtx) }()
+		go func() { result <- participant.Stop(gracefulCtx) }()
 		select {
 		case err := <-result:
 			if err != nil {
 				joined = errors.Join(joined, fmt.Errorf("stop participant %s: %w", participant.Name(), err))
+				pending[participant.Name()] = participantStop{participant: participant, result: result}
+				order = append(order, participant.Name())
 			}
-		case <-stopCtx.Done():
-			joined = errors.Join(joined, fmt.Errorf("stop participant %s: %w", participant.Name(), stopCtx.Err()))
+		case <-gracefulCtx.Done():
+			joined = errors.Join(joined, fmt.Errorf("stop participant %s: %w", participant.Name(), gracefulCtx.Err()))
+			pending[participant.Name()] = participantStop{participant: participant, result: result}
+			order = append(order, participant.Name())
 		}
 	}
+
+	forceCtx, cancelForce := context.WithDeadline(context.Background(), finalDeadline)
+	defer cancelForce()
+	forced := make([]string, 0)
+	for _, name := range order {
+		entry, exists := pending[name]
+		if !exists {
+			continue
+		}
+		force, ok := entry.participant.(ForceStopper)
+		if !ok {
+			continue
+		}
+		result := make(chan error, 1)
+		go func() { result <- force.ForceStop(forceCtx) }()
+		select {
+		case err := <-result:
+			if err != nil {
+				joined = errors.Join(joined, fmt.Errorf("force stop participant %s: %w", name, err))
+				continue
+			}
+			forced = append(forced, name)
+			delete(pending, name)
+			joined = errors.Join(joined, fmt.Errorf("participant %s required force stop", name))
+		case <-forceCtx.Done():
+			joined = errors.Join(joined, fmt.Errorf("force stop participant %s: %w", name, forceCtx.Err()))
+		}
+	}
+
+	for name, entry := range pending {
+		select {
+		case err := <-entry.result:
+			if err == nil {
+				delete(pending, name)
+			}
+		default:
+		}
+	}
+	pendingTasks, waitErr := waitTasksUntil(forceCtx, tasks, results, completed)
+	joined = errors.Join(joined, waitErr)
+	pendingParticipants := orderedPending(order, pending)
+	s.setDiagnostics(StateStopping, false, joined, pendingParticipants, pendingTasks, forced)
 	return joined
 }
 
-func waitTasks(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) (error, []string) {
+func waitTasksUntil(ctx context.Context, tasks []Task, results <-chan taskResult, completed map[string]struct{}) ([]string, error) {
+	if len(tasks) == 0 {
+		return nil, nil
+	}
+	if completed == nil {
+		completed = make(map[string]struct{})
+	}
 	var joined error
 	for len(completed) < len(tasks) {
 		select {
@@ -347,16 +390,31 @@ func waitTasks(ctx context.Context, tasks []Task, results <-chan taskResult, com
 				joined = errors.Join(joined, result.err)
 			}
 		case <-ctx.Done():
-			pending := make([]string, 0, len(tasks)-len(completed))
-			for _, task := range tasks {
-				if _, done := completed[task.Name]; !done {
-					pending = append(pending, task.Name)
-				}
-			}
-			return errors.Join(joined, fmt.Errorf("wait supervisor tasks %v: %w", pending, ctx.Err())), pending
+			pending := pendingTaskNames(tasks, completed)
+			return pending, errors.Join(joined, fmt.Errorf("wait supervisor tasks %v: %w", pending, ctx.Err()))
 		}
 	}
-	return joined, nil
+	return nil, joined
+}
+
+func pendingTaskNames(tasks []Task, completed map[string]struct{}) []string {
+	pending := make([]string, 0, len(tasks)-len(completed))
+	for _, task := range tasks {
+		if _, done := completed[task.Name]; !done {
+			pending = append(pending, task.Name)
+		}
+	}
+	return pending
+}
+
+func orderedPending(order []string, pending map[string]participantStop) []string {
+	result := make([]string, 0, len(pending))
+	for _, name := range order {
+		if _, exists := pending[name]; exists {
+			result = append(result, name)
+		}
+	}
+	return result
 }
 
 func validateParticipants(participants []Participant) error {
@@ -397,13 +455,16 @@ func validateTaskOwnership(participants []Participant, tasks []Task) error {
 	return nil
 }
 
-func (s *Supervisor) finish() {
+func (s *Supervisor) complete(err error) error {
 	s.mu.Lock()
 	s.state = supervisorFinished
-	if s.diagnostics.State != StateFailed {
-		s.setDiagnosticsLocked(StateStopped, false, nil, nil)
+	if err != nil {
+		s.setDiagnosticsLocked(StateFailed, false, err, s.diagnostics.PendingParticipants, s.diagnostics.PendingTasks, s.diagnostics.ForcedParticipants)
+	} else {
+		s.setDiagnosticsLocked(StateStopped, false, nil, nil, nil, nil)
 	}
 	s.mu.Unlock()
+	return err
 }
 
 // Snapshot 返回当前进程监督状态的独立副本。
@@ -414,7 +475,9 @@ func (s *Supervisor) Snapshot() Snapshot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	copy := s.diagnostics
-	copy.PendingUnits = append([]string(nil), copy.PendingUnits...)
+	copy.PendingParticipants = append([]string(nil), copy.PendingParticipants...)
+	copy.PendingTasks = append([]string(nil), copy.PendingTasks...)
+	copy.ForcedParticipants = append([]string(nil), copy.ForcedParticipants...)
 	return copy
 }
 
@@ -428,17 +491,19 @@ func (s *Supervisor) Ready() <-chan struct{} {
 	return s.ready
 }
 
-func (s *Supervisor) setDiagnostics(state ProcessState, ready bool, err error, pending []string) {
+func (s *Supervisor) setDiagnostics(state ProcessState, ready bool, err error, participants, tasks, forced []string) {
 	s.mu.Lock()
-	s.setDiagnosticsLocked(state, ready, err, pending)
+	s.setDiagnosticsLocked(state, ready, err, participants, tasks, forced)
 	s.mu.Unlock()
 }
 
-func (s *Supervisor) setDiagnosticsLocked(state ProcessState, ready bool, err error, pending []string) {
+func (s *Supervisor) setDiagnosticsLocked(state ProcessState, ready bool, err error, participants, tasks, forced []string) {
 	s.diagnostics.State = state
 	s.diagnostics.Ready = ready
 	s.diagnostics.Since = time.Now()
-	s.diagnostics.PendingUnits = append([]string(nil), pending...)
+	s.diagnostics.PendingParticipants = append([]string(nil), participants...)
+	s.diagnostics.PendingTasks = append([]string(nil), tasks...)
+	s.diagnostics.ForcedParticipants = append([]string(nil), forced...)
 	if err != nil {
 		s.diagnostics.LastError = fmt.Sprintf("%T", err)
 	}

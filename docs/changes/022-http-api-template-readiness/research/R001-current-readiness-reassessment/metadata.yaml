@@ -11,13 +11,13 @@ technologies: ["Kernel", "Supervisor", "GORM", "GitHub Actions"]
 applicable_scenarios: ["022 成熟度判断", "后续 HTTP API 实施排序", "模板 release gate"]
 non_applicable_scenarios: ["证明缺失能力已实现", "授权源码实施", "替业务选择认证或部署产品"]
 status: active
-summary: "产品形态和仓库 identity 已收口，但协议、安全、管理、遥测、生产迁移和交付门禁仍未闭环；当前只能称为高级基础模板，不能称为成熟生产级 HTTP API 脚手架。"
+summary: "产品形态和 identity 已收口，但 R002 进一步证明 terminal cleanup 仍未闭环；协议、安全、管理、遥测、生产迁移和交付门禁也仍缺失，当前不能称为成熟生产级 HTTP API 脚手架。"
 evidence:
   types: ["source-code", "tests", "current-documentation", "repository-layout", "local-validation", "reused-reference"]
   primary_sources:
     - title: "当前入口、路由、HTTP、健康、迁移与交付资产"
       locator: "cmd/app; internal/composition; internal/module; internal/kernel; pkg/httpx; pkg/health; .github/workflows; repository root"
-      snapshot: "fa349ab95a66ab641304dd9bfb31993d65cc04a6"
+      snapshot: "production source fa349ab95a66ab641304dd9bfb31993d65cc04a6; current documentation HEAD b868893"
     - title: "当前 Windows Go 验证"
       locator: "go test ./...; go test -race ./...; go vet ./...; go build ./...; go mod tidy -diff"
       snapshot: "Go 1.25.7 windows/amd64; verified 2026-08-15"
@@ -32,10 +32,10 @@ verified_at: "2026-08-15"
 validity:
   mode: snapshot
   review_after: "2026-09-15"
-  refresh_triggers: ["Route 或错误协议变化", "新增 OpenAPI authority", "新增认证、管理面或遥测", "迁移或交付机制变化", "发布首个 template release"]
+  refresh_triggers: ["Kernel terminal cleanup 变化", "Route 或错误协议变化", "新增 OpenAPI authority", "新增认证、管理面或遥测", "迁移或交付机制变化", "发布首个 template release"]
 relations:
   extends: ["019-R001", "019-R002", "020-R003", "021-R002"]
-  related: []
+  related: ["022-R002", "022-R003", "022-R004"]
   supersedes: ["019-R001"]
   superseded_by: []
 report: report.md

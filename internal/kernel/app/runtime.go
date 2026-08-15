@@ -18,6 +18,7 @@ type RuntimeComponent interface {
 	PublishInitial()
 	DiscardCandidate(context.Context) error
 	BeginDrain() (<-chan struct{}, error)
+	BeginTerminalDrain() (<-chan struct{}, error)
 	Commit()
 	Resume()
 	Rollback()
@@ -25,6 +26,7 @@ type RuntimeComponent interface {
 	PrepareStop()
 	StopCurrent(context.Context) error
 	StopPending()
+	Finalizations() []FinalizationSnapshot
 }
 
 type managedComponent[C, D, I any] struct {
@@ -38,13 +40,13 @@ type managedComponent[C, D, I any] struct {
 	lifecycle           lifecycle[I]
 	lease               *lease[I]
 
-	currentDigest string
-	pendingDigest string
-	pendingConfig C
-	candidate     I
-	hasCandidate  bool
-	previous      I
-	hasPrevious   bool
+	currentDigest  string
+	pendingDigest  string
+	pendingConfig  C
+	candidate      *instanceSlot[I]
+	retired        *instanceSlot[I]
+	stopping       *instanceSlot[I]
+	nextGeneration uint64
 }
 
 func (c *managedComponent[C, D, I]) ID() ID               { return c.componentID }
@@ -52,6 +54,9 @@ func (c *managedComponent[C, D, I]) Policy() ReloadPolicy { return c.policy }
 func (c *managedComponent[C, D, I]) ConfigPath() string   { return c.configPath }
 
 func (c *managedComponent[C, D, I]) Stage(snapshot config.Snapshot) (bool, error) {
+	if c.retired != nil || c.stopping != nil || c.candidate != nil {
+		return false, fmt.Errorf("component %s has unresolved finalization responsibility", c.ID())
+	}
 	if c.configPath == "" {
 		if c.currentDigest != "" {
 			return false, nil
@@ -81,6 +86,9 @@ func (c *managedComponent[C, D, I]) Stage(snapshot config.Snapshot) (bool, error
 }
 
 func (c *managedComponent[C, D, I]) Build(ctx context.Context) error {
+	if c.candidate != nil {
+		return fmt.Errorf("component %s candidate already exists", c.ID())
+	}
 	dependencies, err := c.resolveDependencies()
 	if err != nil {
 		return fmt.Errorf("resolve component %s dependencies: %w", c.ID(), err)
@@ -92,64 +100,87 @@ func (c *managedComponent[C, D, I]) Build(ctx context.Context) error {
 	if isNil(instance) {
 		return fmt.Errorf("build component %s returned a nil instance", c.ID())
 	}
-	c.candidate = instance
-	c.hasCandidate = true
+	c.nextGeneration++
+	c.candidate = &instanceSlot[I]{
+		generation: c.nextGeneration,
+		instance:   instance,
+		phase:      FinalizationPhaseCandidate,
+		state:      FinalizationPending,
+	}
 	return nil
 }
 
 func (c *managedComponent[C, D, I]) Start(ctx context.Context) error {
+	if c.candidate == nil {
+		return fmt.Errorf("component %s candidate is missing", c.ID())
+	}
 	if c.lifecycle.start == nil {
 		return nil
 	}
-	if err := c.lifecycle.start(ctx, c.candidate); err != nil {
+	if err := c.lifecycle.start(ctx, c.candidate.instance); err != nil {
 		return fmt.Errorf("start component %s: %w", c.ID(), err)
 	}
 	return nil
 }
 
 func (c *managedComponent[C, D, I]) Ready(ctx context.Context) error {
+	if c.candidate == nil {
+		return fmt.Errorf("component %s candidate is missing", c.ID())
+	}
 	if c.lifecycle.ready == nil {
 		return nil
 	}
-	if err := c.lifecycle.ready(ctx, c.candidate); err != nil {
+	if err := c.lifecycle.ready(ctx, c.candidate.instance); err != nil {
 		return fmt.Errorf("ready component %s: %w", c.ID(), err)
 	}
 	return nil
 }
 
 func (c *managedComponent[C, D, I]) PublishInitial() {
+	if c.candidate == nil {
+		panic("component initial publish without candidate")
+	}
+	c.candidate.phase = FinalizationPhaseCurrent
 	c.lease.publishInitial(c.candidate)
 	if c.lifecycle.activate != nil {
-		c.lifecycle.activate(c.candidate)
+		c.lifecycle.activate(c.candidate.instance)
 	}
 	c.currentDigest = c.pendingDigest
-	c.clearCandidate()
+	c.candidate = nil
 }
 
 func (c *managedComponent[C, D, I]) DiscardCandidate(ctx context.Context) error {
-	if !c.hasCandidate {
+	if c.candidate == nil {
 		return nil
 	}
-	err := c.stop(ctx, c.candidate)
-	c.clearCandidate()
-	if err != nil {
-		return fmt.Errorf("stop candidate component %s: %w", c.ID(), err)
+	if err := finalizeSlot(ctx, c.candidate, c.lifecycle.terminalFinalizer); err != nil {
+		return fmt.Errorf("finalize candidate component %s: %w", c.ID(), err)
 	}
+	c.candidate = nil
 	return nil
 }
 
 func (c *managedComponent[C, D, I]) BeginDrain() (<-chan struct{}, error) {
-	return c.lease.beginDrain()
+	return c.lease.beginOrContinueDrain(false)
+}
+
+func (c *managedComponent[C, D, I]) BeginTerminalDrain() (<-chan struct{}, error) {
+	return c.lease.beginOrContinueDrain(true)
 }
 
 func (c *managedComponent[C, D, I]) Commit() {
-	c.previous = c.lease.replaceWhileDraining(c.candidate)
-	c.hasPrevious = true
+	if c.candidate == nil || c.retired != nil {
+		panic("component commit has unresolved ownership")
+	}
+	c.retired = c.lease.replaceWhileDraining(c.candidate)
+	c.retired.phase = FinalizationPhaseRetired
+	c.retired.state = FinalizationPending
+	c.candidate.phase = FinalizationPhaseCurrent
 	if c.lifecycle.activate != nil {
-		c.lifecycle.activate(c.candidate)
+		c.lifecycle.activate(c.candidate.instance)
 	}
 	c.currentDigest = c.pendingDigest
-	c.clearCandidate()
+	c.candidate = nil
 }
 
 func (c *managedComponent[C, D, I]) Resume() { c.lease.resume() }
@@ -162,42 +193,50 @@ func (c *managedComponent[C, D, I]) Rollback() {
 }
 
 func (c *managedComponent[C, D, I]) StopPrevious(ctx context.Context) error {
-	if !c.hasPrevious {
+	if c.retired == nil {
 		return nil
 	}
-	err := c.stop(ctx, c.previous)
-	var zero I
-	c.previous = zero
-	c.hasPrevious = false
-	if err != nil {
-		return fmt.Errorf("stop previous component %s: %w", c.ID(), err)
+	if err := finalizeSlot(ctx, c.retired, c.lifecycle.terminalFinalizer); err != nil {
+		return fmt.Errorf("finalize retired component %s: %w", c.ID(), err)
 	}
+	c.retired = nil
 	return nil
 }
 
 func (c *managedComponent[C, D, I]) PrepareStop() {
-	c.previous = c.lease.takeWhileDraining()
-	c.hasPrevious = true
+	if c.stopping != nil {
+		return
+	}
+	c.stopping = c.lease.takeWhileDraining()
+	if c.stopping != nil {
+		c.stopping.phase = FinalizationPhaseCurrent
+		c.stopping.state = FinalizationPending
+	}
 }
 
 func (c *managedComponent[C, D, I]) StopCurrent(ctx context.Context) error {
-	if c.lifecycle.deactivate != nil {
-		c.lifecycle.deactivate(c.previous)
+	if c.stopping == nil {
+		return nil
 	}
-	return c.StopPrevious(ctx)
+	if !c.stopping.deactivated && c.lifecycle.deactivate != nil {
+		c.lifecycle.deactivate(c.stopping.instance)
+		c.stopping.deactivated = true
+	}
+	if err := finalizeSlot(ctx, c.stopping, c.lifecycle.terminalFinalizer); err != nil {
+		return fmt.Errorf("finalize current component %s: %w", c.ID(), err)
+	}
+	c.stopping = nil
+	return nil
 }
 
 func (c *managedComponent[C, D, I]) StopPending() { c.lease.stopPending() }
 
-func (c *managedComponent[C, D, I]) stop(ctx context.Context, instance I) error {
-	if c.lifecycle.stop == nil {
-		return nil
+func (c *managedComponent[C, D, I]) Finalizations() []FinalizationSnapshot {
+	result := make([]FinalizationSnapshot, 0, 3)
+	for _, slot := range []*instanceSlot[I]{c.candidate, c.retired, c.stopping} {
+		if slot != nil {
+			result = append(result, slot.snapshot(c.ID()))
+		}
 	}
-	return c.lifecycle.stop(ctx, instance)
-}
-
-func (c *managedComponent[C, D, I]) clearCandidate() {
-	var zero I
-	c.candidate = zero
-	c.hasCandidate = false
+	return result
 }

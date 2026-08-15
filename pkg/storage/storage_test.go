@@ -181,6 +181,55 @@ func TestConfigValidationAndDisabledWatch(t *testing.T) {
 	}
 }
 
+func TestReadWorkbookSheetPreservesReadAndCloseErrors(t *testing.T) {
+	readErr := errors.New("read failed")
+	closeErr := errors.New("close failed")
+	book := &errorWorkbook{readErr: readErr, closeErr: closeErr}
+	_, err := readWorkbookSheet(book, "Sheet1")
+	if !errors.Is(err, readErr) || !errors.Is(err, closeErr) {
+		t.Fatalf("readWorkbookSheet() error = %v, want read and close errors", err)
+	}
+}
+
+func TestFileServiceCloseCachesJoinedWatcherErrors(t *testing.T) {
+	removeErr := errors.New("remove failed")
+	closeErr := errors.New("watcher close failed")
+	removeCalls := 0
+	closeCalls := 0
+	done := make(chan struct{})
+	close(done)
+	service := &impl{
+		watches: map[string]*watchEntry{
+			"watched": {path: "watched", cancel: func() {}, done: done},
+		},
+		removeWatch: func(string) error {
+			removeCalls++
+			return removeErr
+		},
+		closeWatcher: func() error {
+			closeCalls++
+			return closeErr
+		},
+	}
+	first := service.Close()
+	second := service.Close()
+	if !errors.Is(first, removeErr) || !errors.Is(first, closeErr) || !errors.Is(second, removeErr) || !errors.Is(second, closeErr) {
+		t.Fatalf("Close() errors = %v / %v", first, second)
+	}
+	if removeCalls != 1 || closeCalls != 1 {
+		t.Fatalf("close attempts = remove:%d close:%d", removeCalls, closeCalls)
+	}
+}
+
+type errorWorkbook struct {
+	readErr  error
+	closeErr error
+}
+
+func (*errorWorkbook) SetCellValue(string, string, any) error { return nil }
+func (b *errorWorkbook) Close() error                         { return b.closeErr }
+func (b *errorWorkbook) getRows(string) ([][]string, error)   { return nil, b.readErr }
+
 func TestWatchErrorEventCarriesCause(t *testing.T) {
 	fs, err := New(&Config{Local: LocalConfig{FSType: FSTypeOS, EnableWatch: true}})
 	if err != nil {

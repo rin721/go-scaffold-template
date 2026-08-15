@@ -109,7 +109,7 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 -> Publish Access 或 Activate Replacement
 ```
 
-启动失败时反向排空并关闭已发布节点。Stop 时 Host 先撤销进程 readiness、取消 runner、反向停止上层 Participant，再让 Coordinator 触发 Kernel 的不可回滚终止 drain；终止超时不会恢复旧入口。Replacement 先恢复 target，再关闭自身实例。
+启动失败时反向排空并终结已发布节点。Stop 时 Host 先撤销进程 readiness、取消 runner、反向停止上层 Participant，再让 Coordinator 触发 Kernel 的不可回滚终止 drain；终止超时进入 `cleanup-pending`，不会恢复旧入口，后续 `Stop` 继续等待同一个 drain channel。Replacement 先恢复 target，再终结自身实例。
 
 006 已实现三种策略：
 
@@ -119,7 +119,7 @@ Decode/Validate -> Build -> optional Start -> optional Ready
 | `KernelInstanceSwap` | 候选先 Build/Start/Ready；随后反向 drain 旧租约、提交、恢复入口并反向清理旧代 |
 | `RestartRequired` | 同轮预检发现变化时返回 typed 错误，不构建、排空或应用任何变化组件 |
 
-候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、标记必须重启并阻断后续 Reload。
+候选准备期间旧 Access 继续服务。Decode、Build、Ready、reload 排空或超时失败时，候选被清理且旧入口恢复。每次成功 Build 获得独立 instance generation；candidate、retired、current 的一次性 terminal finalizer 失败后缓存同一错误并保留 owner/reference，不盲目重试。提交后旧实例清理失败返回 `CommittedCleanupError`，表示新代已生效；Coordinator 会进入 `degraded`、撤销 readiness、暴露脱敏 finalization snapshot 并阻断后续 Reload。
 
 `WatchFiles` 先监听配置文件的父目录；目录全部注册后通过 ready 通知触发一次 `Reload` reconciliation，封闭初始 Snapshot 加载与 watcher ready 之间的变化窗口。后续 Write、Create、Rename 和 Remove 事件经过防抖，只向 Coordinator 串行投递变化通知，不在 fsnotify goroutine 中操作组件。单次候选失败由 `OnReloadError` 上报后继续监听；watcher 创建、目录注册或底层事件通道失败会结束长期 Task，由 Supervisor 取消兄弟任务并反向停止上层 Participant 与 Kernel。
 
@@ -138,7 +138,7 @@ Loader 按声明顺序合并 Source，当前应用是 `FileSource -> EnvSource`�
 - 当前默认 Service 已接入 application-owned HTTP lifecycle 与 Todo 应用模块；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
 - Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
-- Database 与 Storage App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 关闭 Redis，泛型 Cache Client 由其构造调用方关闭。
+- Database App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 终结 Redis，泛型 Cache Client 由其构造调用方关闭。当前 StorageManager 属于 `NoFinalization`，公开 `Close` 只保留独立消费者 API。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。
 - 默认应用入口显式选择 Watch；Todo Application CLI 解析成功后才创建 one-shot Kernel/数据库，并且不创建 Host、HTTP listener 或 watcher。
 - HTTP 与 Todo 配置都是 application-owned `RestartRequired` 节；同端口、业务策略变化、文件锁、单消费者等不能在当前进程中静默热切换。

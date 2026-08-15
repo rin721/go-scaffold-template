@@ -9,7 +9,7 @@
 | 能力特征 | 构造入口 | 输出 | 重载 |
 | --- | --- | --- | --- |
 | 代码固定、无资源生命周期 | `app.Value` | 普通项目接口 | 不进入运行节点 |
-| 无运行期配置但需 Start/Stop | `app.ManagedFixed` | 稳定 Lease facade | `NoReload` |
+| 无运行期配置但需 Start/终结 | `app.ManagedFixed` | 稳定 Lease facade | `NoReload` |
 | 配置化且新旧实例可并存 | `app.ManagedConfigured` | 稳定 Lease facade | `KernelInstanceSwap` |
 | 配置变化只能随进程重启 | `app.ManagedConfigured` | 稳定 Lease facade | `RestartRequired` |
 | 明确替换既有稳定 target | `app.ManagedConfiguredReplacement` | 复用 target 输出，不发布第二份输出 | `KernelInstanceSwap` |
@@ -55,14 +55,15 @@ definition, err := app.ManagedConfigured(
 	app.Leased(newAccess),
 	app.KernelInstanceSwap,
 	app.WithReady(ready),
-	app.WithStop(stop),
+	app.WithTerminalFinalizer(finalize),
 )
 ```
 
 - `decodeAndValidate` 只解码并校验，不打开资源。
 - `build` 接收 Context、typed 配置和 typed 依赖，返回 Kernel 私有实例。
 - `newAccess` 把 `app.Lease[I]` 收窄为组件自己的 Access；不得泄漏 `I` 的关闭权。
-- `WithStart/WithReady/WithStop` 全部可选，只声明真实行为。普通 Definition 不允许用隐藏 Activation 接管其他能力；CLI 由独立 Bootstrap composition 拥有，不是组件 contribution。
+- `WithStart`、`WithReady` 与 `WithTerminalFinalizer` 全部可选，只声明真实行为；不拥有终结动作的值不注册空函数。terminal finalizer 在 admission 关闭并排空后每个实例代际至多执行一次，失败会缓存错误并保留 owner/reference，不承诺 retry 或 force。
+- 普通 Definition 不允许用隐藏 Activation 接管其他能力；CLI 由独立 Bootstrap composition 拥有，不是组件 contribution。
 - Builder 返回 typed nil 会失败，实例不会发布。
 
 ## Configured Replacement 示例
@@ -128,9 +129,9 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/idgen`：UUID Generator，Fixed Direct。
 - `app/validation`：Default Validator，Fixed Direct。
 - `app/logger`：配置化 Logger Replacement，没有独立 Access；只通过 typed target 在提交/停止时切换或恢复 baseline Manager。
-- `app/database`：代码固定选择 GORM，配置化选择 SQLite/PostgreSQL/MySQL，Leased Swap，Ready 执行 Ping，Stop 关闭 Kernel 私有 Resource。
+- `app/database`：代码固定选择 GORM，配置化选择 SQLite/PostgreSQL/MySQL，Leased Swap；Build 只创建 pool，Ready 执行唯一 Ping，terminal finalizer 关闭 Kernel 私有 Resource。
 - `app/cache`：配置化选择 disabled/Redis，Leased RestartRequired；Access 不暴露 RemoteStore，Redis 连接由 Kernel 关闭，泛型 Client 由调用方关闭。
 - `app/i18n`：配置化 Translator，Leased Swap；对消费者输出身份稳定的 `pkg/i18n.Translator` facade。
-- `app/storage`：配置化对象存储 Manager，Leased Swap；按 route 借用无 Close Client，文件工具不进入该组件。
+- `app/storage`：配置化对象存储 Manager，Leased Swap；当前 Manager 没有独占 transport/goroutine，因此不声明 finalizer；按 route 借用无 Close Client，文件工具不进入该组件。
 
 当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。

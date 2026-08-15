@@ -32,6 +32,8 @@ if err := fs.WriteFile("hello.txt", []byte("hello"), 0o600); err != nil {
 data, err := fs.ReadFile("hello.txt")
 ```
 
+文件工具由创建它的 consumer 独占生命周期。启用 watch 时，`Close` 会取消并等待内部 goroutine，聚合 Remove 与 watcher Close 错误，并在重复调用时返回第一次 terminal result。`OpenWorkbook`/`CreateWorkbook` 返回的 Workbook 由调用方关闭；`ReadExcelSheet` 会同时保留读取和关闭错误。
+
 ## Excel 和图片
 
 ```go
@@ -80,4 +82,4 @@ err := capabilities.Storage.Use(ctx, storageapp.RoutePrimary, func(client storag
 })
 ```
 
-默认 Driver 为 local，路径是 `.data/storage`。Storage 配置使用 `KernelInstanceSwap`：候选 Manager 构造并通过就绪检查后才切换稳定 Access，失败保留旧实例。S3/MinIO 凭据应通过环境变量提供，不能写入仓库配置。
+默认 Driver 为 local，路径是 `.data/storage`。Storage 配置使用 `KernelInstanceSwap`：候选 Manager 构造并通过就绪检查后才切换稳定 Access，失败保留旧实例。当前 local/S3-compatible Adapter 没有专用 transport 或后台 goroutine，因此 Kernel 把 StorageManager 归为 `NoFinalization`；公开 `Close` 只服务独立调用方。S3/MinIO 凭据应通过环境变量提供，不能写入仓库配置。

@@ -72,7 +72,6 @@ func TestRedisResourceSupportsTypedClient(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build() error = %v", err)
 	}
-	t.Cleanup(func() { _ = stop(context.Background(), current) })
 	if err := ready(t.Context(), current); err != nil {
 		t.Fatalf("ready() error = %v", err)
 	}
@@ -93,6 +92,19 @@ func TestRedisResourceSupportsTypedClient(t *testing.T) {
 	}
 	if err := client.Close(); err != nil {
 		t.Fatalf("Close() error = %v", err)
+	}
+	if server.CurrentConnectionCount() == 0 {
+		t.Fatal("Redis connection was not established")
+	}
+	if err := stop(context.Background(), current); err != nil {
+		t.Fatalf("stop() error = %v", err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for server.CurrentConnectionCount() != 0 && time.Now().Before(deadline) {
+		time.Sleep(time.Millisecond)
+	}
+	if server.CurrentConnectionCount() != 0 {
+		t.Fatalf("Redis connections after stop = %d, want 0", server.CurrentConnectionCount())
 	}
 }
 

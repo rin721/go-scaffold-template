@@ -58,7 +58,7 @@ func Definition() (app.Definition[Access], error) {
 		app.Leased(newAccess),
 		app.KernelInstanceSwap,
 		app.WithReady(ready),
-		app.WithStop(stop),
+		app.WithTerminalFinalizer(stop),
 	)
 }
 

@@ -24,6 +24,6 @@
 - [019 HTTP API 成熟度缺口评估](019-http-api-maturity-gap-assessment/README.md)：已完成当前 HTTP API 运行链审计、成熟度参考、缺口优先级和分阶段路线；没有非文档实施授权。
 - [020 复制型脚手架产品形态](020-scaffold-product-form/README.md)：已完成 copy-owned 单轨决策、两个独立副本的身份迁移、Todo 保留/移除和 Windows 门禁；Linux、正式复制指南与 release 能力仍待独立实施。
 - [021 仓库身份迁移](021-repository-identity-migration/README.md)：已将 canonical remote、Go module/import、运行品牌与当前使用文档统一为 `go-scaffold-template`；另一个 `go-scaffold` 仓库未进入范围。
-- [022 HTTP API 脚手架成熟就绪度](022-http-api-template-readiness/README.md)：当前只能判定为 Foundation-ready 的高级基础模板；成熟标签仍被 API 契约、安全、管理与遥测、生产迁移、跨平台交付和 release 验收阻塞，分阶段 Program 已形成但未授权实施。
+- [022 HTTP API 脚手架成熟就绪度](022-http-api-template-readiness/README.md)：生命周期 P0 已实施并验证，整体仍为 Foundation-partial；统一 diagnostics、配置确定性、完整 Foundation acceptance，以及 API 契约、安全、管理、遥测、交付和 release 仍待后续独立计划。
 
 下一个任务序号为 `023`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

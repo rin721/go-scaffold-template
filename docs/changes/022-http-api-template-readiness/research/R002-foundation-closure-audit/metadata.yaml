@@ -1,0 +1,41 @@
+schema_version: 1
+id: R002
+title: "底层能力、装配与生命周期闭环审计"
+question: "当前配置、显式装配、Kernel 资源代际、Supervisor、Host、CLI 与模块贡献是否形成可验证闭环，并足以解锁后续业务模块详细设计？"
+research_type: current-project
+topics: ["foundation closure", "composition", "lifecycle", "reload", "drain", "cleanup ownership", "business extension"]
+keywords: ["ComposeBootstrap", "Plan", "Lease", "Coordinator", "Supervisor", "Host", "Contribution", "CommittedCleanupError"]
+languages: ["Go"]
+frameworks: ["net/http", "chi"]
+technologies: ["Kernel", "Supervisor", "mapstructure", "fsnotify"]
+applicable_scenarios: ["022 底层闭环判断", "业务模块设计解锁", "后续生命周期加固计划"]
+non_applicable_scenarios: ["证明目标修复已实现", "授权源码实施", "替具体业务预装后台任务或健康协议"]
+status: active
+summary: "当前主链与正常路径已形成，显式装配、严格候选和原子切换值得保留；但终止排空超时和清理失败会丢失可完成的资源清理责任，模块贡献也只证明同步 HTTP/CLI 场景，因此底层闭环与通用业务扩展门禁尚未通过。"
+evidence:
+  types: ["source-code", "tests", "current-documentation", "repository-layout", "reused-research"]
+  primary_sources:
+    - title: "当前入口、应用组合根与命令模式"
+      locator: "cmd/app; internal/composition"
+      snapshot: "b868893"
+    - title: "当前配置、Plan、Kernel、Coordinator、Host 与 Supervisor"
+      locator: "internal/kernel; internal/kernel/app; internal/kernel/config; pkg/supervisor"
+      snapshot: "b868893"
+    - title: "当前模块贡献、健康与架构治理"
+      locator: "internal/module; pkg/health; internal/kernel/composition/architecture_test.go"
+      snapshot: "b868893"
+    - title: "既有底层闭环研究"
+      locator: "012-R021; 012-R019; 017-R001"
+      snapshot: "refresh triggers reviewed 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["Kernel Stop 或 cleanup 状态变化", "Supervisor 关闭语义变化", "模块 Contribution 增加 Runner 或 Health", "配置 EnvSource 规则变化", "新增业务模块"]
+relations:
+  extends: ["012-R021", "012-R019", "017-R001", "022-R001"]
+  related: ["022-R003", "022-R004", "022-R005"]
+  supersedes: []
+  superseded_by: []
+report: report.md

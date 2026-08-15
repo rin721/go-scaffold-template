@@ -71,7 +71,10 @@ func TestFoundationLibrariesCanBeCreatedIndependently(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	processSupervisor := supervisor.New(supervisor.Config{ShutdownTimeout: time.Second})
+	processSupervisor, err := supervisor.New(supervisor.Config{ShutdownTimeout: time.Second, ForceTimeout: 100 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("supervisor.New() error = %v", err)
+	}
 	if err := processSupervisor.Run(ctx); err != nil {
 		t.Fatalf("empty supervisor Run() error = %v", err)
 	}

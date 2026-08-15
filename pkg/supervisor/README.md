@@ -6,7 +6,7 @@ Participant 按登记顺序启动并按反向顺序停止。任一 Task 失败�
 
 ## 推荐入口
 
-- `New(cfg, participants...)`：创建 Supervisor 并登记已经构造完成的 Participant。
+- `New(cfg, participants...)`：校验总预算/force 预留，返回 Supervisor 与 error，并登记已经构造完成的 Participant。
 - `AddTask(name, run)`：在运行前登记长期 Task。
 - `Run(ctx)`：顺序启动、等待 Task、传播失败、反向停止并聚合错误。
 - `RunOperation(ctx, operation)`：顺序启动、执行一次 operation、反向停止并聚合 operation/cleanup 错误；只允许没有长期 Task 的 one-shot 流程。
@@ -35,10 +35,13 @@ func (s *Server) Stop(ctx context.Context) error {
 }
 
 func Run(server *Server) error {
-	process := supervisor.New(
-		supervisor.Config{ShutdownTimeout: 5 * time.Second},
+	process, err := supervisor.New(
+		supervisor.Config{ShutdownTimeout: 5 * time.Second, ForceTimeout: time.Second},
 		server,
 	)
+	if err != nil {
+		return err
+	}
 	if err := process.AddTask("consumer", func(ctx context.Context) error {
 		<-ctx.Done()
 		return ctx.Err()
@@ -58,7 +61,8 @@ func Run(server *Server) error {
 - Participant 启动失败时，已启动项仍会按反向顺序停止，启动错误与停止错误同时返回。
 - Task 失败会取消其他 Task；调用方主动取消 context 视为正常退出，但停止错误仍会返回。
 - 没有 Task 时，`Run` 会持续等待 context 结束，而不是在 Participant 启动后立即退出。
-- `ShutdownTimeout <= 0` 使用默认的 10 秒停止期限。
+- `ShutdownTimeout <= 0` 使用默认总预算 10 秒，`ForceTimeout <= 0` 使用默认预留 1 秒；force 预留必须小于总预算。
+- Participant 共享同一组绝对 deadline，不会按组件重建完整 timeout。只有显式实现 `ForceStopper` 的 pending Participant 才进入 force 阶段；forced、pending Participant 与 pending Task 分别进入安全快照，forced 不伪装为 graceful success。
 - one-shot CLI 使用 `RunOperation` 时不会为了凑长期 Task 启动空 goroutine；operation 结束后立即进入同一套有界反向停止。
 
 ## 与 Kernel 的边界

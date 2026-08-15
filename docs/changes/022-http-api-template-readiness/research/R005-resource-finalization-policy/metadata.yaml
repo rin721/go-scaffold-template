@@ -1,0 +1,47 @@
+schema_version: 1
+id: R005
+title: "当前资源终结、重试与强制关闭语义"
+question: "当前进程实际拥有和对外提供的每种资源在构造失败、drain、Close 错误、重试、force、超时和释放验证方面分别具有什么语义，统一策略与组件重写应如何划界？"
+research_type: current-project-and-external-primary
+topics: ["resource finalization", "close retry", "force close", "graceful drain", "partial construction", "release verification"]
+keywords: ["database/sql", "go-redis", "zap", "fsnotify", "net/http", "S3", "cleanup debt", "finalizer policy"]
+languages: ["Go"]
+frameworks: ["net/http", "GORM", "go-redis", "zap", "fsnotify", "AWS SDK for Go v2"]
+technologies: ["Kernel Lease", "Supervisor Participant", "database/sql DB", "redis Client", "logger sinks", "HTTP Server"]
+applicable_scenarios: ["FOUNDATION-LIFECYCLE-001", "资源 Adapter 设计", "终止与重载故障验收", "运行中清理运维入口"]
+non_applicable_scenarios: ["假定所有 io.Closer 都可重试", "从独立 CLI 进程直接关闭服务进程内资源", "把 force close 作为统一默认", "声明计划已经实现"]
+status: active
+summary: "统一层应治理 admission、drain、owner/generation、attempt 和终态；默认 Close 是一次 terminal attempt 而非自动 retry。只有 Adapter 明确证明可重试或安全 force 时才能重写策略。当前数据库、Redis、logger、fsnotify 均不能靠重复 Close 完成失败重试，HTTP 才有显式但有损的 graceful-to-force 路径；实际 StorageManager 当前没有需关闭的底层句柄。"
+evidence:
+  types: ["source-code", "tests", "pinned-dependency-source", "official-documentation", "tradeoff-analysis"]
+  primary_sources:
+    - title: "当前仓库资源与生命周期实现"
+      locator: "internal/kernel/app; internal/kernel/kernel.go; pkg/database; pkg/cache; pkg/logger; pkg/storage; pkg/httpx; pkg/supervisor; internal/kernel/config"
+      snapshot: "HEAD b868893, verified 2026-08-15"
+    - title: "Go 1.25.7 database/sql、net/http 与 os 官方源码和文档"
+      locator: "https://pkg.go.dev/database/sql@go1.25.7#DB.Close; https://pkg.go.dev/net/http#Server.Shutdown; https://pkg.go.dev/net/http#Server.Close; https://pkg.go.dev/os#File.Close"
+      snapshot: "Go 1.25.7, verified 2026-08-15"
+    - title: "go-redis v9.22.0 Close 与连接池源码"
+      locator: "https://github.com/redis/go-redis/blob/v9.22.0/redis.go; https://github.com/redis/go-redis/blob/v9.22.0/internal/pool/pool.go"
+      snapshot: "v9.22.0, verified 2026-08-15"
+    - title: "fsnotify v1.10.1 Close 源码和文档"
+      locator: "https://pkg.go.dev/github.com/fsnotify/fsnotify@v1.10.1#Watcher.Close"
+      snapshot: "v1.10.1, verified 2026-08-15"
+    - title: "zap v1.28.0 Sync 与 Sink 契约"
+      locator: "https://pkg.go.dev/go.uber.org/zap@v1.28.0#Logger.Sync; https://pkg.go.dev/go.uber.org/zap@v1.28.0#Sink"
+      snapshot: "v1.28.0, verified 2026-08-15"
+    - title: "AWS SDK for Go v2 S3 Client API"
+      locator: "https://pkg.go.dev/github.com/aws/aws-sdk-go-v2/service/s3@v1.107.0#Client"
+      snapshot: "v1.107.0, verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: pinned-snapshot
+  review_after: "2026-09-15"
+  refresh_triggers: ["Go 或任一相关依赖升级", "资源构造或 Close 实现变化", "新增资源 Adapter", "引入 management operation 或第二阶段信号政策", "FOUNDATION-LIFECYCLE-001 实施前基线变化"]
+relations:
+  extends: ["022-R002", "022-R004"]
+  related: ["022-R003"]
+  supersedes: []
+  superseded_by: []
+report: report.md

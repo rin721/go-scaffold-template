@@ -5,6 +5,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"image"
 	"os"
@@ -18,12 +19,16 @@ import (
 
 // impl 是 Storage 接口的具体实现
 type impl struct {
-	config  *Config
-	mu      sync.RWMutex
-	fs      afero.Fs
-	watcher *fsnotify.Watcher
-	watches map[string]*watchEntry // 路径 -> 监听条目
-	closed  bool
+	config       *Config
+	mu           sync.RWMutex
+	fs           afero.Fs
+	watcher      *fsnotify.Watcher
+	watches      map[string]*watchEntry // 路径 -> 监听条目
+	removeWatch  func(string) error
+	closeWatcher func() error
+	closed       bool
+	closeOnce    sync.Once
+	closeErr     error
 }
 
 // watchEntry 监听条目
@@ -31,6 +36,7 @@ type watchEntry struct {
 	path    string
 	handler WatchHandler
 	cancel  context.CancelFunc
+	done    chan struct{}
 }
 
 type workbook struct {
@@ -43,6 +49,10 @@ func (w *workbook) SetCellValue(sheet string, cell string, value any) error {
 
 func (w *workbook) Close() error {
 	return w.file.Close()
+}
+
+func (w *workbook) getRows(sheet string) ([][]string, error) {
+	return w.file.GetRows(sheet)
 }
 
 // New 创建新的 Storage 实例
@@ -101,6 +111,8 @@ func (i *impl) initWatcher() error {
 		return fmt.Errorf("Storage: failed to create watcher: %w", err)
 	}
 	i.watcher = watcher
+	i.removeWatch = watcher.Remove
+	i.closeWatcher = watcher.Close
 	return nil
 }
 
@@ -250,18 +262,28 @@ func (i *impl) ReadExcelSheet(path, sheet string) ([][]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer book.Close()
-
-	internal, ok := book.(*workbook)
+	internal, ok := book.(workbookReader)
 	if !ok {
-		return nil, fmt.Errorf("%w: unsupported workbook implementation %T", ErrInvalidConfig, book)
+		return nil, errors.Join(fmt.Errorf("%w: unsupported workbook implementation %T", ErrInvalidConfig, book), book.Close())
 	}
+	return readWorkbookSheet(internal, sheet)
+}
 
-	rows, err := internal.file.GetRows(sheet)
+type workbookReader interface {
+	Workbook
+	getRows(string) ([][]string, error)
+}
+
+func readWorkbookSheet(book workbookReader, sheet string) (rows [][]string, resultErr error) {
+	defer func() {
+		if closeErr := book.Close(); closeErr != nil {
+			resultErr = errors.Join(resultErr, fmt.Errorf("Storage: failed to close workbook: %w", closeErr))
+		}
+	}()
+	rows, err := book.getRows(sheet)
 	if err != nil {
 		return nil, fmt.Errorf("Storage: failed to read sheet %s: %w", sheet, err)
 	}
-
 	return rows, nil
 }
 
@@ -358,21 +380,27 @@ func toImagingFormat(format ImageFormat) (imaging.Format, error) {
 
 // Close 关闭文件服务
 func (i *impl) Close() error {
-	i.mu.Lock()
-	defer i.mu.Unlock()
-
-	if i.closed {
-		return nil
-	}
-
-	// 停止所有监听
-	if i.watcher != nil {
-		for path := range i.watches {
-			i.watcher.Remove(path)
+	i.closeOnce.Do(func() {
+		i.mu.Lock()
+		i.closed = true
+		entries := make([]*watchEntry, 0, len(i.watches))
+		for _, entry := range i.watches {
+			entry.cancel()
+			entries = append(entries, entry)
+			if err := i.removeWatch(entry.path); err != nil {
+				i.closeErr = errors.Join(i.closeErr, fmt.Errorf("Storage: failed to remove watcher %s: %w", entry.path, err))
+			}
 		}
-		i.watcher.Close()
-	}
-
-	i.closed = true
-	return nil
+		i.watches = make(map[string]*watchEntry)
+		if i.closeWatcher != nil {
+			if err := i.closeWatcher(); err != nil {
+				i.closeErr = errors.Join(i.closeErr, fmt.Errorf("Storage: failed to close watcher: %w", err))
+			}
+		}
+		i.mu.Unlock()
+		for _, entry := range entries {
+			<-entry.done
+		}
+	})
+	return i.closeErr
 }

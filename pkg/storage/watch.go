@@ -15,6 +15,12 @@ import (
 func (i *impl) Watch(path string, handler WatchHandler) error {
 	i.mu.Lock()
 	defer i.mu.Unlock()
+	if i.closed {
+		return fmt.Errorf("Storage: service is closed")
+	}
+	if handler == nil {
+		return fmt.Errorf("Storage: watch handler is nil")
+	}
 
 	// 检查是否启用监听功能
 	if i.watcher == nil {
@@ -48,6 +54,7 @@ func (i *impl) Watch(path string, handler WatchHandler) error {
 		path:    path,
 		handler: handler,
 		cancel:  cancel,
+		done:    make(chan struct{}),
 	}
 	i.watches[path] = entry
 
@@ -61,6 +68,7 @@ func (i *impl) Watch(path string, handler WatchHandler) error {
 
 // handleWatchEvents 处理文件监听事件
 func (i *impl) handleWatchEvents(ctx context.Context, entry *watchEntry) {
+	defer close(entry.done)
 	for {
 		select {
 		case <-ctx.Done():
@@ -147,14 +155,14 @@ func (i *impl) StopWatch(path string) error {
 	// 取消事件处理 goroutine
 	entry.cancel()
 
-	// 从 watcher 中移除
-	if err := i.watcher.Remove(path); err != nil {
-		return fmt.Errorf("Storage: failed to remove watcher: %w", err)
-	}
-
-	// 从 map 中删除
+	removeErr := i.removeWatch(path)
 	delete(i.watches, path)
-
+	i.mu.Unlock()
+	<-entry.done
+	i.mu.Lock()
+	if removeErr != nil {
+		return fmt.Errorf("Storage: failed to remove watcher: %w", removeErr)
+	}
 	return nil
 }
 
@@ -166,7 +174,7 @@ func (i *impl) StopAllWatch() {
 	// 取消所有监听
 	for path, entry := range i.watches {
 		entry.cancel()
-		i.watcher.Remove(path)
+		_ = i.removeWatch(path)
 	}
 
 	// 清空 map

@@ -21,6 +21,18 @@ type CommittedCleanupError struct {
 	Err error
 }
 
+// DrainIncompleteError 表示终止排空尚未完成，owner 必须保留并允许后续继续 Stop。
+type DrainIncompleteError struct {
+	Err error
+}
+
+func (e *DrainIncompleteError) Error() string {
+	return fmt.Sprintf("kernel terminal drain is incomplete: %v", e.Err)
+}
+
+// Unwrap 保留调用方 deadline 或取消原因。
+func (e *DrainIncompleteError) Unwrap() error { return e.Err }
+
 func (e *CommittedCleanupError) Error() string {
 	return fmt.Sprintf("kernel reload committed but cleanup failed: %v", e.Err)
 }

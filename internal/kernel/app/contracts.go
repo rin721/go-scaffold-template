@@ -18,6 +18,12 @@ type Decoder[C any] func(config.Snapshot) (C, error)
 // Builder 创建一个尚未发布的组件实例。
 type Builder[C, D, I any] func(context.Context, C, D) (I, error)
 
+// TerminalFinalizer 执行不可安全重做的一次性资源终结动作。
+//
+// Kernel 只会为一个实例代际调用一次。实现必须返回 flush、close 与必要验证的
+// 完整错误链；失败不表示 Kernel 可以安全重试底层动作。
+type TerminalFinalizer[I any] func(context.Context, I) error
+
 // ReloadPolicy 表示组件配置在当前进程中的生效方式。
 type ReloadPolicy uint8
 
@@ -64,11 +70,11 @@ func Configured[C any](path string, decode Decoder[C], defaults config.DefaultCo
 }
 
 type lifecycle[I any] struct {
-	start      func(context.Context, I) error
-	ready      func(context.Context, I) error
-	stop       func(context.Context, I) error
-	activate   func(I)
-	deactivate func(I)
+	start             func(context.Context, I) error
+	ready             func(context.Context, I) error
+	terminalFinalizer TerminalFinalizer[I]
+	activate          func(I)
+	deactivate        func(I)
 }
 
 // Option 为 Managed 组件按需附加真实生命周期契约。
@@ -102,16 +108,16 @@ func WithReady[I any](ready func(context.Context, I) error) Option[I] {
 	}
 }
 
-// WithStop 声明实例资源释放动作。
-func WithStop[I any](stop func(context.Context, I) error) Option[I] {
+// WithTerminalFinalizer 声明实例在 admission 关闭并排空后执行一次终结。
+func WithTerminalFinalizer[I any](finalize TerminalFinalizer[I]) Option[I] {
 	return func(target *lifecycle[I]) error {
-		if stop == nil {
-			return fmt.Errorf("component stop function is nil")
+		if finalize == nil {
+			return fmt.Errorf("component terminal finalizer is nil")
 		}
-		if target.stop != nil {
-			return fmt.Errorf("component stop function is duplicated")
+		if target.terminalFinalizer != nil {
+			return fmt.Errorf("component terminal finalizer is duplicated")
 		}
-		target.stop = stop
+		target.terminalFinalizer = finalize
 		return nil
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 
 	"github.com/glebarez/sqlite"
@@ -58,17 +59,17 @@ func NewGORM(ctx context.Context, cfg *Config) (Resource, error) {
 	}
 	applyPoolConfig(sqlDB, resolved.Pool)
 	client := &gormClient{db: db}
-	resource := &gormResource{client: client, sqlDB: sqlDB, cfg: resolved}
-	if err := resource.Ping(ctx); err != nil {
-		return nil, errors.Join(fmt.Errorf("ping database: %w", err), resource.Close())
-	}
-	return resource, nil
+	return &gormResource{client: client, sqlDB: sqlDB, cfg: resolved, close: sqlDB.Close}, nil
 }
 
 type gormResource struct {
 	client *gormClient
 	sqlDB  *sql.DB
 	cfg    resolvedConfig
+
+	closeOnce sync.Once
+	closeErr  error
+	close     func() error
 }
 
 // Client 返回不具备 Ping、Stats 或 Close 所有权的数据库视图。
@@ -171,13 +172,11 @@ func (r *gormResource) Stats() Stats {
 }
 
 func (r *gormResource) Close() error {
-	if !r.client.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	if err := r.sqlDB.Close(); err != nil {
-		return translateError(err)
-	}
-	return nil
+	r.closeOnce.Do(func() {
+		r.client.closed.Store(true)
+		r.closeErr = translateError(r.close())
+	})
+	return r.closeErr
 }
 
 func (c *gormClient) databaseSession(ctx context.Context) (any, error) {

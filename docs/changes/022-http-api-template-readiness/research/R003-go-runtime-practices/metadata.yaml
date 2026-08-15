@@ -1,0 +1,47 @@
+schema_version: 1
+id: R003
+title: "成熟 Go 项目的装配、运行与清理实践对照"
+question: "成熟 Go 项目如何处理显式装配、长期任务、ready、原子配置切换、优雅终止和失败清理，这些实践是否支持当前架构的保留或重构？"
+research_type: external-primary
+topics: ["Go runtime lifecycle", "graceful shutdown", "dependency injection", "atomic reload", "health", "failure observation"]
+keywords: ["net/http Shutdown", "Fx Lifecycle", "controller-runtime Manager", "dskit services", "Caddy reload", "Wire"]
+languages: ["Go"]
+frameworks: ["net/http", "Fx", "controller-runtime", "dskit", "Caddy", "Wire"]
+technologies: ["context", "lifecycle hooks", "runnable", "health checks", "immutable config generation"]
+applicable_scenarios: ["022 架构取舍", "生命周期失败语义", "业务扩展契约边界"]
+non_applicable_scenarios: ["直接复制外部框架 API", "证明当前实现已满足外部语义", "替项目选择部署平台"]
+status: active
+summary: "主流项目在框架形态上不同，但共同要求 owner 可识别、运行态可观察、停止有界且终态真实；Caddy 的不可变代际支持当前 reload 方向，Fx/Wire 不足以替代项目特有事务，controller-runtime 与 dskit 则说明 Runner、ready、health 和 terminal state 必须显式。"
+evidence:
+  types: ["official-documentation", "official-package-documentation", "official-repository"]
+  primary_sources:
+    - title: "Go net/http Server lifecycle"
+      locator: "https://pkg.go.dev/net/http#Server.Shutdown"
+      snapshot: "verified 2026-08-15"
+    - title: "Uber Fx application lifecycle"
+      locator: "https://uber-go.github.io/fx/lifecycle.html"
+      snapshot: "verified 2026-08-15"
+    - title: "controller-runtime Manager"
+      locator: "https://pkg.go.dev/sigs.k8s.io/controller-runtime/pkg/manager"
+      snapshot: "v0.24.1; verified 2026-08-15"
+    - title: "Grafana dskit services"
+      locator: "https://pkg.go.dev/github.com/grafana/dskit/services"
+      snapshot: "verified 2026-08-15"
+    - title: "Caddy architecture and command lifecycle"
+      locator: "https://caddyserver.com/docs/architecture; https://caddyserver.com/docs/command-line"
+      snapshot: "verified 2026-08-15"
+    - title: "Google Wire project status"
+      locator: "https://github.com/google/wire"
+      snapshot: "archived 2025-08-25; verified 2026-08-15"
+researched_at: "2026-08-15"
+verified_at: "2026-08-15"
+validity:
+  mode: time-sensitive
+  review_after: "2026-11-15"
+  refresh_triggers: ["外部项目 major lifecycle 变化", "项目决定引入 DI 框架", "项目改变 reload 或 shutdown policy"]
+relations:
+  extends: ["012-R012", "012-R013", "012-R014", "012-R002", "012-R004"]
+  related: ["022-R002", "022-R004"]
+  supersedes: []
+  superseded_by: []
+report: report.md
