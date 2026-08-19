@@ -35,6 +35,6 @@
 - [030 模块自有代码优先契约](030-module-owned-code-first-contract/README.md)：已完成；契约 authority 反转为模块自有 typed 声明，`contract-gen` 从代码生成 `api/openapi.yaml` 与 operation inventory，删除 oapi-codegen 生成链与 nethttp-middleware，transport 从同一份契约单一绑定。
 - [031 模块顶层 HTTP Handler 分责](031-module-top-level-http-handler/README.md)：已完成；Todo 的 HTTP handler 层从 `binding/http` 迁移到模块顶层 `handler`，`binding/http` 只做代码优先契约与运行期装箱，每层职责分明。
 - [032 i18n 配置职责边界与集中声明](032-i18n-config-boundary/README.md)：已完成；`kernel/app/i18n` 集中声明默认配置并统一 `./locales`，logger/database 组件自声明默认值（不再复用 `pkg/*.DefaultConfig()`），cache 的 `redisstore.DefaultTagPrefix` 作为基础默认常量回退保留，并把「应用层不得隐式依赖通用库默认值」纳入架构门禁与业务 i18n 接入文档。
-- [033 业务模块统一契约与 binding 对齐](033-module-contract-alignment/README.md)：研究与计划已完成，待确认；拟梳理并落地业务模块统一绑定契约（HTTP/config/cli/migration/i18n/middleware），补齐现有模块（Ops/Auth/Migration），让 i18n 作为业务模块自有语言资源 + binding 接入，并固化新增模块门禁规范。
+- [033 业务模块统一契约与 binding 对齐](033-module-contract-alignment/README.md)：已完成；把统一绑定契约（HTTP/config/cli/migration/i18n/middleware）固化到模块开发指南，落地业务流程模块自有 i18n binding（Todo `binding/i18n`），文档化 Ops（独立 management）/Auth（横切）/Migration（纯 CLI）形态，并保留 032 的 pkg/kernel-app 配置边界。
 
 下一个任务序号为 `034`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
