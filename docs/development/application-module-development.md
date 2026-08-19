@@ -132,7 +132,7 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 
 **新增业务模块必须接入的基础契约**：
 
-- 若暴露 HTTP operation：必须提供 `handler/` + `binding/http` 的 `ModuleContract`/`RuntimeHandlers`，并注册 `contract-gen`；不得退化为手写固定路由。
+- 若暴露 HTTP operation：必须提供 `handler/` + `binding/http` 的 `ModuleContract`/`RuntimeHandlers`，**并在两处接入**：`internal/composition` 负责运行时装配（policy 汇总、observability operations、route binding、依赖注入），`internal/tools/contract-gen` 的 `registeredModules()` 生成器注册点负责 build-time 渲染 `api/openapi.yaml` 与 operation inventory；新增模块不得只在 composition 装配而漏掉契约注册（否则 `go generate` 不渲染），也不得退化为手写固定路由。
 - 若有用户可见翻译：必须提供 i18n binding（自有语言资源 + `binding/i18n`），经 composition/kernel 聚合后通过注入的 `pkg/i18n.Translator` 消费；不得绕过注入直接读 `pkg/i18n` 默认配置。
 - `module.go` 只做纯内存装配并返回窄 Handler/Service 与 contribution；`internal/composition` 是唯一跨模块连接点。
 - 保留 032 配置边界：`pkg/*` 只提供通用能力 + 基础默认；`kernel/app/*` 负责应用层默认与装配，不隐式依赖 `pkg/*.DefaultConfig()`。

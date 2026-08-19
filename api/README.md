@@ -4,7 +4,7 @@
 
 ## 权威与生成
 
-1. 每个业务模块分层声明自己的 HTTP 契约与 handler（031 分责）：模块顶层 `internal/module/<name>/handler` 实现窄 `Operations`/`Handler`、DTO 映射、错误呈现与 `ActorAccess`；`internal/module/<name>/binding/http` 以 `pkg/httpx/contract` 的 typed 类型声明 operation（method/path/operationId/policy/security 与 DTO schema），例如 `todo/binding/http/contract_module.go` 的 `ModuleContract()`，并提供 `RuntimeHandlers` 装箱。
+1. 每个业务模块分层声明自己的 HTTP 契约与 handler（031 分责）：模块顶层 `internal/module/<name>/handler` 实现窄 `Operations`/`Handler`、DTO 映射、错误呈现与 `ActorAccess`；`internal/module/<name>/binding/http` 以 `pkg/httpx/contract` 的 typed 类型声明 operation（method/path/operationId/policy/security 与 DTO schema），例如 `todo/binding/http/contract_module.go` 的 `ModuleContract()`，并提供 `RuntimeHandlers` 装箱。新增 HTTP 业务模块**除了在 `internal/composition` 装配**，还必须把其契约注册到 `internal/tools/contract-gen/main.go` 的 `registeredModules()`（build-time 生成器注册点、独立于运行图），否则 `go generate` 不会渲染该模块的 `api/openapi.yaml` 与 operation inventory。
 2. 在仓库根目录执行：
 
    ```powershell

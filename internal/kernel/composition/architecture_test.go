@@ -58,6 +58,9 @@ func TestProductionPackageGraphRespectsCompositionBoundaries(t *testing.T) {
 	if err := validateKernelAppConfigOwnership(root); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateCompositionOwnership(root); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateLoggingSourceOwnership(root); err != nil {
 		t.Fatal(err)
 	}
@@ -361,6 +364,43 @@ func validateKernelAppConfigOwnership(root string) error {
 			return false
 		})
 		return violation
+	})
+}
+
+// validateCompositionOwnership 防止 composition 内部文件反向 import 具体业务模块的 HTTP 契约包
+// （如 ops.go/service.go 直接读 todohttp.ModuleContract）。契约知识只经装配汇总点
+// applicationHTTPModules() 消费（034 WIRE-001）。
+func validateCompositionOwnership(root string) error {
+	compositionRoot := filepath.Join(root, "internal", "composition")
+	return filepath.WalkDir(compositionRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() || filepath.Ext(path) != ".go" {
+			return walkErr
+		}
+		// 只约束必须经 applicationHTTPModules() 汇总消费契约的装配文件（ops.go/service.go）；
+		// http_api.go 负责对具体模块运行时 handler 装箱并对齐唯一契约来源，属合法装配点。
+		if base := filepath.Base(path); base != "ops.go" && base != "service.go" {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read composition source %s: %w", path, err)
+		}
+		fileset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileset, path, source, 0)
+		if err != nil {
+			return fmt.Errorf("parse composition source %s: %w", path, err)
+		}
+		for _, spec := range parsed.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return fmt.Errorf("decode import in %s: %w", path, err)
+			}
+			prefix := modulePath + "/internal/module/"
+			if strings.HasPrefix(importPath, prefix) && strings.Contains(importPath, "/todo/binding/http") {
+				return fmt.Errorf("composition source %s imports module HTTP binding contract %s; use applicationHTTPModules()", path, importPath)
+			}
+		}
+		return nil
 	})
 }
 

@@ -61,7 +61,11 @@ func newContractDispatcher(todoOperations todohandler.Operations) (*contractDisp
 	if nilDependency(todoOperations) {
 		return nil, fmt.Errorf("Todo HTTP operations are nil")
 	}
-	module := todohttp.ModuleContract()
+	modules := applicationHTTPModules()
+	if len(modules) == 0 {
+		return nil, fmt.Errorf("no application HTTP modules are registered")
+	}
+	module := modules[0]
 	handlers := todohttp.RuntimeHandlers(todoOperations)
 	if len(handlers) == 0 {
 		return nil, fmt.Errorf("Todo HTTP runtime handlers are empty")

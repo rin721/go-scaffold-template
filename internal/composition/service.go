@@ -11,7 +11,6 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
-	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
@@ -135,14 +134,16 @@ func applicationRouter(
 }
 
 func operationPolicies() ([]authmodel.Policy, error) {
-	module := todohttp.ModuleContract()
-	policies := make([]authmodel.Policy, 0, len(module.Operations)+2)
-	for _, operation := range module.Operations {
-		mode := authmodel.PolicyMode(operation.Policy.Mode)
-		policies = append(policies, authmodel.Policy{
-			Operation: string(operation.ID), Mode: mode,
-			Scope: authmodel.Scope(operation.Policy.Scope), Action: authmodel.Action(operation.Policy.Action),
-		})
+	modules := applicationHTTPModules()
+	policies := make([]authmodel.Policy, 0, 8)
+	for _, module := range modules {
+		for _, operation := range module.Operations {
+			mode := authmodel.PolicyMode(operation.Policy.Mode)
+			policies = append(policies, authmodel.Policy{
+				Operation: string(operation.ID), Mode: mode,
+				Scope: authmodel.Scope(operation.Policy.Scope), Action: authmodel.Action(operation.Policy.Action),
+			})
+		}
 	}
 	if len(policies) == 0 {
 		return nil, fmt.Errorf("module operation policy inventory is empty")
