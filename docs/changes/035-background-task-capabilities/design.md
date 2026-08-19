@@ -194,3 +194,9 @@ res, err := executionExecutor.Execute(ctx, Execution{
 ### 12.4 剩余增量
 
 - 真正的外部主存储接入（Cache-primary Redis 或 database backend）作为下一增量；届时 RecoveringStore 的 Degraded/Recovering 语义在应用内实际触发。
+
+## 13. 恢复治理可观测性（日志 / 健康状态 / 状态快照）
+
+- `kernel/app/execution` 组件经 `DependencySet` 注入结构化 `pkg/logger.Logger`，`build()` 注册 `RecoveringStore.OnStateChange` 回调：进入 `Degraded` 记 Warn（告警信号），进入 `Recovering`/`Healthy` 记 Info；日志仅含 `from`/`state` 稳定字段，不含敏感文本。
+- `Access.Recovery()` 返回 `pkgexecution.RecoverySnapshot`（State / Buffered / Dropped / Transitions），供 Ops 上报指标与告警；`Access.Health()` 返回健康结果（Healthy=pass，Degraded/Recovering=warn）。
+- 组合:恢复治理状态不阻止组件 `ready`，因此主存储缺位不阻塞服务启动；降级与恢复状态按以上表面输出，供健康检查与告警消费。

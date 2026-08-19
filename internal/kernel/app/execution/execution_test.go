@@ -7,6 +7,8 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	pkgexecution "github.com/rin721/go-scaffold-template/pkg/execution"
+	"github.com/rin721/go-scaffold-template/pkg/health"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/resilience"
 )
 
@@ -16,7 +18,7 @@ func TestBuildMemoryReturnsExecutor(t *testing.T) {
 		RetryMaxAttempts: 2,
 		RetryInitialWait: 10,
 		RetryMaxWait:     50,
-	}, struct{}{})
+	}, componentDeps{logger: logger.Noop()})
 	if err != nil {
 		t.Fatalf("build memory: %v", err)
 	}
@@ -33,7 +35,7 @@ func TestBuildMemoryReturnsExecutor(t *testing.T) {
 }
 
 func TestBuildDisabledReturnsNilExecutor(t *testing.T) {
-	resource, err := build(context.Background(), Config{Driver: DriverDisabled}, struct{}{})
+	resource, err := build(context.Background(), Config{Driver: DriverDisabled}, componentDeps{})
 	if err != nil {
 		t.Fatalf("build disabled: %v", err)
 	}
@@ -46,13 +48,13 @@ func TestBuildDisabledReturnsNilExecutor(t *testing.T) {
 }
 
 func TestBuildUnsupportedDriver(t *testing.T) {
-	if _, err := build(context.Background(), Config{Driver: "bogus"}, struct{}{}); err == nil {
+	if _, err := build(context.Background(), Config{Driver: "bogus"}, componentDeps{}); err == nil {
 		t.Fatal("unsupported driver should error")
 	}
 }
 
 func TestStopIsIdempotent(t *testing.T) {
-	resource, err := build(context.Background(), Config{Driver: DriverMemory}, struct{}{})
+	resource, err := build(context.Background(), Config{Driver: DriverMemory}, componentDeps{logger: logger.Noop()})
 	if err != nil {
 		t.Fatalf("build: %v", err)
 	}
@@ -120,6 +122,69 @@ func TestApplyPolicyKeepsExplicitPolicy(t *testing.T) {
 	}
 }
 
+func TestAccessRecoveryAndHealth(t *testing.T) {
+	resource, err := build(context.Background(), Config{Driver: DriverMemory}, componentDeps{logger: logger.Noop()})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	defer func() { _ = stop(context.Background(), resource) }()
+	acc := &access{delegate: &fakeLease{current: resource}}
+	snap, err := acc.Recovery()
+	if err != nil {
+		t.Fatalf("Recovery: %v", err)
+	}
+	if snap.State != pkgexecution.StateHealthy {
+		t.Fatalf("recovery state=%q want healthy", snap.State)
+	}
+	result, err := acc.Health()
+	if err != nil {
+		t.Fatalf("Health: %v", err)
+	}
+	if result.Status != health.StatusPass {
+		t.Fatalf("health status=%q want pass", result.Status)
+	}
+}
+
+func TestAccessHealthDisabledFails(t *testing.T) {
+	resource, err := build(context.Background(), Config{Driver: DriverDisabled}, componentDeps{})
+	if err != nil {
+		t.Fatalf("build: %v", err)
+	}
+	acc := &access{delegate: &fakeLease{current: resource}}
+	result, err := acc.Health()
+	if err != nil {
+		t.Fatalf("Health disabled: %v", err)
+	}
+	if result.Status != health.StatusFail {
+		t.Fatalf("disabled health status=%q want fail", result.Status)
+	}
+}
+
+func TestLogTransitionEmitsWarnOnDegraded(t *testing.T) {
+	rec := logger.NewTestLogger()
+	cb := logTransition(rec)
+	cb(pkgexecution.StateHealthy, pkgexecution.StateDegraded)
+	cb(pkgexecution.StateDegraded, pkgexecution.StateHealthy)
+	var warn, info int
+	for _, entry := range rec.Entries() {
+		switch entry.Level {
+		case "warn":
+			warn++
+		case "info":
+			info++
+		}
+	}
+	if warn < 1 || info < 1 {
+		t.Fatalf("warn=%d info=%d want >=1 each", warn, info)
+	}
+}
+
+func TestLogTransitionNilLoggerNoop(t *testing.T) {
+	if fn := logTransition(nil); fn != nil {
+		t.Fatal("nil logger should produce nil transition callback")
+	}
+}
+
 func TestDecodeAppliesOverflow(t *testing.T) {
 	cfg, err := decodeCfg(t, map[string]any{
 		"driver":   "memory",
@@ -168,6 +233,13 @@ func TestDecodeNormalizesDriver(t *testing.T) {
 	if cfg.Driver != DriverMemory {
 		t.Fatalf("driver=%q want memory", cfg.Driver)
 	}
+}
+
+// fakeLease 以固定实例返回给 Use 测试用。
+type fakeLease struct{ current *resource }
+
+func (l *fakeLease) Use(ctx context.Context, fn func(*resource) error) error {
+	return fn(l.current)
 }
 
 // decodeCfg 用给定 execution 配置段构建真实快照并交给 decode，覆盖其归一化与校验逻辑。

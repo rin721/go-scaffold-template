@@ -7,6 +7,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/rin721/go-scaffold-template/pkg/health"
 )
 
 // RecoveryState 描述外部依赖治理的当前健康状态。
@@ -208,6 +210,19 @@ func (s *RecoveringStore) Snapshot() RecoverySnapshot {
 		Dropped:     s.dropped,
 		Transitions: s.transitions,
 	}
+}
+
+// Health 返回按恢复治理状态映射的健康结果，供健康检查 / 告警消费。
+// Healthy 视为 pass；Degraded/Recovering 视为 warn（可运行但受限）。
+func (s *RecoveringStore) Health() health.Result {
+	s.mu.Lock()
+	state := s.state
+	buffered := len(s.buffered)
+	s.mu.Unlock()
+	if state != StateHealthy {
+		return health.Degraded(fmt.Sprintf("execution store %s (buffered=%d)", state, buffered))
+	}
+	return health.Result{Status: health.StatusPass, Message: "execution store healthy"}
 }
 
 // IsCompleted 实现 Store。

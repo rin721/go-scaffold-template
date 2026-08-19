@@ -92,7 +92,7 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, err
 	}
-	executionOutput, err := composeExecution(plan)
+	executionOutput, err := composeExecution(plan, loggerOutput.Binding)
 	if err != nil {
 		return Capabilities{}, err
 	}

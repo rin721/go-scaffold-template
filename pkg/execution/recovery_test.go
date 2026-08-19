@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/rin721/go-scaffold-template/pkg/health"
 )
 
 // scriptedStore 包装 MemoryStore，可按开关模拟主存储读写失败。
@@ -288,6 +290,24 @@ func TestRecoveringStopIsIdempotent(t *testing.T) {
 	}
 	if err := rec.Stop(); err != nil {
 		t.Fatalf("second stop should be idempotent: %v", err)
+	}
+}
+
+func TestRecoveringHealthReflectsState(t *testing.T) {
+	primary := &scriptedStore{MemoryStore: NewMemoryStore()}
+	rec := NewRecoveringStore(primary, NewMemoryStore(), recoveryCfg())
+	if result := rec.Health(); result.Status != health.StatusPass {
+		t.Fatalf("healthy status=%q want pass", result.Status)
+	}
+	primary.setFail(true)
+	if err := rec.Complete(context.Background(), "k", Record{Key: "k", Status: StatusCompleted}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	if rec.Snapshot().State != StateDegraded {
+		t.Fatalf("want degraded")
+	}
+	if result := rec.Health(); result.Status != health.StatusWarn {
+		t.Fatalf("degraded status=%q want warn", result.Status)
 	}
 }
 

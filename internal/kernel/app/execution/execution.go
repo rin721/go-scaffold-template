@@ -14,7 +14,10 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
+	"github.com/rin721/go-scaffold-template/internal/kernel/logging"
 	pkgexecution "github.com/rin721/go-scaffold-template/pkg/execution"
+	"github.com/rin721/go-scaffold-template/pkg/health"
+	pkglogger "github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/resilience"
 )
 
@@ -89,6 +92,15 @@ type policySpec struct {
 // Access 是业务模块消费的稳定执行入口。
 type Access interface {
 	Execute(context.Context, pkgexecution.Execution) (pkgexecution.Result, error)
+	// Recovery 返回恢复治理的可观测快照（状态 / 缓冲 / 丢弃 / 状态变化次数）。
+	Recovery() (pkgexecution.RecoverySnapshot, error)
+	// Health 返回按恢复治理状态映射的健康结果，供健康检查 / 告警消费。
+	Health() (health.Result, error)
+}
+
+// componentDeps 是 Execution 组件的注入依赖（当前为结构化 Logger）。
+type componentDeps struct {
+	logger pkglogger.Logger
 }
 
 type resource struct {
@@ -103,16 +115,26 @@ type access struct {
 	delegate app.Lease[*resource]
 }
 
-// Definition 返回无安装副作用的 Execution 组件声明。
-func Definition() (app.Definition[Access], error) {
+// Definition 返回无安装副作用的 Execution 组件声明；logger 为组件的结构化日志依赖输入。
+func Definition(logger app.Input[logging.Target]) (app.Definition[Access], error) {
 	source, err := app.Configured(ConfigPath, decode, defaults{})
+	if err != nil {
+		return app.Definition[Access]{}, err
+	}
+	dependencies, err := app.DependencySet(func(values app.Values) (componentDeps, error) {
+		target, err := app.Resolve(values, logger)
+		if err != nil {
+			return componentDeps{}, err
+		}
+		return componentDeps{logger: target.Logger()}, nil
+	}, logger)
 	if err != nil {
 		return app.Definition[Access]{}, err
 	}
 	return app.ManagedConfigured(
 		ID,
 		source,
-		app.FixedDependencies(struct{}{}),
+		dependencies,
 		build,
 		app.Leased(newAccess),
 		app.KernelInstanceSwap,
@@ -126,6 +148,39 @@ func newAccess(delegate app.Lease[*resource]) (Access, error) {
 		return nil, fmt.Errorf("execution lease is nil")
 	}
 	return &access{delegate: delegate}, nil
+}
+
+// Recovery 返回当前恢复治理快照；后端关闭或未装配恢复治理时返回错误。
+func (a *access) Recovery() (pkgexecution.RecoverySnapshot, error) {
+	var snap pkgexecution.RecoverySnapshot
+	err := a.delegate.Use(context.Background(), func(current *resource) error {
+		if current == nil {
+			return fmt.Errorf("execution instance is nil")
+		}
+		if current.recovering == nil {
+			return fmt.Errorf("execution recovery is not active")
+		}
+		snap = current.recovering.Snapshot()
+		return nil
+	})
+	return snap, err
+}
+
+// Health 返回按恢复治理状态映射的健康结果。
+func (a *access) Health() (health.Result, error) {
+	var result health.Result
+	err := a.delegate.Use(context.Background(), func(current *resource) error {
+		if current == nil {
+			return fmt.Errorf("execution instance is nil")
+		}
+		if current.recovering == nil {
+			result = health.Result{Status: health.StatusFail, Message: "execution recovery is not active"}
+			return nil
+		}
+		result = current.recovering.Health()
+		return nil
+	})
+	return result, err
 }
 
 func (a *access) Execute(ctx context.Context, exec pkgexecution.Execution) (pkgexecution.Result, error) {
@@ -171,7 +226,7 @@ func (r *resource) applyPolicy(exec *pkgexecution.Execution) error {
 	return nil
 }
 
-func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
+func build(ctx context.Context, cfg Config, deps componentDeps) (*resource, error) {
 	if ctx == nil {
 		return nil, app.ErrNilContext
 	}
@@ -190,11 +245,12 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 				timeout: time.Duration(p.TimeoutMs) * time.Millisecond,
 			}
 		}
-		// 主存储（当前为进程内 memory backend；外部主存储接入为下一增量）与降级兜底同为内存，
+		// 主存储（当前为进程内 memory backend；外部主存储接入为后续增量）与降级兜底同为内存，
 		// 由 RecoveringStore 治理启动/停止与恢复生命周期；外部主存储接入后降级语义即生效。
 		primary := pkgexecution.NewMemoryStore()
 		local := pkgexecution.NewMemoryStore()
 		recovering := pkgexecution.NewRecoveringStore(primary, local, recoveryConfig(cfg.Recovery))
+		recovering.OnStateChange(logTransition(deps.logger))
 		recovering.Start()
 		return &resource{
 			driver:        DriverMemory,
@@ -205,6 +261,23 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported execution driver %q", cfg.Driver)
+	}
+}
+
+// logTransition 返回恢复治理状态变化的结构化日志回调（Degraded 告警，Recovering/Healthy 信息）。
+func logTransition(logger pkglogger.Logger) func(pkgexecution.RecoveryState, pkgexecution.RecoveryState) {
+	if logger == nil {
+		return nil
+	}
+	return func(from, to pkgexecution.RecoveryState) {
+		switch to {
+		case pkgexecution.StateDegraded:
+			logger.Warn("execution external dependency degraded",
+				pkglogger.String("from", string(from)), pkglogger.String("state", string(to)))
+		case pkgexecution.StateRecovering, pkgexecution.StateHealthy:
+			logger.Info("execution external dependency recovered",
+				pkglogger.String("from", string(from)), pkglogger.String("state", string(to)))
+		}
 	}
 }
 

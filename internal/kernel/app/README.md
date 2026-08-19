@@ -136,7 +136,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/i18n`：配置化 Translator，Leased Swap；对消费者输出身份稳定的 `pkg/i18n.Translator` facade。
 - `app/storage`：配置化对象存储 Manager，Leased Swap；当前 Manager 没有独占 transport/goroutine，因此不声明 finalizer；按 route 借用无 Close Client，文件工具不进入该组件。
 - `app/observability`：Metrics 使用 process-stable `ManagedFixed` Lease facade；Telemetry 使用 generation-owned `ManagedConfigured`，HTTP 请求在 Lease 内完成，排空后 flush/shutdown；两者都不导出 Prometheus Registry、OTel Tracer/Provider 或关闭权。
-- `app/execution`：配置化（memory/disabled 开关）的后台任务执行组件，Leased Swap；输出 `pkg/execution` 的 `OperationExecutor` 稳定 facade，向业务模块提供幂等 / 失败重试 / 执行记录能力（035）。组件装配 `pkg/execution.RecoveringStore` 恢复治理（Healthy/Degraded/Recovering 状态机、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，goroutine 由 terminal finalizer 停止），并按模块 `Config.Policies` + `Execution.PolicyName` 提供命令式策略隔离；当前 memory backend 同时兼作外部主存储缺位时的降级兜底，多实例下不等价于分布式 Cache 语义。真正的 Cache-primary/数据库外部主存储接入为下一增量。
+- `app/execution`：配置化（memory/disabled 开关）的后台任务执行组件，Leased Swap；`DependencySet` 注入结构化 Logger；输出 `pkg/execution` 的 `OperationExecutor` 稳定 facade，向业务模块提供幂等 / 失败重试 / 执行记录能力（035）。组件装配 `pkg/execution.RecoveringStore` 恢复治理（Healthy/Degraded/Recovering 状态机、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，goroutine 由 terminal finalizer 停止），并按模块 `Config.Policies` + `Execution.PolicyName` 提供命令式策略隔离；状态变化经注入 Logger 输出结构化日志，`Access.Recovery()`/`Access.Health()` 导出恢复治理观测。当前 memory backend 同时兼作外部主存储缺位时的降级兜底，多实例下不等价于分布式 Cache 语义。真正的 Cache-primary/数据库外部主存储接入为下一增量。
 
 当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。
 
