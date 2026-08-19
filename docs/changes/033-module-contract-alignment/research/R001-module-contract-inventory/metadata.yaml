@@ -1,0 +1,44 @@
+schema_version: 1
+id: R001
+title: "业务模块统一契约清单与现状缺口"
+question: "现有业务模块（Todo/Auth/Ops/Migration）应遵循的统一模块契约是什么？各模块当前的 binding / 接入现状是否完整实现，缺失或仍采用旧方式的有哪些？"
+research_type: current-project
+topics: ["business module", "binding contract", "i18n binding", "HTTP contract", "module gateway", "alignment"]
+keywords: ["internal/module", "binding", "handler", "ModuleContract", "contract-gen", "i18n", "RuntimeHandlers", "management HTTP", "middleware"]
+languages: ["Go"]
+frameworks: ["pkg/httpx/contract", "Kernel App", "application module"]
+technologies: ["net/http", "contract-gen"]
+applicable_scenarios: ["033 设计计划", "业务模块契约对齐", "统一 binding 接入决策"]
+non_applicable_scenarios: ["更换业务模块业务逻辑", "引入服务注册/动态路由", "重构 Kernel 生命周期"]
+status: active
+summary: "统一契约应包含：HTTP binding（模块顶层 handler/ + binding/http 契约/装箱 + contract-gen 注册）、config binding、cli binding、migration binding、i18n binding（业务模块自有语言资源 + binding）、middleware（横切）。现状：Todo 是最完整参考（已按 030/031 分层，i18n 仅消费）；Ops 的 management HTTP 仍是 binding/http 内手写 http.Handler + 自建 ServeMux，未走代码优先契约且不参与 contract-gen（但它是独立 management 监听，非公开 API）；Auth 只有 middleware+adapter，无自有 HTTP 契约；Migration 只有 cli+config；i18n 目前仅 Todo 消费，无业务模块自有的 i18n binding。"
+evidence:
+  types: ["source-code", "tests", "composition", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "模块边界与统一契约说明"
+      locator: "internal/module/README.md"
+      snapshot: "HEAD 48b8c43"
+    - title: "应用模块开发指南"
+      locator: "docs/development/application-module-development.md"
+      snapshot: "HEAD 48b8c43"
+    - title: "各业务模块源码"
+      locator: "internal/module/{todo,auth,ops,migration}/**"
+      snapshot: "HEAD 48b8c43"
+    - title: "composition 装配"
+      locator: "internal/composition/{http_api.go,generation.go,ops.go,service.go,todo.go}"
+      snapshot: "HEAD 48b8c43"
+    - title: "契约生成注册"
+      locator: "internal/tools/contract-gen/main.go"
+      snapshot: "HEAD 48b8c43"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["新增业务模块", "binding 契约定义变化", "Ops/Auth/Migration HTTP 形态变化"]
+relations:
+  extends: ["012-R001", "030-R001", "031-R001", "032-R001", "032-R002"]
+  related: ["R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

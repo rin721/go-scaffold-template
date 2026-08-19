@@ -1,0 +1,41 @@
+schema_version: 1
+id: R002
+title: "统一 binding 契约与 i18n 接入设计"
+question: "如何定义并固化业务模块统一 binding 契约，使每个业务模块按统一方式提供自身的 i18n 语言资源与 binding，同时保留 kernel/app/i18n 装配能力与 032 的 pkg/kernel-app 配置边界？"
+research_type: current-project
+topics: ["binding contract", "i18n binding", "module alignment", "gate norm", "config boundary"]
+keywords: ["binding", "i18n", "contract", "kernel/app/i18n", "pkg/i18n", "locales", "module gate", "RuntimeHandlers"]
+languages: ["Go"]
+frameworks: ["pkg/httpx/contract", "pkg/i18n", "Kernel I18n App"]
+technologies: ["net/http", "fs.FS", "contract-gen"]
+applicable_scenarios: ["033 落地设计", "业务模块 i18n binding 接入", "统一模块门禁"]
+non_applicable_scenarios: ["替换翻译引擎第三方", "引入 i18n 平台", "改变公开 HTTP 契约"]
+status: active
+summary: "统一契约应固化：HTTP binding（handler/ + binding/http 契约/装箱 + contract-gen）、config、cli、migration、i18n binding、middleware。i18n binding 目标形态：业务模块在模块内提供自身语言资源（如 internal/module/<name>/binding/i18n/locales/ 或模块内 messages 文件）与对应 binding（暴露静态消息 catalog / Translator 配置），由 kernel/app/i18n 或 composition 聚合装配为全局 Translator，再按模块注入；同时保留仅在模块确实有用户可见翻译时才要求 i18n binding，避免为空造层。Ops management HTTP 作为独立 management 监听不强制纳入公开 contract-gen，但需统一封装并在文档明确；Auth 作为横切 middleware/port 模块、Migration 作为纯 CLI 模块按形态说明。新增模块门禁：必须提供哪些 binding、必须接入哪些基础契约（含 i18n binding 若适用）、声明位置/接入方式/维护位置。继续沿用 032 的 pkg/* 只提供通用能力+基础默认、kernel/app/* 负责应用层配置的边界。"
+evidence:
+  types: ["source-code", "tests", "composition", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "模块开发指南（i18n 接入 032 / 布局 031）"
+      locator: "docs/development/application-module-development.md"
+      snapshot: "HEAD 48b8c43"
+    - title: "kernel/app/i18n 与 pkg/i18n"
+      locator: "internal/kernel/app/i18n/i18n.go; pkg/i18n/**"
+      snapshot: "HEAD 48b8c43"
+    - title: "Todo/R001 现状与 composition 装配"
+      locator: "internal/module/todo/**; internal/composition/**"
+      snapshot: "HEAD 48b8c43"
+    - title: "contract-gen 注册"
+      locator: "internal/tools/contract-gen/main.go"
+      snapshot: "HEAD 48b8c43"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["新增业务模块", "binding 契约定义变化", "kernel/app/i18n 接口变化"]
+relations:
+  extends: ["R001", "032-R001", "032-R002"]
+  related: ["030-R001", "031-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md
