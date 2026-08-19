@@ -1,10 +1,14 @@
 // Package execution 定义由 Kernel 治理的后台任务执行能力 App 组件。
 // 后端默认形态：内存 backend（幂等占用 + 执行记录），通过组件开关可在 memory 与 disabled 间切换。
+// 组件承载三项通用技术能力：幂等、失败重试、执行记录，并装配外部依赖故障恢复治理
+// （Degraded/Recovering/Healthy）与按模块独立声明的执行策略隔离。该层为纯技术基础设施，
+// 不承载、不感知具体业务逻辑。
 package execution
 
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -26,6 +30,7 @@ const (
 	// DriverDisabled 表示当前进程不启用后台任务执行能力。
 	DriverDisabled Driver = "disabled"
 	// DriverMemory 表示当前进程使用内存 backend（进程内幂等 + 记录，单实例）。
+	// 内存 backend 同时充当外部依赖主存储缺位时的降级兜底。
 	DriverMemory Driver = "memory"
 )
 
@@ -37,12 +42,48 @@ const (
 	defaultMaxWaitMs     = 500
 )
 
+// 恢复治理默认参数（应用层集中声明，单位毫秒；沿用既有恢复语义合理量级）。
+const (
+	defaultRecoveryProbeIntervalMs  = 1000
+	defaultRecoveryInitialBackoffMs = 200
+	defaultRecoveryMaxBackoffMs     = 30000
+	defaultRecoveryVerifyAttempts   = 1
+	defaultRecoveryBufferCapacity   = 1000
+	defaultRecoveryOverflow         = pkgexecution.OverflowDiscard
+)
+
 // Config 是 Execution App 的 typed 配置契约。
 type Config struct {
-	Driver           Driver `mapstructure:"driver"`
-	RetryMaxAttempts int    `mapstructure:"retryMaxAttempts"`
-	RetryInitialWait int    `mapstructure:"retryInitialWaitMs"`
-	RetryMaxWait     int    `mapstructure:"retryMaxWaitMs"`
+	Driver           Driver                  `mapstructure:"driver"`
+	RetryMaxAttempts int                     `mapstructure:"retryMaxAttempts"`
+	RetryInitialWait int                     `mapstructure:"retryInitialWaitMs"`
+	RetryMaxWait     int                     `mapstructure:"retryMaxWaitMs"`
+	Policies         map[string]PolicyConfig `mapstructure:"policies"`
+	Recovery         RecoveryConfig          `mapstructure:"recovery"`
+}
+
+// PolicyConfig 是业务模块按需独立声明的执行策略（模块之间策略隔离）。
+type PolicyConfig struct {
+	RetryMaxAttempts int `mapstructure:"retryMaxAttempts"`
+	RetryInitialWait int `mapstructure:"retryInitialWaitMs"`
+	RetryMaxWait     int `mapstructure:"retryMaxWaitMs"`
+	TimeoutMs        int `mapstructure:"timeoutMs"`
+}
+
+// RecoveryConfig 控制外部依赖故障恢复治理（探测退避/最大频率、可用性验证、有界缓冲与溢出策略）。
+type RecoveryConfig struct {
+	ProbeIntervalMs  int                         `mapstructure:"probeIntervalMs"`
+	InitialBackoffMs int                         `mapstructure:"initialBackoffMs"`
+	MaxBackoffMs     int                         `mapstructure:"maxBackoffMs"`
+	VerifyAttempts   int                         `mapstructure:"verifyAttempts"`
+	BufferCapacity   int                         `mapstructure:"bufferCapacity"`
+	Overflow         pkgexecution.OverflowPolicy `mapstructure:"overflow"`
+}
+
+// policySpec 是解析后的命名执行策略。
+type policySpec struct {
+	retry   resilience.RetryPolicy
+	timeout time.Duration
 }
 
 // Access 是业务模块消费的稳定执行入口。
@@ -54,6 +95,8 @@ type resource struct {
 	driver        Driver
 	executor      pkgexecution.OperationExecutor
 	defaultPolicy resilience.RetryPolicy
+	policies      map[string]policySpec
+	recovering    *pkgexecution.RecoveringStore
 }
 
 type access struct {
@@ -74,6 +117,7 @@ func Definition() (app.Definition[Access], error) {
 		app.Leased(newAccess),
 		app.KernelInstanceSwap,
 		app.WithReady(ready),
+		app.WithTerminalFinalizer(stop),
 	)
 }
 
@@ -96,15 +140,35 @@ func (a *access) Execute(ctx context.Context, exec pkgexecution.Execution) (pkge
 		if current.driver == DriverDisabled || current.executor == nil {
 			return fmt.Errorf("execution backend is disabled")
 		}
-		// 未显式配置重试策略时应用本组件集中声明的默认策略。
-		if exec.Policy.MaxAttempts == 0 {
-			exec.Policy = current.defaultPolicy
+		// 按模块声明的命名策略解析；未声明时回退到组件集中声明的默认策略。
+		if err := current.applyPolicy(&exec); err != nil {
+			return err
 		}
 		var err error
 		result, err = current.executor.Execute(ctx, exec)
 		return err
 	})
 	return result, err
+}
+
+// applyPolicy 依据 PolicyName 或默认策略填充执行策略，实现模块之间策略隔离。
+// 命名的策略必须存在；未知策略名返回可识别错误，不静默回退到默认策略。
+func (r *resource) applyPolicy(exec *pkgexecution.Execution) error {
+	if exec.PolicyName != "" {
+		spec, ok := r.policies[exec.PolicyName]
+		if !ok {
+			return fmt.Errorf("unknown execution policy %q", exec.PolicyName)
+		}
+		exec.Policy = spec.retry
+		if spec.timeout > 0 {
+			exec.Timeout = spec.timeout
+		}
+		return nil
+	}
+	if exec.Policy.MaxAttempts == 0 {
+		exec.Policy = r.defaultPolicy
+	}
+	return nil
 }
 
 func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
@@ -118,16 +182,26 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 	case DriverDisabled:
 		return &resource{driver: DriverDisabled}, nil
 	case DriverMemory:
-		policy := resilience.RetryPolicy{
-			MaxAttempts: cfg.RetryMaxAttempts,
-			InitialWait: time.Duration(cfg.RetryInitialWait) * time.Millisecond,
-			MaxWait:     time.Duration(cfg.RetryMaxWait) * time.Millisecond,
+		policy := retryPolicy(cfg.RetryMaxAttempts, cfg.RetryInitialWait, cfg.RetryMaxWait)
+		policies := make(map[string]policySpec, len(cfg.Policies))
+		for name, p := range cfg.Policies {
+			policies[name] = policySpec{
+				retry:   retryPolicy(p.RetryMaxAttempts, p.RetryInitialWait, p.RetryMaxWait),
+				timeout: time.Duration(p.TimeoutMs) * time.Millisecond,
+			}
 		}
-		store := pkgexecution.NewMemoryStore()
+		// 主存储（当前为进程内 memory backend；外部主存储接入为下一增量）与降级兜底同为内存，
+		// 由 RecoveringStore 治理启动/停止与恢复生命周期；外部主存储接入后降级语义即生效。
+		primary := pkgexecution.NewMemoryStore()
+		local := pkgexecution.NewMemoryStore()
+		recovering := pkgexecution.NewRecoveringStore(primary, local, recoveryConfig(cfg.Recovery))
+		recovering.Start()
 		return &resource{
 			driver:        DriverMemory,
-			executor:      pkgexecution.NewExecutor(store),
+			executor:      pkgexecution.NewExecutor(recovering),
 			defaultPolicy: policy,
+			policies:      policies,
+			recovering:    recovering,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported execution driver %q", cfg.Driver)
@@ -135,11 +209,41 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 }
 
 func ready(ctx context.Context, current *resource) error {
+	if ctx == nil {
+		return app.ErrNilContext
+	}
 	if current == nil {
 		return fmt.Errorf("execution instance is nil")
 	}
 	// 内存 backend 无外部就绪依赖；disabled 也视为就绪（组件存在但关闭）。
+	// 外部主存储接入后，此处不得因主存储未就绪而阻止应用启动（降级 + 恢复探测接管）。
 	return nil
+}
+
+func stop(_ context.Context, current *resource) error {
+	if current == nil || current.recovering == nil {
+		return nil
+	}
+	return current.recovering.Stop()
+}
+
+func recoveryConfig(cfg RecoveryConfig) pkgexecution.RecoveryConfig {
+	return pkgexecution.RecoveryConfig{
+		ProbeInterval:  time.Duration(cfg.ProbeIntervalMs) * time.Millisecond,
+		InitialBackoff: time.Duration(cfg.InitialBackoffMs) * time.Millisecond,
+		MaxBackoff:     time.Duration(cfg.MaxBackoffMs) * time.Millisecond,
+		VerifyAttempts: cfg.VerifyAttempts,
+		BufferCapacity: cfg.BufferCapacity,
+		Overflow:       cfg.Overflow,
+	}
+}
+
+func retryPolicy(maxAttempts, initialWaitMs, maxWaitMs int) resilience.RetryPolicy {
+	return resilience.RetryPolicy{
+		MaxAttempts: maxAttempts,
+		InitialWait: time.Duration(initialWaitMs) * time.Millisecond,
+		MaxWait:     time.Duration(maxWaitMs) * time.Millisecond,
+	}
 }
 
 func decode(snapshot config.Snapshot) (Config, error) {
@@ -155,6 +259,28 @@ func decode(snapshot config.Snapshot) (Config, error) {
 	}
 	if cfg.RetryMaxAttempts < 0 || cfg.RetryInitialWait < 0 || cfg.RetryMaxWait < 0 {
 		return Config{}, fmt.Errorf("execution retry policy values must be non-negative")
+	}
+	if cfg.Recovery.Overflow == "" {
+		cfg.Recovery.Overflow = defaultRecoveryOverflow
+	}
+	switch cfg.Recovery.Overflow {
+	case pkgexecution.OverflowDiscard, pkgexecution.OverflowBlock, pkgexecution.OverflowAlert:
+	default:
+		return Config{}, fmt.Errorf("unsupported execution recovery overflow policy %q", cfg.Recovery.Overflow)
+	}
+	if cfg.Recovery.ProbeIntervalMs < 0 || cfg.Recovery.InitialBackoffMs < 0 ||
+		cfg.Recovery.MaxBackoffMs < 0 || cfg.Recovery.VerifyAttempts < 0 ||
+		cfg.Recovery.BufferCapacity < 0 {
+		return Config{}, fmt.Errorf("execution recovery values must be non-negative")
+	}
+	for name, p := range cfg.Policies {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return Config{}, fmt.Errorf("execution policy name must be non-empty")
+		}
+		if p.RetryMaxAttempts < 0 || p.RetryInitialWait < 0 || p.RetryMaxWait < 0 || p.TimeoutMs < 0 {
+			return Config{}, fmt.Errorf("execution policy %q values must be non-negative", name)
+		}
 	}
 	return cfg, nil
 }
@@ -178,12 +304,71 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 	if err != nil {
 		return nil, config.Continue, err
 	}
-	return config.Object{
+	probe, err := config.Number(fmt.Sprint(cfg.Recovery.ProbeIntervalMs))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	initialBackoff, err := config.Number(fmt.Sprint(cfg.Recovery.InitialBackoffMs))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	maxBackoff, err := config.Number(fmt.Sprint(cfg.Recovery.MaxBackoffMs))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	verify, err := config.Number(fmt.Sprint(cfg.Recovery.VerifyAttempts))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	capacity, err := config.Number(fmt.Sprint(cfg.Recovery.BufferCapacity))
+	if err != nil {
+		return nil, config.Continue, err
+	}
+	fields := []config.Field{
 		config.FieldOf("driver", config.String(string(cfg.Driver))),
 		config.FieldOf("retryMaxAttempts", attempts),
 		config.FieldOf("retryInitialWaitMs", initial),
 		config.FieldOf("retryMaxWaitMs", max),
-	}, config.Continue, nil
+		config.FieldOf("recovery", config.ObjectValue(config.Object{
+			config.FieldOf("probeIntervalMs", probe),
+			config.FieldOf("initialBackoffMs", initialBackoff),
+			config.FieldOf("maxBackoffMs", maxBackoff),
+			config.FieldOf("verifyAttempts", verify),
+			config.FieldOf("bufferCapacity", capacity),
+			config.FieldOf("overflow", config.String(string(cfg.Recovery.Overflow))),
+		})),
+	}
+	// 按模块的策略隔离：逐个声明命名策略，键排序保证默认对象确定性。
+	if len(cfg.Policies) > 0 {
+		names := make([]string, 0, len(cfg.Policies))
+		for name := range cfg.Policies {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		policyFields := make([]config.Field, 0, len(names))
+		for _, name := range names {
+			p := cfg.Policies[name]
+			pFields := make([]config.Field, 0, 4)
+			for _, item := range []struct {
+				key   string
+				value int
+			}{
+				{"retryMaxAttempts", p.RetryMaxAttempts},
+				{"retryInitialWaitMs", p.RetryInitialWait},
+				{"retryMaxWaitMs", p.RetryMaxWait},
+				{"timeoutMs", p.TimeoutMs},
+			} {
+				number, err := config.Number(fmt.Sprint(item.value))
+				if err != nil {
+					return nil, config.Continue, err
+				}
+				pFields = append(pFields, config.FieldOf(item.key, number))
+			}
+			policyFields = append(policyFields, config.FieldOf(name, config.ObjectValue(config.Object(pFields))))
+		}
+		fields = append(fields, config.FieldOf("policies", config.ObjectValue(config.Object(policyFields))))
+	}
+	return config.Object(fields), config.Continue, nil
 }
 
 func defaultConfig() Config {
@@ -192,6 +377,14 @@ func defaultConfig() Config {
 		RetryMaxAttempts: defaultMaxAttempts,
 		RetryInitialWait: defaultInitialWaitMs,
 		RetryMaxWait:     defaultMaxWaitMs,
+		Recovery: RecoveryConfig{
+			ProbeIntervalMs:  defaultRecoveryProbeIntervalMs,
+			InitialBackoffMs: defaultRecoveryInitialBackoffMs,
+			MaxBackoffMs:     defaultRecoveryMaxBackoffMs,
+			VerifyAttempts:   defaultRecoveryVerifyAttempts,
+			BufferCapacity:   defaultRecoveryBufferCapacity,
+			Overflow:         defaultRecoveryOverflow,
+		},
 	}
 }
 

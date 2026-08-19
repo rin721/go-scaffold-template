@@ -170,3 +170,27 @@ res, err := executionExecutor.Execute(ctx, Execution{
 
 - 不实现跨进程分布式锁 / 消息调度 / 主备选举；跨进程严格一次语义属后续独立论证。
 - 本增量先把恢复治理机制作为 `pkg` 能力落地并单测（对缓存的 Cache-primary、数据库 backend 与按模块策略隔离的剩余装配为下一增量，见 `tasks.md`）。
+
+## 12. Kernel App 装配恢复治理与按模块策略隔离（对既有 035 的增量裁剪）
+
+把第 11 节的恢复治理机制接入 `kernel/app/execution`，并落地「不同业务模块通过独立配置声明执行策略、实现模块间策略隔离」：
+
+### 12.1 组件装配恢复治理
+
+- `build()` 把 backend Store 包进 `pkg/execution.RecoveringStore`（主存储 + 本地降级兜底均为内存），`Start()` 启动恢复循环；`WithTerminalFinalizer(stop)` 在实例最终化时 `Stop()` 并等待退出（符合 AGENTS 3.4 资源所有权）。
+- 组件 `ready()` 不依赖外部基础设施就绪：主存储缺位时以 Healthy 启动，真正的外部主存储不可用时由恢复治理（Degraded + 后台探测）接管，不阻止整个服务启动。
+- 恢复治理配置（`probeIntervalMs` / `initialBackoffMs` / `maxBackoffMs` / `verifyAttempts` / `bufferCapacity` / `overflow`）为应用层集中声明并校验，不隐式依赖 `pkg/execution` 默认值（对齐 032）；溢出策略仅允许 `discard` / `block` / `alert`。
+
+### 12.2 按模块策略隔离
+
+- `Config.Policies` 允许业务模块按名独立声明 `retryMaxAttempts` / `retryInitialWaitMs` / `retryMaxWaitMs` / `timeoutMs`。
+- `pkg/execution.Execution` 新增可选 `PolicyName` 字段（装配方元数据，pkg 执行器不感知）。组件 `Access.Execute` 依此解析命名策略填充 `Policy`/`Timeout`；未知策略名返回可识别错误，不静默回退；未声明时回退到组件默认策略。
+- 示例：业务模块（支付）`Execution{Key, PolicyName: "payment", Operation: ...}` 即按 `policies.payment` 策略执行，与其他模块互不绑定。
+
+### 12.3 能力边界（本地降级语义）
+
+- 本地 memory 降级只是**单实例容错手段**，不提供与分布式 Cache 相同强度的幂等/跨进程一次语义。多实例环境下，本地降级缓冲与占用仅在当前进程内可见，不保证跨实例去重一致；该边界在实现与文档中明确，不默认声称等价。
+
+### 12.4 剩余增量
+
+- 真正的外部主存储接入（Cache-primary Redis 或 database backend）作为下一增量；届时 RecoveringStore 的 Degraded/Recovering 语义在应用内实际触发。

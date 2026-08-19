@@ -43,6 +43,10 @@ type Execution struct {
 	Timeout   time.Duration          // 0 表示不额外超时
 	Trigger   string                 // 低敏触发者/来源，用于执行记录
 	Operation Operation
+	// PolicyName 是给装配方（Kernel App）使用的命令式策略选择标识：业务模块可通过
+	// 独立配置声明命名策略并按此名引用，避免多个模块被绑定到同一套固定策略。
+	// 装配方据此解析 Policy/Timeout；pkg 执行器本身不感知该字段。
+	PolicyName string
 }
 
 // OperationExecutor 是业务模块消费的稳定契约。
