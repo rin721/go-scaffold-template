@@ -1,291 +1,515 @@
-openapi: 3.0.3
-info:
-  title: go-scaffold-template HTTP API
-  version: 1.0.0-rc.1
-  description: |
-    当前模板的公开 HTTP 契约。所有失败使用 RFC 9457 Problem Details；
-    Todo operation 使用 bearer JWT，并由生成的 policy inventory 驱动授权。
-tags:
-  - name: Todo
-    description: Todo 示例资源。
-paths:
-  /api/v1/todos:
-    post:
-      operationId: createTodo
-      summary: 创建 Todo
-      tags: [Todo]
-      security:
-        - bearerAuth: []
-      x-policy:
-        mode: protected
-        scope: todos:write
-        action: todo.create
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateTodoRequest'
-      responses:
-        '201':
-          description: Todo 已创建。
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Todo'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-        '415':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '500':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '504':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
-    get:
-      operationId: listTodos
-      summary: 查询 Todo 列表
-      tags: [Todo]
-      security:
-        - bearerAuth: []
-      x-policy:
-        mode: protected
-        scope: todos:read
-        action: todo.list
-      parameters:
-        - name: status
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/TodoStatus'
-        - name: offset
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 0
-            default: 0
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-      responses:
-        '200':
-          description: Todo 列表。
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TodoList'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '500':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '504':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
-  /api/v1/todos/{id}:
-    parameters:
-      - $ref: '#/components/parameters/TodoID'
-    get:
-      operationId: getTodo
-      summary: 读取 Todo
-      tags: [Todo]
-      security:
-        - bearerAuth: []
-      x-policy:
-        mode: protected
-        scope: todos:read
-        action: todo.read
-      responses:
-        '200':
-          description: Todo 详情。
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Todo'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '500':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '504':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
-  /api/v1/todos/{id}/complete:
-    parameters:
-      - $ref: '#/components/parameters/TodoID'
-    patch:
-      operationId: completeTodo
-      summary: 完成 Todo
-      tags: [Todo]
-      security:
-        - bearerAuth: []
-      x-policy:
-        mode: protected
-        scope: todos:write
-        action: todo.complete
-      responses:
-        '200':
-          description: 已完成的 Todo。
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Todo'
-        '400':
-          $ref: '#/components/responses/Problem'
-        '404':
-          $ref: '#/components/responses/Problem'
-        '409':
-          $ref: '#/components/responses/Problem'
-        '429':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '500':
-          $ref: '#/components/responses/Problem'
-        '503':
-          $ref: '#/components/responses/ProblemWithRetryAfter'
-        '504':
-          $ref: '#/components/responses/Problem'
-        default:
-          $ref: '#/components/responses/Problem'
 components:
-  securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-  parameters:
-    TodoID:
-      name: id
-      in: path
-      required: true
-      schema:
-        type: string
-        minLength: 1
-        maxLength: 128
-  responses:
-    Problem:
-      description: RFC 9457 Problem Details。
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-    ProblemWithRetryAfter:
-      description: 可重试的 RFC 9457 Problem Details。
-      headers:
-        Retry-After:
-          description: 建议客户端等待的秒数。
-          schema:
-            type: integer
-            minimum: 1
-      content:
-        application/problem+json:
-          schema:
-            $ref: '#/components/schemas/Problem'
-  schemas:
-    CreateTodoRequest:
-      type: object
-      additionalProperties: false
-      required: [title]
-      properties:
-        title:
-          type: string
-          minLength: 1
-          maxLength: 200
-    TodoStatus:
-      type: string
-      enum: [pending, completed]
-    Todo:
-      type: object
-      additionalProperties: false
-      required: [id, title, status, createdAt, updatedAt]
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        status:
-          $ref: '#/components/schemas/TodoStatus'
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        completedAt:
-          type: string
-          format: date-time
-          nullable: true
-    TodoList:
-      type: object
-      additionalProperties: false
-      required: [items, offset, limit, total]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Todo'
-        offset:
-          type: integer
-          minimum: 0
-        limit:
-          type: integer
-          minimum: 1
-        total:
-          type: integer
-          format: int64
-          minimum: 0
-    Problem:
-      type: object
-      additionalProperties: false
-      required: [type, title, status, code]
-      properties:
-        type:
-          type: string
-          format: uri-reference
-        title:
-          type: string
-        status:
-          type: integer
-          minimum: 400
-          maximum: 599
-        detail:
-          type: string
-        instance:
-          type: string
-          format: uri-reference
-        code:
-          type: string
-          pattern: '^[a-z][a-z0-9_]{0,63}$'
-        violations:
-          type: array
-          items:
-            $ref: '#/components/schemas/Violation'
-    Violation:
-      type: object
-      additionalProperties: false
-      required: [field, reason]
-      properties:
-        field:
-          type: string
-        reason:
-          type: string
+    schemas:
+        CreateTodoRequest:
+            additionalProperties: false
+            description: 创建 Todo 的请求体。
+            properties:
+                title:
+                    description: Todo 标题，去除首尾空白后必填。
+                    maxLength: 200
+                    minLength: 1
+                    type: string
+            required:
+                - title
+            type: object
+        Problem:
+            additionalProperties: false
+            description: RFC 9457 Problem Details。
+            properties:
+                code:
+                    description: 稳定机器可读错误码。
+                    pattern: ^[a-z][a-z0-9_]{0,63}$
+                    type: string
+                detail:
+                    description: 人类可读的错误细节。
+                    type: string
+                instance:
+                    description: 错误实例 URI-reference。
+                    format: uri-reference
+                    type: string
+                status:
+                    description: HTTP 状态码。
+                    maximum: 599
+                    minimum: 400
+                    type: integer
+                title:
+                    type: string
+                type:
+                    description: Problem type URI-reference。
+                    format: uri-reference
+                    type: string
+                violations:
+                    items:
+                        $ref: '#/components/schemas/Violation'
+                    type: array
+            required:
+                - type
+                - title
+                - status
+                - code
+            type: object
+        Todo:
+            additionalProperties: false
+            description: Todo 资源。
+            properties:
+                completedAt:
+                    description: 完成时间。
+                    format: date-time
+                    nullable: true
+                    type: string
+                createdAt:
+                    description: 创建时间。
+                    format: date-time
+                    type: string
+                id:
+                    description: Todo 稳定 ID。
+                    type: string
+                status:
+                    $ref: '#/components/schemas/TodoStatus'
+                title:
+                    description: Todo 标题。
+                    type: string
+                updatedAt:
+                    description: 最后更新时间。
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - title
+                - status
+                - createdAt
+                - updatedAt
+            type: object
+        TodoList:
+            additionalProperties: false
+            description: Todo 分页列表。
+            properties:
+                items:
+                    items:
+                        $ref: '#/components/schemas/Todo'
+                    type: array
+                limit:
+                    minimum: 1
+                    type: integer
+                offset:
+                    minimum: 0
+                    type: integer
+                total:
+                    format: int64
+                    minimum: 0
+                    type: integer
+            required:
+                - items
+                - offset
+                - limit
+                - total
+            type: object
+        TodoStatus:
+            description: Todo 生命周期状态。
+            enum:
+                - pending
+                - completed
+            type: string
+        Violation:
+            additionalProperties: false
+            description: 单个字段校验失败。
+            properties:
+                field:
+                    type: string
+                reason:
+                    type: string
+            required:
+                - field
+                - reason
+            type: object
+    securitySchemes:
+        bearerAuth:
+            bearerFormat: JWT
+            scheme: bearer
+            type: http
+info:
+    description: 当前模板的公开 HTTP 契约。所有失败使用 RFC 9457 Problem Details；Todo operation 使用 bearer JWT，并由生成的 policy inventory 驱动授权。
+    title: go-scaffold-template HTTP API
+    version: 1.0.0-rc.1
+openapi: 3.0.3
+paths:
+    /api/v1/todos:
+        get:
+            operationId: listTodos
+            parameters:
+                - in: query
+                  name: status
+                  schema:
+                    $ref: '#/components/schemas/TodoStatus'
+                - in: query
+                  name: offset
+                  schema:
+                    default: 0
+                    minimum: 0
+                    type: integer
+                - in: query
+                  name: limit
+                  schema:
+                    minimum: 1
+                    type: integer
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TodoList'
+                    description: 成功响应。
+                "400":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求无效。
+                "404":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源不存在。
+                "409":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源冲突。
+                "415":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 不支持的媒体类型。
+                "429":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求过多，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "500":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务内部错误。
+                "503":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务暂不可用，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "504":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 上游请求超时。
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 未预期的错误。
+            security:
+                - bearerAuth: []
+            tags:
+                - Todo
+            x-policy:
+                action: todo.list
+                mode: protected
+                scope: todos:read
+        post:
+            operationId: createTodo
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateTodoRequest'
+                required: true
+            responses:
+                "201":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Todo'
+                    description: 成功响应。
+                "400":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求无效。
+                "404":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源不存在。
+                "409":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源冲突。
+                "415":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 不支持的媒体类型。
+                "429":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求过多，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "500":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务内部错误。
+                "503":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务暂不可用，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "504":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 上游请求超时。
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 未预期的错误。
+            security:
+                - bearerAuth: []
+            tags:
+                - Todo
+            x-policy:
+                action: todo.create
+                mode: protected
+                scope: todos:write
+    /api/v1/todos/{id}:
+        get:
+            operationId: getTodo
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Todo'
+                    description: 成功响应。
+                "400":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求无效。
+                "404":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源不存在。
+                "409":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源冲突。
+                "415":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 不支持的媒体类型。
+                "429":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求过多，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "500":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务内部错误。
+                "503":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务暂不可用，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "504":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 上游请求超时。
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 未预期的错误。
+            security:
+                - bearerAuth: []
+            tags:
+                - Todo
+            x-policy:
+                action: todo.read
+                mode: protected
+                scope: todos:read
+        parameters:
+            - description: Todo 稳定 ID。
+              in: path
+              name: id
+              required: true
+              schema:
+                description: Todo 稳定 ID。
+                maxLength: 128
+                minLength: 1
+                type: string
+    /api/v1/todos/{id}/complete:
+        parameters:
+            - description: Todo 稳定 ID。
+              in: path
+              name: id
+              required: true
+              schema:
+                description: Todo 稳定 ID。
+                maxLength: 128
+                minLength: 1
+                type: string
+        patch:
+            operationId: completeTodo
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Todo'
+                    description: 成功响应。
+                "400":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求无效。
+                "404":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源不存在。
+                "409":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 资源冲突。
+                "415":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 不支持的媒体类型。
+                "429":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 请求过多，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "500":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务内部错误。
+                "503":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 服务暂不可用，请稍后重试。
+                    headers:
+                        Retry-After:
+                            description: 建议客户端等待的秒数。
+                            schema:
+                                minimum: 1
+                                type: integer
+                "504":
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 上游请求超时。
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/Problem'
+                    description: 未预期的错误。
+            security:
+                - bearerAuth: []
+            tags:
+                - Todo
+            x-policy:
+                action: todo.complete
+                mode: protected
+                scope: todos:write
+tags:
+    - description: Todo 示例资源。
+      name: Todo

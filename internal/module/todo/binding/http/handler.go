@@ -1,15 +1,16 @@
-// Package httpbinding 把生成的 OpenAPI transport 契约适配到 Todo UseCases。
+// Package httpbinding 把 Todo 模块的 HTTP 契约适配到 Todo UseCases。
+//
+// 030 代码优先：本模块声明自己的路由契约（见 contract_module.go），Handler 使用模块自有 DTO
+// （见 dto.go），不再依赖全局生成包 internal/transport/http/api。
 package httpbinding
 
 import (
 	"context"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
-	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
 	"github.com/rin721/go-scaffold-template/pkg/fault"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
@@ -20,15 +21,15 @@ type ActorAccess interface {
 	Actor(context.Context) (service.Actor, bool)
 }
 
-// Operations 只声明 Todo 模块拥有的 HTTP operation，不扩张为整份应用 API。
+// Operations 只声明 Todo 模块拥有的 HTTP operation，签名使用模块自有 DTO。
 type Operations interface {
-	ListTodos(context.Context, api.ListTodosRequestObject) (api.ListTodosResponseObject, error)
-	CreateTodo(context.Context, api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error)
-	GetTodo(context.Context, api.GetTodoRequestObject) (api.GetTodoResponseObject, error)
-	CompleteTodo(context.Context, api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error)
+	ListTodos(context.Context, ListTodosParams) (TodoList, error)
+	CreateTodo(context.Context, CreateTodoRequest) (Todo, error)
+	GetTodo(context.Context, string) (Todo, error)
+	CompleteTodo(context.Context, string) (Todo, error)
 }
 
-// Handler 把 Todo 生成 DTO 适配到项目 UseCases，不创建 Router 或绑定路由。
+// Handler 把 Todo HTTP 契约适配到项目 UseCases，不创建 Router 或绑定路由。
 type Handler struct {
 	service    service.UseCases
 	translator i18n.Translator
@@ -49,87 +50,74 @@ func NewHandler(todoService service.UseCases, translator i18n.Translator, actors
 	return &Handler{service: todoService, translator: translator, actors: actors}, nil
 }
 
-// ListTodos 把生成 query DTO 转换为稳定用例查询。
-func (h *Handler) ListTodos(ctx context.Context, request api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
+// ListTodos 把查询参数转换为稳定用例查询。
+func (h *Handler) ListTodos(ctx context.Context, params ListTodosParams) (TodoList, error) {
 	actor, err := h.actor(ctx)
 	if err != nil {
-		return nil, err
+		return TodoList{}, err
 	}
 	query := service.ListQuery{Actor: actor}
-	if request.Params.Status != nil {
-		query.Status = string(*request.Params.Status)
+	if params.Status != nil {
+		status, parseErr := model.ParseStatus(string(*params.Status))
+		if parseErr != nil {
+			return TodoList{}, &httpx.StatusError{StatusCode: http.StatusBadRequest, Code: "invalid_parameter", Message: "invalid status", Err: parseErr}
+		}
+		query.Status = string(status)
 	}
-	if request.Params.Offset != nil {
-		query.Offset = *request.Params.Offset
+	if params.Offset != nil {
+		query.Offset = *params.Offset
 	}
-	if request.Params.Limit != nil {
-		query.Limit = *request.Params.Limit
+	if params.Limit != nil {
+		query.Limit = *params.Limit
 	}
 	result, err := h.service.List(ctx, query)
 	if err != nil {
-		return nil, h.present(ctx, err)
+		return TodoList{}, h.present(ctx, err)
 	}
-	items := make([]api.Todo, len(result.Items))
+	items := make([]Todo, len(result.Items))
 	for index, todo := range result.Items {
-		items[index] = todoResponse(todo)
+		items[index] = todoDTO(todo)
 	}
-	return api.ListTodos200JSONResponse{
-		Items: items, Offset: result.Offset, Limit: result.Limit, Total: result.Total,
-	}, nil
+	return TodoList{Items: items, Offset: result.Offset, Limit: result.Limit, Total: result.Total}, nil
 }
 
-// CreateTodo 把生成 request body 转换为稳定用例命令。
-func (h *Handler) CreateTodo(ctx context.Context, request api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
-	if request.Body == nil {
-		return nil, &httpx.StatusError{StatusCode: http.StatusBadRequest, Code: "invalid_json", Message: "request body is required"}
-	}
+// CreateTodo 把请求 body 转换为稳定用例命令。
+func (h *Handler) CreateTodo(ctx context.Context, body CreateTodoRequest) (Todo, error) {
 	actor, err := h.actor(ctx)
 	if err != nil {
-		return nil, err
+		return Todo{}, err
 	}
-	created, err := h.service.Create(ctx, service.CreateCommand{Actor: actor, Title: request.Body.Title})
+	created, err := h.service.Create(ctx, service.CreateCommand{Actor: actor, Title: body.Title})
 	if err != nil {
-		return nil, h.present(ctx, err)
+		return Todo{}, h.present(ctx, err)
 	}
-	return api.CreateTodo201JSONResponse(todoResponse(created)), nil
+	return todoDTO(created), nil
 }
 
-// GetTodo 把生成 path DTO 转换为稳定用例查询。
-func (h *Handler) GetTodo(ctx context.Context, request api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
+// GetTodo 把路径参数转换为稳定用例查询。
+func (h *Handler) GetTodo(ctx context.Context, id string) (Todo, error) {
 	actor, err := h.actor(ctx)
 	if err != nil {
-		return nil, err
+		return Todo{}, err
 	}
-	todo, err := h.service.Get(ctx, service.GetQuery{Actor: actor, ID: request.Id})
+	todo, err := h.service.Get(ctx, service.GetQuery{Actor: actor, ID: id})
 	if err != nil {
-		return nil, h.present(ctx, err)
+		return Todo{}, h.present(ctx, err)
 	}
-	return api.GetTodo200JSONResponse(todoResponse(todo)), nil
+	return todoDTO(todo), nil
 }
 
-// CompleteTodo 把生成 path DTO 转换为稳定用例命令。
-func (h *Handler) CompleteTodo(ctx context.Context, request api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
+// CompleteTodo 把路径参数转换为稳定用例命令。
+func (h *Handler) CompleteTodo(ctx context.Context, id string) (Todo, error) {
 	actor, err := h.actor(ctx)
 	if err != nil {
-		return nil, err
+		return Todo{}, err
 	}
-	todo, err := h.service.Complete(ctx, service.CompleteCommand{Actor: actor, ID: request.Id})
+	todo, err := h.service.Complete(ctx, service.CompleteCommand{Actor: actor, ID: id})
 	if err != nil {
-		return nil, h.present(ctx, err)
+		return Todo{}, h.present(ctx, err)
 	}
-	return api.CompleteTodo200JSONResponse(todoResponse(todo)), nil
-}
-
-func todoResponse(todo model.Todo) api.Todo {
-	response := api.Todo{
-		Id: todo.ID, Title: todo.Title, Status: api.TodoStatus(todo.Status),
-		CreatedAt: todo.CreatedAt.Truncate(time.Millisecond), UpdatedAt: todo.UpdatedAt.Truncate(time.Millisecond),
-	}
-	if todo.CompletedAt != nil {
-		completed := todo.CompletedAt.Truncate(time.Millisecond)
-		response.CompletedAt = &completed
-	}
-	return response
+	return todoDTO(todo), nil
 }
 
 func (h *Handler) actor(ctx context.Context) (service.Actor, error) {

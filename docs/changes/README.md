@@ -32,5 +32,6 @@
 - [027 第三方封装与分轨装配](027-business-module-third-party-isolation/README.md)：已确认并实施；新增业务能力先完整收口到模块，专属第三方留在模块 Adapter 并零泄漏，只有跨业务复用且由进程统一选择的资源才进入完整底层链。
 - [028 开发日志基线与启动可见性](028-required-development-logging/README.md)：已完成；development 默认输出 Debug 及以上，production 默认保持 Info，Service/Generation/HTTP 已形成分级低敏事件链并由开发规范和架构测试守护。
 - [029 本地启动与配置闭环](029-local-startup-config-closure/README.md)：已完成；generated config、Migration、Todo CLI 与 Service 共用 application-owned 配置集合，本地启动与配置说明已收束到根 README、本地启动指南和配置说明。
+- [030 模块自有代码优先契约](030-module-owned-code-first-contract/README.md)：已完成；契约 authority 反转为模块自有 typed 声明，`contract-gen` 从代码生成 `api/openapi.yaml` 与 operation inventory，删除 oapi-codegen 生成链与 nethttp-middleware，transport 从同一份契约单一绑定。
 
-下一个任务序号为 `030`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `031`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

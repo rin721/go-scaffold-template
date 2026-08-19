@@ -1,0 +1,41 @@
+schema_version: 1
+id: R002
+title: "typed code-first 生成路径与工具可行性"
+question: "如果要让模块以 Go 代码声明自己的 HTTP 契约，再由代码生成 openapi.yaml，现有依赖与在树工具能否支撑；与 024 已评估过的 Huma/ogen 路径相比，项目自有 typed 声明 + 生成器是否可行？"
+research_type: current-project
+topics: ["typed code-first", "OpenAPI generation", "JSON Schema", "module-owned contract", "generator", "invopop/jsonschema", "kin-openapi"]
+keywords: ["contract declaration", "openapi.yaml generation", "json schema from Go struct", "ReflectFromType", "openapi3.T", "go:generate", "oasdiff"]
+languages: ["Go"]
+frameworks: ["kin-openapi v0.142.0", "invopop/jsonschema v0.14.0"]
+technologies: ["OpenAPI 3.0.3", "JSON Schema", "yaml.v3"]
+applicable_scenarios: ["030 生成器设计", "模块自有契约声明", "契约文件由代码生成", "第三方工具封装"]
+non_applicable_scenarios: ["运行期加载远端 spec", "动态插件路由", "客户端 SDK 生成", "多服务拆分"]
+status: active
+summary: "本地模块缓存已确认 invopop/jsonschema v0.14.0 提供 Reflect/ReflectFromType 与 jsonschema 标签体系，可从 Go struct 生成 JSON Schema；kin-openapi v0.142.0 可程序化构建 openapi3.T 并序列化 YAML；两者均已在依赖树/module cache 中且为稳定版本。因此“项目自有 typed 声明 -> 生成 openapi.yaml”技术上可行，且不需要新增第三方生成框架；与 024 已拒绝的 Huma/ogen 相比，本方案保持模块只依赖项目自有类型，第三方只存在于生成器与 transport 内部。"
+evidence:
+  types: ["module-cache", "generated-code", "source-code", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "invopop/jsonschema v0.14.0 源码与示例"
+      locator: "$GOMODCACHE/github.com/invopop/jsonschema@v0.14.0/reflect.go; schema.go; examples_test.go"
+      snapshot: "2026-08-19"
+    - title: "kin-openapi v0.142.0 源码"
+      locator: "$GOMODCACHE/github.com/getkin/kin-openapi@v0.142.0/openapi3/loader.go"
+      snapshot: "2026-08-19"
+    - title: "当前生成链与依赖声明"
+      locator: "internal/transport/http/api/generate.go; go.mod（tool 段）"
+      snapshot: "HEAD c68377b"
+    - title: "024 对 Huma/ogen/自研 generator 的评估"
+      locator: "docs/changes/024-production-ready-one-shot-completion/research/R002-api-security-stack-selection/report.md"
+      snapshot: "HEAD c68377b"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["invopop/jsonschema 或 kin-openapi 版本更新", "OpenAPI 3.1 正式支持进入 oapi-codegen 主线", "出现统一 schema 标准变化"]
+relations:
+  extends: ["024-R002", "019-R002"]
+  related: ["R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

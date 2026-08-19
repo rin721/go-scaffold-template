@@ -9,27 +9,20 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
-	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
 	"github.com/rin721/go-scaffold-template/pkg/fault"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
-func TestHandlerMapsGeneratedDTOToTodoUseCases(t *testing.T) {
+func TestHandlerMapsDTOToTodoUseCases(t *testing.T) {
 	useCases := &stubUseCases{}
 	handler := newHandler(t, useCases, actorAccessStub{authenticated: true})
 	ctx := httpx.WithOperationID(t.Context(), "createTodo")
-	response, err := handler.CreateTodo(ctx, api.CreateTodoRequestObject{
-		Body: &api.CreateTodoJSONRequestBody{Title: "学习 OpenAPI"},
-	})
+	created, err := handler.CreateTodo(ctx, CreateTodoRequest{Title: "学习 OpenAPI"})
 	if err != nil {
 		t.Fatalf("CreateTodo() error = %v", err)
 	}
-	created, ok := response.(api.CreateTodo201JSONResponse)
-	if !ok {
-		t.Fatalf("CreateTodo() response = %T", response)
-	}
-	if created.Id != "00000000-0000-0000-0000-000000000001" || created.Status != api.Pending {
+	if created.ID != "00000000-0000-0000-0000-000000000001" || created.Status != StatusPending {
 		t.Fatalf("CreateTodo() response = %#v", created)
 	}
 	if useCases.operationID != "createTodo" || useCases.actor.Subject != "http-test" {
@@ -44,7 +37,7 @@ func TestHandlerUsesTypedRequestLanguageForProblemPresentation(t *testing.T) {
 		t.Fatalf("NewHandler() error = %v", err)
 	}
 	ctx := httpx.WithRequestLanguage(t.Context(), "zh-CN")
-	_, err = handler.GetTodo(ctx, api.GetTodoRequestObject{Id: "missing"})
+	_, err = handler.GetTodo(ctx, "missing")
 	var statusError *httpx.StatusError
 	if !errors.As(err, &statusError) {
 		t.Fatalf("GetTodo() error = %T %v", err, err)
@@ -56,7 +49,7 @@ func TestHandlerUsesTypedRequestLanguageForProblemPresentation(t *testing.T) {
 
 func TestHandlerFailsClosedWithoutActor(t *testing.T) {
 	handler := newHandler(t, &stubUseCases{}, actorAccessStub{})
-	_, err := handler.ListTodos(t.Context(), api.ListTodosRequestObject{})
+	_, err := handler.ListTodos(t.Context(), ListTodosParams{})
 	var statusError *httpx.StatusError
 	if !errors.As(err, &statusError) || statusError.StatusCode != http.StatusUnauthorized || statusError.Code != "unauthenticated" {
 		t.Fatalf("ListTodos() error = %T %v", err, err)

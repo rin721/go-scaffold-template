@@ -11,7 +11,7 @@ import (
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	httpbinding "github.com/rin721/go-scaffold-template/internal/module/ops/binding/http"
 	opsmodel "github.com/rin721/go-scaffold-template/internal/module/ops/model"
-	httpapi "github.com/rin721/go-scaffold-template/internal/transport/http/api"
+	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
 	pkgobservability "github.com/rin721/go-scaffold-template/pkg/observability"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
@@ -109,10 +109,10 @@ func (s generationOpsSource) Readiness(ctx context.Context) (bool, bool, error) 
 }
 
 func opsOperations() []pkgobservability.Operation {
-	operations := httpapi.Operations()
-	result := make([]pkgobservability.Operation, len(operations))
-	for index, operation := range operations {
-		result[index] = pkgobservability.Operation{ID: string(operation.ID), Method: operation.Method, Path: operation.Path}
+	module := todohttp.ModuleContract()
+	result := make([]pkgobservability.Operation, 0, len(module.Operations))
+	for _, operation := range module.Operations {
+		result = append(result, pkgobservability.Operation{ID: string(operation.ID), Method: string(operation.Method), Path: operation.Path})
 	}
 	return result
 }

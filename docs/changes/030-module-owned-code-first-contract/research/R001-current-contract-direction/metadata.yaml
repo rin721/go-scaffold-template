@@ -1,0 +1,53 @@
+schema_version: 1
+id: R001
+title: "当前 HTTP 契约方向与模块耦合复核"
+question: "当前 HTTP 契约由谁管理、朝哪个方向生成，模块对契约的依赖边界在哪里，第三方库暴露到什么程度，以及既有决策是否锁死了该方向？"
+research_type: current-project
+topics: ["HTTP contract authority", "spec-first", "module ownership", "third-party boundary", "OpenAPI", "oapi-codegen"]
+keywords: ["api/openapi.yaml", "oapi-codegen", "StrictServerInterface", "HandlerWithOptions", "openapi-inventory", "nethttp-middleware", "kin-openapi", "GetSwagger", "ADR-003"]
+languages: ["Go"]
+frameworks: ["Chi", "oapi-codegen v2.8.0"]
+technologies: ["OpenAPI 3.0.3", "kin-openapi v0.142.0", "nethttp-middleware v1.2.0"]
+applicable_scenarios: ["030 设计计划", "契约方向反转", "模块自有契约声明", "第三方封装边界"]
+non_applicable_scenarios: ["改变公开 HTTP 行为", "拆分独立服务", "动态路由注册", "新增真实业务用例"]
+status: active
+summary: "当前是 spec-first 单轨：api/openapi.yaml 是唯一 authority，oapi-codegen 从它生成 DTO 与 strict Chi route binding，openapi-inventory 从它生成 operation inventory；模块 HTTP binding 依赖生成包 internal/transport/http/api，composition 以完整 StrictServerInterface 静态聚合收口；transport 直接使用 chi/kin-openapi/nethttp-middleware。ADR-003（024）已把 spec-first OpenAPI 3.0.3 固定为已实施决策，本任务要求反转为 typed code-first 模块自有契约，必须明确取代该决策的权限来源。"
+evidence:
+  types: ["source-code", "generated-code", "tests", "authoritative-project-documentation", "module-cache"]
+  primary_sources:
+    - title: "OpenAPI authority 与生成配置"
+      locator: "api/openapi.yaml; api/oapi-codegen.yaml; api/README.md"
+      snapshot: "HEAD c68377b"
+    - title: "生成指令与生成物"
+      locator: "internal/transport/http/api/generate.go; internal/transport/http/api/api.gen.go; internal/transport/http/api/operation_inventory.gen.go"
+      snapshot: "HEAD c68377b"
+    - title: "transport 路由绑定与第三方依赖"
+      locator: "internal/transport/http/routes.go"
+      snapshot: "HEAD c68377b"
+    - title: "composition 静态 aggregate 与 Auth 连接"
+      locator: "internal/composition/http_api.go; internal/composition/service.go; internal/composition/ops.go"
+      snapshot: "HEAD c68377b"
+    - title: "模块 HTTP binding 对生成包的依赖"
+      locator: "internal/module/todo/binding/http/handler.go; internal/module/todo/module.go"
+      snapshot: "HEAD c68377b"
+    - title: "架构门禁断言"
+      locator: "internal/kernel/composition/architecture_test.go"
+      snapshot: "HEAD c68377b"
+    - title: "既有 authority 决策"
+      locator: "docs/changes/024-production-ready-one-shot-completion/decision.md; docs/changes/024-production-ready-one-shot-completion/research/R002-api-security-stack-selection/report.md; docs/changes/019-http-api-maturity-gap-assessment; docs/changes/022-http-api-template-readiness"
+      snapshot: "HEAD c68377b"
+    - title: "本地模块缓存工具核实"
+      locator: "$GOMODCACHE/github.com/invopop/jsonschema@v0.14.0; $GOMODCACHE/github.com/getkin/kin-openapi@v0.142.0"
+      snapshot: "2026-08-19"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["OpenAPI 生成器或版本变化", "新增第二个业务 HTTP 模块", "transplant 或 authority 文档变化", "oapi-codegen 或 kin-openapi 版本升级"]
+relations:
+  extends: ["026-R001", "024-R002", "019-R001", "022-R004"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

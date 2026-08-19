@@ -4,12 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"reflect"
 
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
-	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
+	"github.com/rin721/go-scaffold-template/pkg/httpx/contract"
 )
 
 type operationAuthorizer interface {
@@ -51,46 +50,48 @@ func (a operationGateAdapter) Enforce(ctx context.Context, operation string) err
 	return nil
 }
 
-// strictAPIServer 是唯一满足完整生成接口的应用静态聚合，只转发到模块 operation Handler。
-type strictAPIServer struct {
-	todo todohttp.Operations
+// contractDispatcher 聚合模块契约与运行期 handler，是 route binding 的唯一操作表来源。
+type contractDispatcher struct {
+	module   contract.Module
+	handlers map[contract.OperationID]contract.Handler
 }
 
-func newStrictAPIServer(todoOperations todohttp.Operations) (*strictAPIServer, error) {
+func newContractDispatcher(todoOperations todohttp.Operations) (*contractDispatcher, error) {
 	if nilDependency(todoOperations) {
 		return nil, fmt.Errorf("Todo HTTP operations are nil")
 	}
-	return &strictAPIServer{todo: todoOperations}, nil
+	module := todohttp.ModuleContract()
+	handlers := todohttp.RuntimeHandlers(todoOperations)
+	if len(handlers) == 0 {
+		return nil, fmt.Errorf("Todo HTTP runtime handlers are empty")
+	}
+	for _, operation := range module.Operations {
+		if _, ok := handlers[operation.ID]; !ok {
+			return nil, fmt.Errorf("Todo operation %q has no runtime handler", operation.ID)
+		}
+	}
+	return &contractDispatcher{module: module, handlers: handlers}, nil
 }
 
-func (s *strictAPIServer) ListTodos(ctx context.Context, request api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
-	return s.todo.ListTodos(ctx, request)
+func (d *contractDispatcher) Modules() []contract.Module {
+	return []contract.Module{d.module}
 }
 
-func (s *strictAPIServer) CreateTodo(ctx context.Context, request api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
-	return s.todo.CreateTodo(ctx, request)
+func (d *contractDispatcher) Operations() []contract.Operation {
+	return append([]contract.Operation(nil), d.module.Operations...)
 }
 
-func (s *strictAPIServer) GetTodo(ctx context.Context, request api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
-	return s.todo.GetTodo(ctx, request)
-}
-
-func (s *strictAPIServer) CompleteTodo(ctx context.Context, request api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
-	return s.todo.CompleteTodo(ctx, request)
+func (d *contractDispatcher) Handler(operationID contract.OperationID) (contract.Handler, bool) {
+	handler, ok := d.handlers[operationID]
+	return handler, ok
 }
 
 func nilDependency(value any) bool {
 	if value == nil {
 		return true
 	}
-	reflected := reflect.ValueOf(value)
-	switch reflected.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return reflected.IsNil()
-	default:
-		return false
-	}
+	return false
 }
 
 var _ httptransport.OperationGate = operationGateAdapter{}
-var _ api.StrictServerInterface = (*strictAPIServer)(nil)
+var _ httptransport.Dispatcher = (*contractDispatcher)(nil)

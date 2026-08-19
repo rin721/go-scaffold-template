@@ -17,7 +17,7 @@
 | 能力 | 当前底层技术 | 项目边界 |
 | --- | --- | --- |
 | `logger` | `go.uber.org/zap` | 业务依赖窄 Logger；构造方通过 Resource 独占 Sync/Close 和文件 sink；提供 noop/test logger 和审计字段。 |
-| `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；Server 由单一 owner 预绑定、阻塞 Serve，并显式拆分 graceful Stop 与有损 ForceStop；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。 |
+| `httpx` | `net/http` + `go-chi/chi/v5` | 构造 HTTP 客户端、路由和服务端；Server 由单一 owner 预绑定、阻塞 Serve，并显式拆分 graceful Stop 与有损 ForceStop；提供 recovery、request id、access log、secure headers、CORS、body limit、rate limit。`httpx/contract` 提供代码优先的模块自有契约 DSL 与 typed Handler 适配，封装 schema/OpenAPI 渲染内部使用的第三方库。 |
 | `i18n` | `go-i18n/v2` + `x/text/language` + `yaml.v3` | 构造翻译器并加载本地化资源；Kernel 组合输出身份稳定、内部可换代的 Translator facade。 |
 | `database` | `gorm`、SQLite、PostgreSQL、MySQL | 提供项目自有 Schema、Repository、事务、迁移与资源契约，不暴露 GORM 类型。 |
 | `cache` | `go-cache`、`go-redis/v9`、`msgpack` | 构造调用方拥有的泛型缓存客户端；Kernel 可治理 disabled/Redis 后端与连接生命周期。 |

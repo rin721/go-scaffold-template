@@ -357,11 +357,11 @@ func (f *applicationGenerationFactory) Prepare(
 	if err != nil {
 		return abort(err)
 	}
-	strictAPI, err := newStrictAPIServer(generation.module.Operations)
+	dispatcher, err := newContractDispatcher(generation.module.Operations)
 	if err != nil {
 		return abort(err)
 	}
-	apiRoutes, err := httptransport.NewRouteBinding(strictAPI, operationGate)
+	apiRoutes, err := httptransport.NewRouteBinding(dispatcher, operationGate)
 	if err != nil {
 		return abort(err)
 	}

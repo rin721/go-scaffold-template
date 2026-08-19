@@ -1,24 +1,27 @@
 # HTTP API 契约
 
-`openapi.yaml` 是公开 HTTP operation、路径、请求/响应 schema、security 与兼容性的唯一权威。不要手写第二份路由、DTO、权限清单或 Swagger 注解。
+`api/openapi.yaml` 是公开 HTTP operation、路径、请求/响应 schema、security 与兼容性的产物，由项目自有生成器 **从各模块的代码优先（code-first）契约声明生成**。Go 代码是唯一权威；不再由 openapi.yaml 生成 Go 代码，也不再维护第二份手写路由/DTO 清单。
 
-## 修改与生成
+## 权威与生成
 
-1. 修改 `openapi.yaml`，为每个 operation 保留唯一稳定的 `operationId`、显式 `security`、`x-policy` 和默认 Problem response。
+1. 每个业务模块在 `internal/module/<name>/binding/http` 中以 `pkg/httpx/contract` 的 typed 类型声明自己拥有的 operation（method/path/operationId/policy/security 与 DTO schema），例如 `todo.binding/http/contract_module.go` 的 `ModuleContract()`。
 2. 在仓库根目录执行：
 
    ```powershell
-   go generate ./internal/transport/http/api
+   go generate ./...
    ```
 
-3. 审阅 `internal/transport/http/api/*.gen.go`。生成 DTO 只允许进入模块自己的 operation Handler，不能进入 module core、service 或 repository；顶层 transport 只承载应用级 validator、strict middleware 和单一 generated route binding，不承载手写业务 Adapter。
-4. 执行 contract tests 与 breaking gate：
+   这会运行 `internal/tools/contract-gen`，从所有已注册的模块契约渲染：
 
-   ```powershell
-   go test ./internal/module/todo/binding/http ./internal/transport/http ./pkg/httpx -count=1
-   go tool oasdiff breaking <base-openapi.yaml> api/openapi.yaml
-   ```
+   - `api/openapi.yaml` —— 公开契约产物；
+   - `internal/transport/http/api/operation_inventory.gen.go` —— operation identity 与 policy inventory。
 
-首次建立契约时没有历史 base，只验证规范、生成物和运行 contract；后续变更必须从目标 Git 基线提取 `api/openapi.yaml` 作为 base。公共破坏不得通过更新一份仓库内复制品绕过，必须先采用明确版本/弃用策略并记录决策。
+3. 审阅生成 diff；`go generate` 后必须 clean diff（`git diff --exit-code -- api internal/transport/http/api`）。
+4. 生成器输出必须与既有契约语义兼容：CI 用 `oasdiff breaking` 对照上一个已提交 `api/openapi.yaml` 基线，新增公共破坏必须先采用版本/弃用策略并记录决策，不能简单更新一份副本绕过。
 
-`oapi-codegen.yaml` 固定 strict Chi 生成选项。各模块先产出只包含自己 operation 的 Handler；`internal/composition` 是唯一满足完整生成接口的静态 aggregate；`internal/transport/http` 再把 aggregate 一次绑定为 API routes。新增模块只扩展自身 Handler、aggregate 转发和 composition，不复制 Router 或 method/path。`internal/tools/openapi-inventory` 在生成前校验 operation identity 与策略完整性，并从同一规范生成低基数 inventory，供 Router、授权、日志、trace、metrics 和测试复用。
+## 运行期绑定
+
+`internal/transport/http` 是唯一 route binding owner：它从聚合后的模块契约构建 OpenAPI 校验规范、一次绑定路由、执行 operation gate 与问题呈现。新增业务模块只扩展自身契约声明、runtime handlers 与 `internal/composition` 的聚合，不复制 Router、validator 或 method/path。
+
+- 模块 handler 使用模块自有 DTO（`binding/http/dto.go`），不依赖全局生成包。
+- 底层第三方库（kin-openapi、yaml、jsonschema）只存在于 `pkg/httpx/contract` 内部与 transport/生成器，不泄漏到业务模块。

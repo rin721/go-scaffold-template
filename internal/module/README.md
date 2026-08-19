@@ -19,7 +19,7 @@ model <- service <- repo/binding <- module.go <- internal/composition
 - `module.go` 只做纯内存局部装配。
 - `internal/composition` 是唯一可以同时知道 Kernel Capability 与应用模块的位置。
 
-HTTP 模块遵循固定的 Handler-first 链路：模块先返回窄 operation Handler，`internal/composition` 静态聚合各模块 operation，`internal/transport/http` 只绑定一次 OpenAPI validator、strict middleware 和生成路由，application Router 最后安装全局 middleware 并挂载唯一 API route tree。新增模块不得复制完整 Router、route binding 或 method/path 表。
+HTTP 模块遵循固定的代码优先源头：模块在 `binding/http` 以自己的 typed 契约声明（`pkg/httpx/contract.Module`，见 `contract_module.go`）描述拥有的 operation，并实现模块自有 DTO 与窄 operation Handler（`dto.go`、`handler.go`、`handlers.go`）；`internal/composition` 聚合模块契约与运行期 handler；`internal/transport/http` 从同一份契约一次绑定 OpenAPI 校验、operation gate 与路由；生成器 `internal/tools/contract-gen` 据此渲染 `api/openapi.yaml` 与 operation inventory。新增模块不得复制完整 Router、route binding 或 method/path 表。
 
 新增业务能力先把真实存在的 Model、Repository、Service、Handler、Adapter、binding、配置、migration/运行单元与 contribution 完整收口到 `internal/module/<name>`，不为对称制造空层。只服务该模块的第三方进入完整路径 `internal/module/<name>/adapter/<technology>` 并完全封装技术影子；不存在无 owner 的全局 `internal/module/adapter`。
 

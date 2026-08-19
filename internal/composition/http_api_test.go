@@ -7,28 +7,25 @@ import (
 	"time"
 
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
+	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
-	"github.com/rin721/go-scaffold-template/internal/transport/http/api"
 )
 
-func TestStrictAPIServerDelegatesToTodoOperations(t *testing.T) {
+func TestContractDispatcherAggregatesTodoOperations(t *testing.T) {
 	operations := &todoOperationsStub{}
-	server, err := newStrictAPIServer(operations)
+	dispatcher, err := newContractDispatcher(operations)
 	if err != nil {
-		t.Fatalf("newStrictAPIServer() error = %v", err)
+		t.Fatalf("newContractDispatcher() error = %v", err)
 	}
-	if _, err := server.CreateTodo(t.Context(), api.CreateTodoRequestObject{}); err != nil {
-		t.Fatalf("CreateTodo() error = %v", err)
+	operationsList := dispatcher.Operations()
+	if len(operationsList) != 4 {
+		t.Fatalf("dispatcher operations = %d, want 4", len(operationsList))
 	}
-	if operations.createCalls != 1 {
-		t.Fatalf("Todo CreateTodo() calls = %d", operations.createCalls)
+	if _, ok := dispatcher.Handler("createTodo"); !ok {
+		t.Fatal("dispatcher Handler(createTodo) not found")
 	}
-	if _, err := newStrictAPIServer(nil); err == nil {
-		t.Fatal("newStrictAPIServer(nil) error = nil")
-	}
-	var typedNil *todoOperationsStub
-	if _, err := newStrictAPIServer(typedNil); err == nil {
-		t.Fatal("newStrictAPIServer(typed nil) error = nil")
+	if _, err := newContractDispatcher(nil); err == nil {
+		t.Fatal("newContractDispatcher(nil) error = nil")
 	}
 }
 
@@ -93,21 +90,22 @@ func (s *operationAuthorizerStub) EnforceOperation(context.Context, authmodel.Pr
 
 type todoOperationsStub struct{ createCalls int }
 
-func (*todoOperationsStub) ListTodos(context.Context, api.ListTodosRequestObject) (api.ListTodosResponseObject, error) {
-	return api.ListTodos200JSONResponse{}, nil
+func (*todoOperationsStub) ListTodos(context.Context, todohttp.ListTodosParams) (todohttp.TodoList, error) {
+	return todohttp.TodoList{}, nil
 }
 
-func (s *todoOperationsStub) CreateTodo(context.Context, api.CreateTodoRequestObject) (api.CreateTodoResponseObject, error) {
+func (s *todoOperationsStub) CreateTodo(context.Context, todohttp.CreateTodoRequest) (todohttp.Todo, error) {
 	s.createCalls++
-	return api.CreateTodo201JSONResponse{}, nil
+	return todohttp.Todo{}, nil
 }
 
-func (*todoOperationsStub) GetTodo(context.Context, api.GetTodoRequestObject) (api.GetTodoResponseObject, error) {
-	return api.GetTodo200JSONResponse{}, nil
+func (*todoOperationsStub) GetTodo(context.Context, string) (todohttp.Todo, error) {
+	return todohttp.Todo{}, nil
 }
 
-func (*todoOperationsStub) CompleteTodo(context.Context, api.CompleteTodoRequestObject) (api.CompleteTodoResponseObject, error) {
-	return api.CompleteTodo200JSONResponse{}, nil
+func (*todoOperationsStub) CompleteTodo(context.Context, string) (todohttp.Todo, error) {
+	return todohttp.Todo{}, nil
 }
 
+var _ = todoOperationsStub{}
 var _ operationAuthorizer = (*operationAuthorizerStub)(nil)

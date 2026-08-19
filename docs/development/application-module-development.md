@@ -109,11 +109,11 @@ model <- service <- repo
 2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
 3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
 4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换、exported 类型、配置和资源边界；只有跨业务复用与进程统一选择两项均有证据时才走完整底层 Capability 路径。
-5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 只返回本模块 operation Handler，不创建 Router 或绑定整份 OpenAPI；不同入口复用同一 Service，不互相回环。
+5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 以 `pkg/httpx/contract` 在模块内声明自有 operation 契约并实现窄 typed Handler，不创建 Router、不加载 OpenAPI、不由全局生成包决定 DTO；不同入口复用同一 Service，不互相回环。
 6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回窄 Handler/Service 与完成品 contribution。
-7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、静态聚合所有 HTTP operation、合并 contribution 并建立 Host；`internal/transport/http` 只把完整 aggregate 绑定一次生成路由。
+7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、聚合全部模块契约与运行期 handler、合并 contribution 并建立 Host；`internal/tools/contract-gen` 从模块契约生成 `api/openapi.yaml` 与 operation inventory，`internal/transport/http` 只把完整契约绑定一次路由与校验。
 
-HTTP 的固定构造顺序是 `module Handler -> application strict aggregate -> generated route binding -> application Router -> Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；新增模块只增加自身 Handler、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router。
+HTTP 的固定构造顺序是 `模块契约声明 + typed Handler → composition 聚合 contract + 运行期 handler → transport 一次绑定契约校验与路由 → application Router → Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；生成器从模块契约渲染 `api/openapi.yaml` 与 operation inventory。新增模块只增加自身契约、Handler/运行期 handler、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router，也不写第二份全局 OpenAPI。
 
 ## 5. 资源和运行 owner
 

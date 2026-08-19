@@ -1,0 +1,41 @@
+schema_version: 1
+id: R003
+title: "通用 HTTP 契约能力分层与迁移边界"
+question: "要把“模块自有 typed 契约 + 由代码生成 openapi.yaml + 运行期绑定”落地为项目自己的能力，通用能力应放在哪个目录、模块与 transport/composition 各消费什么，迁移到单轨时哪些门禁和文档必须同步？"
+research_type: current-project
+topics: ["generic capability", "layering", "module ownership", "transport", "composition", "architecture gate", "migration"]
+keywords: ["pkg/httpx", "internal/transport/http", "internal/composition", "binding/http", "architecture_test", "go:generate", "单轨迁移"]
+languages: ["Go"]
+frameworks: ["Chi", "kin-openapi"]
+technologies: ["OpenAPI 3.0.3", "JSON Schema"]
+applicable_scenarios: ["030 设计落地", "模块自有契约声明", "transport 通用 binder", "架构门禁更新", "权威文档同步"]
+non_applicable_scenarios: ["新增真实业务模块", "Kernel 新能力", "动态插件", "多服务拆分"]
+status: active
+summary: "通用 HTTP 契约能力应落在项目自有层：声明类型与渲染器归属 pkg 级项目能力（封装第三方），运行期绑定归属 internal/transport/http，模块只在 binding/http 声明契约并实现窄 operation Handler，composition 聚合契约与连接 Auth/Ops；迁移必须由通用能力先行、Todo 单轨替换、旧生成链与第三方直连删除、架构门禁与权威文档同步四步完成。"
+evidence:
+  types: ["source-code", "tests", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "pkg 层能力与封装原则"
+      locator: "pkg/README.md; pkg/httpx/README.md"
+      snapshot: "HEAD c68377b"
+    - title: "模块开发指南与目录约定"
+      locator: "docs/development/application-module-development.md; internal/module/README.md; internal/module/todo/README.md"
+      snapshot: "HEAD c68377b"
+    - title: "transport 与 composition 当前职责"
+      locator: "internal/transport/http/routes.go; internal/composition/http_api.go; internal/composition/generation.go"
+      snapshot: "HEAD c68377b"
+    - title: "架构门禁现状"
+      locator: "internal/kernel/composition/architecture_test.go"
+      snapshot: "HEAD c68377b"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["pkg 层能力目录调整", "模块开发指南更新", "架构门禁规则变化", "transport 职责变化"]
+relations:
+  extends: ["R001", "R002", "027-R001", "026-R001"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

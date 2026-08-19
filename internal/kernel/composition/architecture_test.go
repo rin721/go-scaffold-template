@@ -72,10 +72,10 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{ImportPath: modulePath + "/internal/module/todo/repo", Imports: []string{modulePath + "/pkg/database"}},
 		{ImportPath: modulePath + "/internal/module/auth/adapter/jwt", Imports: []string{"github.com/lestrrat-go/jwx/v3/jwt"}},
 		{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{
-			modulePath + "/internal/module/todo/service", modulePath + "/internal/transport/http/api", modulePath + "/pkg/httpx",
+			modulePath + "/internal/module/todo/service", modulePath + "/pkg/httpx", modulePath + "/pkg/httpx/contract",
 		}},
 		{ImportPath: modulePath + "/internal/transport/http", Imports: []string{
-			modulePath + "/internal/transport/http/api", modulePath + "/pkg/httpx",
+			modulePath + "/pkg/httpx", modulePath + "/pkg/httpx/contract", modulePath + "/internal/transport/http/api",
 		}},
 	}
 	if err := validatePackageGraph(legal); err != nil {
@@ -225,7 +225,8 @@ func validatePackageGraph(graph []packageNode) error {
 				return fmt.Errorf("application module %s imports another module owner %s through %s", sourceOwner, importedOwner, imported)
 			}
 			if importedIsModule && node.ImportPath != modulePath+"/internal/composition" &&
-				(!sourceIsModule || sourceOwner != importedOwner) {
+				(!sourceIsModule || sourceOwner != importedOwner) &&
+				!contractGeneratorImportsModuleContract(node.ImportPath, imported) {
 				return fmt.Errorf("package %s imports application module %s outside the composition root", node.ImportPath, imported)
 			}
 			if sourceIsModule && (imported == modulePath+"/internal/composition" ||
@@ -411,9 +412,8 @@ func validateHTTPSourceOwnership(root string) error {
 		line int
 	}
 	var moduleRouteCalls []assertion
-	var strictInterfaceAssertions []assertion
-	var handlerBindings []assertion
-	var strictBindings []assertion
+	var routeBindings []assertion
+	var dispatcherAssertions []assertion
 	internalRoot := filepath.Join(root, "internal")
 	err := filepath.WalkDir(internalRoot, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -442,40 +442,39 @@ func validateHTTPSourceOwnership(root string) error {
 				name = spec.Name.Name
 			}
 			imports[name] = importPath
-			if moduleHTTPBindingSource(root, path) && forbiddenModuleHTTPBindingImport(importPath) {
-				return fmt.Errorf("module HTTP binding %s imports application route infrastructure %s", path, importPath)
+			if moduleHTTPBindingSource(root, path) {
+				if forbiddenModuleHTTPBindingImport(importPath) {
+					return fmt.Errorf("module HTTP binding %s imports application route infrastructure %s", path, importPath)
+				}
+				if importPath == modulePath+"/internal/transport/http/api" {
+					return fmt.Errorf("module HTTP binding %s imports generated contract package %s", path, importPath)
+				}
 			}
 		}
 		ast.Inspect(parsed, func(node ast.Node) bool {
 			switch current := node.(type) {
+			case *ast.FuncDecl:
+				if current.Name.Name == "NewRouteBinding" {
+					position := fileset.Position(current.Pos())
+					routeBindings = append(routeBindings, assertion{path: path, line: position.Line})
+				}
 			case *ast.CallExpr:
 				selector, ok := current.Fun.(*ast.SelectorExpr)
-				if !ok || selectorImportPath(selector, imports) != modulePath+"/internal/transport/http/api" {
+				if !ok {
 					return true
 				}
-				position := fileset.Position(selector.Pos())
-				item := assertion{path: path, line: position.Line}
-				switch selector.Sel.Name {
-				case "GetSwagger", "Handler", "HandlerFromMux", "HandlerFromMuxWithBaseURL", "HandlerWithOptions", "NewStrictHandler", "NewStrictHandlerWithOptions":
-					if moduleHTTPBindingSource(root, path) {
-						moduleRouteCalls = append(moduleRouteCalls, item)
-					}
-				}
-				if selector.Sel.Name == "HandlerWithOptions" {
-					handlerBindings = append(handlerBindings, item)
-				}
-				if selector.Sel.Name == "NewStrictHandlerWithOptions" {
-					strictBindings = append(strictBindings, item)
+				if moduleHTTPBindingSource(root, path) && selectorImportPath(selector, imports) == modulePath+"/internal/transport/http/api" {
+					position := fileset.Position(selector.Pos())
+					moduleRouteCalls = append(moduleRouteCalls, assertion{path: path, line: position.Line})
 				}
 			case *ast.ValueSpec:
 				if len(current.Names) != 1 || current.Names[0].Name != "_" {
 					return true
 				}
 				selector, ok := current.Type.(*ast.SelectorExpr)
-				if ok && selector.Sel.Name == "StrictServerInterface" &&
-					selectorImportPath(selector, imports) == modulePath+"/internal/transport/http/api" {
+				if ok && selector.Sel.Name == "Dispatcher" {
 					position := fileset.Position(selector.Pos())
-					strictInterfaceAssertions = append(strictInterfaceAssertions, assertion{path: path, line: position.Line})
+					dispatcherAssertions = append(dispatcherAssertions, assertion{path: path, line: position.Line})
 				}
 			}
 			return true
@@ -488,14 +487,11 @@ func validateHTTPSourceOwnership(root string) error {
 	if len(moduleRouteCalls) > 0 {
 		return fmt.Errorf("module HTTP binding owns generated application route/server at %#v", moduleRouteCalls)
 	}
-	if len(handlerBindings) != 1 || !pathWithin(root, handlerBindings[0].path, "internal", "transport", "http") {
-		return fmt.Errorf("generated HandlerWithOptions binding must exist once under internal/transport/http, got %#v", handlerBindings)
+	if len(routeBindings) != 1 || !pathWithin(root, routeBindings[0].path, "internal", "transport", "http") {
+		return fmt.Errorf("contract NewRouteBinding must exist once under internal/transport/http, got %#v", routeBindings)
 	}
-	if len(strictBindings) != 1 || !pathWithin(root, strictBindings[0].path, "internal", "transport", "http") {
-		return fmt.Errorf("generated strict binding must exist once under internal/transport/http, got %#v", strictBindings)
-	}
-	if len(strictInterfaceAssertions) != 1 || !pathWithin(root, strictInterfaceAssertions[0].path, "internal", "composition") {
-		return fmt.Errorf("complete StrictServerInterface assertion must exist once under internal/composition, got %#v", strictInterfaceAssertions)
+	if len(dispatcherAssertions) != 1 || !pathWithin(root, dispatcherAssertions[0].path, "internal", "composition") {
+		return fmt.Errorf("dispatcher assertion must exist once under internal/composition, got %#v", dispatcherAssertions)
 	}
 	return nil
 }
@@ -521,6 +517,17 @@ func pathWithin(root, path string, parts ...string) bool {
 	target := filepath.Join(append([]string{root}, parts...)...)
 	relative, err := filepath.Rel(target, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator))
+}
+
+// contractGeneratorImportsModuleContract 允许 030 生成器 internal/tools/contract-gen 在构建期
+// import 模块的 binding/http 契约包（只生产生成物，不进入 production 运行图）。
+func contractGeneratorImportsModuleContract(importer, imported string) bool {
+	const generator = "/internal/tools/contract-gen"
+	if !strings.HasSuffix(importer, generator) {
+		return false
+	}
+	return strings.HasPrefix(imported, modulePath+"/internal/module/") &&
+		strings.Contains(imported, "/binding/http")
 }
 
 func applicationModuleOwner(importPath string) (string, bool) {
