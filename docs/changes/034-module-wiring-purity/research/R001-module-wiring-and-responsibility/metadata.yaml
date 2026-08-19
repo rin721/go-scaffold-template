@@ -1,0 +1,38 @@
+schema_version: 1
+id: R001
+title: "业务模块装配流程与职责审计"
+question: "业务模块完成后，接入是否只需在 internal/composition 一处装配/依赖注入即可完成？是否存在为接入某模块而必须跨层修改多个位置、反向依赖或职责越界的情况？"
+research_type: current-project
+topics: ["module wiring", "composition", "reverse dependency", "layering", "assembly purity", "generic-first"]
+keywords: ["internal/composition", "ModuleContract", "contractDispatcher", "operationPolicies", "registeredModules", "Todo", "reverse dependency", "装配"]
+languages: ["Go"]
+frameworks: ["internal/composition", "internal/tools/contract-gen", "pkg/httpx/contract"]
+technologies: ["net/http"]
+applicable_scenarios: ["034 设计计划", "模块装配纯度审计", "职责边界修正"]
+non_applicable_scenarios: ["改变公开 HTTP 契约", "引入动态注册/Service Locator", "重构 Kernel 生命周期"]
+status: active
+summary: "现状：接入一个 HTTP 业务模块需要跨多个 composition 文件手改（http_api.go 的 Todo 专属 contractDispatcher、service.go 的 operationPolicies 硬编码 todohttp.ModuleContract、ops.go import todohttp.ModuleContract 推导 observability ops、todo.go CLI executor、generation.go 装配），并在 composition 之外修改 contract-gen 的 registeredModules()。其中 service.go/ops.go 直接依赖 Todo 契约包支撑了合成逻辑，属于契约知识多点扩散与跨模块反向读取的迹象。需要判断哪些是合理装配职责、哪些偏离了“仅 composition 一处装配”的单一职责。"
+evidence:
+  types: ["source-code", "tests", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "composition 装配文件"
+      locator: "internal/composition/{todo.go,migration.go,service.go,http_api.go,ops.go,generation.go}"
+      snapshot: "HEAD 94be4a7"
+    - title: "契约生成注册"
+      locator: "internal/tools/contract-gen/main.go"
+      snapshot: "HEAD 94be4a7"
+    - title: "模块边界与开发指南"
+      locator: "internal/module/README.md; docs/development/application-module-development.md"
+      snapshot: "HEAD 94be4a7"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["新增业务模块接入方式变化", "composition 重构", "contract-gen 注册机制变化"]
+relations:
+  extends: ["030-R001", "031-R001", "032-R001", "033-R001", "033-R002"]
+  related: ["R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

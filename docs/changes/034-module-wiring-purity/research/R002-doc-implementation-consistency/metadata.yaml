@@ -1,0 +1,38 @@
+schema_version: 1
+id: R002
+title: "文档与实现一致性核对"
+question: "项目权威文档（架构、模块接入方式、binding 契约、装配流程、配置方式、扩展方式、门禁规范）是否与当前代码实现和实际能力一致？是否存在文档描述尚未具备的能力，或代码已变化但文档停留在旧设计？"
+research_type: current-project
+topics: ["documentation consistency", "doc drift", "architecture doc", "binding contract", "gate norm"]
+keywords: ["文档", "一致性", "drift", "ModuleContract", "registeredModules", "binding", "装配", "门禁"]
+languages: ["Go"]
+frameworks: ["docs/development", "internal/module/README.md", "api/README.md", "docs/configuration"]
+technologies: ["contract-gen", "httpx/contract"]
+applicable_scenarios: ["034 设计计划", "文档与实现收口", "门禁规范复核"]
+non_applicable_scenarios: ["引入新架构能力", "重写文档体系"]
+status: active
+summary: "本轮对权威文档与当前实现做了抽查：模块开发指南已由 031/032/033 更新为 handler/ + binding/http 契约分层、i18n binding 与统一 binding 契约清单，与当前 Todo/contract-gen 实现基本一致；需进一步核对：contract-gen 的 registeredModules() 是否在文档中作为外部注册点被明确说明；Ops 独立 management HTTP 边界是否在模块 README 与开发指南一致；composition 多文件散落装配是否在“扩展方式”文档中有诚实描述；api/README、配置说明、门禁规范与当前代码是否相符。重点是把“文档描述了尚未具备的能力”或“代码已变、文档仍在旧设计”的偏移点列出。"
+evidence:
+  types: ["authoritative-project-documentation", "source-code"]
+  primary_sources:
+    - title: "权威文档"
+      locator: "docs/development/application-module-development.md; internal/module/README.md; api/README.md; docs/configuration/README.md; docs/changes/README.md"
+      snapshot: "HEAD 94be4a7"
+    - title: "当前实现对照"
+      locator: "internal/composition/**; internal/tools/contract-gen/main.go; internal/module/{todo,ops,auth,migration}/**"
+      snapshot: "HEAD 94be4a7"
+    - title: "门禁与规范"
+      locator: "internal/kernel/composition/architecture_test.go"
+      snapshot: "HEAD 94be4a7"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["权威文档或实现单方变化", "composition/contract-gen 接入方式变化"]
+relations:
+  extends: ["R001", "031-R001", "032-R002", "033-R001"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md
