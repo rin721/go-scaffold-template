@@ -61,6 +61,7 @@ type Record struct {
 	Result    string
 	Error     string
 	Trigger   string
+	Trace     string // 全链路追踪标识（低敏，如 trace/span ID），用于跨系统关联定位
 	Duration  time.Duration
 	CreatedAt time.Time
 }

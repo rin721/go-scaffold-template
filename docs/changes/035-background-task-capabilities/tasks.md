@@ -16,6 +16,7 @@
 | OBS-001 | NEXT-001 | 恢复治理可观测性接线：`Access.Recovery()`/`Access.Health()`、组件注入结构化 Logger 并在状态变化时输出 Warn/Info 日志、`pkg/execution.RecoveringStore.Health()` | 组件单测覆盖 Recovery/Health/日志回调；不泄漏敏感字段 | 已完成 `本轮` |
 | INT-001 | OBS-001 | 组件级端到端验证：经 `Access` 注入故障主存储，覆盖 主存储故障→降级本地有限能力→后台自动恢复探测→回放→原子切回→幂等去重回到主存储，并验证 Recovery()/Health()/日志随状态变化输出 | 端到端单测（`-race`）通过；`assemble` 内部装配缝支持故障注入 | 已完成 `本轮` |
 | ASYNC-001 | INT-001 | 执行记录异步持久化：`pkg/execution.AsyncRecorder`（幂等占用/完成同步、过程/失败记录异步有界队列 + 溢出策略 + 排空式 Shutdown），`kernel/app/execution` 装配 `Config.Async` 并接线 `stop()` 关闭顺序 | pkg 异步/溢出/排空/竞态单测 + 组件装配通过；不阻塞业务链路 | 已完成 `本轮` |
+| TRACE-001 | ASYNC-001 | 执行记录携带全链路追踪信息：`Record.Trace` + `pkg/execution.WithTrace/TraceFrom`，executor 从 context 提取低敏 trace/span 标识写入记录 | pkg 追踪单测通过；未设置时为空的边界明确 | 已完成 `本轮` |
 | GOV-001 | WIRE-001 | 门禁/反例：`pkg/execution` 不得 import internal；业务模块不得反向 import backend 具体类型；execution 组件不加隐藏第三方 | 架构 validator 覆盖并通过；无循环/反向依赖 | 待确认 |
 | VER-001 | 全部 | 全量验证：`go build/vet/gofmt ./...`、`go test ./... -count=1`、`go mod tidy -diff`、`go generate ./...`、`git diff --check` | 全部通过；更新 035 状态为已完成并聚焦提交（不 push） | 待确认 |
 

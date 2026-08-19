@@ -81,7 +81,8 @@ func (e *executor) run(ctx context.Context, exec Execution) (any, error) {
 
 	rec := Record{
 		Key: exec.Key, Status: StatusFailed,
-		Trigger: exec.Trigger, Duration: e.now().Sub(started), CreatedAt: e.now(),
+		Trigger: exec.Trigger, Trace: TraceFrom(ctx),
+		Duration: e.now().Sub(started), CreatedAt: e.now(),
 	}
 	if runErr == nil {
 		rec.Status = StatusCompleted
