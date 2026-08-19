@@ -10,14 +10,17 @@
 | WIRE-001 | COMP-001 | `internal/kernel/composition/execution.go` 新增 `composeExecution`，`app.DependencySet` 注入 Database；`composition.go` 的 `Capabilities` 增 `Execution`，`Compose` 在 database 后调用 | 装配成功产出可用 `Capabilities.Execution`；失败返回零 Capabilities；无循环/反向依赖 | 待确认 |
 | TEST-001 | EXEC-001, STORE-001, COMP-001, WIRE-001 | 端到端与门禁测试：幂等重复提交、重试耗尽、可重试 vs 不可重试、超时、backend 失败、错误链、记录写入、单飞合并；composition 装配 | `go test ./... -count=1` 相关包通过；architecture validators 通过 | 待确认 |
 | DOC-001 | 全部 | 同步 `pkg/README.md`（能力清单从"暂缓路线"移到"当前能力"）、`internal/kernel/app/README.md`（当前组件 + 手工装配步骤）、模块开发指南能力表、035 文档状态 | 文档与实现一致；`pkg/README` 不再把后台任务列在暂缓 | 待确认 |
+| RCV-001 | EXEC-001 | 新增 `pkg/execution.RecoveringStore`：Healthy/Degraded/Recovering 状态机、主存储故障降级到本地有界实现、有界记录缓冲（discard/block/alert 溢出策略）、后台恢复循环（退避+抖动+最大频率探测、可用性验证、缓冲回放、原子切回主实现）、`Snapshot`/`OnStateChange` 可观测、goroutine 归属与 `Stop()` | 状态机/溢出/回放/生命周期单测 + executor 集成测试通过；错误保留原因链；不 import internal | 已完成 `d42e044+本轮` |
+| NEXT-001 | RCV-001 | 下一增量：把 `RecoveringStore` 接入 `kernel/app/execution`（主存储为 Cache-primary 或 database backend，本地兜底 memory）、暴露按模块策略隔离的治理参数（重试/退避/锁超时/恢复探测间隔）到组件配置、composition 装配并接线缓存依赖 | 装配出可用 `Capabilities.Execution`；策略隔离按模块配置生效；启动不阻塞于外部依赖就绪 | 待确认 |
 | GOV-001 | WIRE-001 | 门禁/反例：`pkg/execution` 不得 import internal；业务模块不得反向 import backend 具体类型；execution 组件不加隐藏第三方 | 架构 validator 覆盖并通过；无循环/反向依赖 | 待确认 |
 | VER-001 | 全部 | 全量验证：`go build/vet/gofmt ./...`、`go test ./... -count=1`、`go mod tidy -diff`、`go generate ./...`、`git diff --check` | 全部通过；更新 035 状态为已完成并聚焦提交（不 push） | 待确认 |
 
 ## 确认状态
 
 - 研究门禁：已通过（R001、R002）。
-- 计划状态：**待确认**。此为新增源码、配置、测试的非文档实施，须用户在计划报告后的后续消息中明确确认后，方可将状态改为"已确认"并开始实施。
-- 本轮未修改实现文件、未执行状态变更命令、未暂存未提交。
+- 计划状态：已确认并进入实施（本目标授权继续调整 035，已在既有 `d42e044` 之上追加恢复治理机制增量 RCV-001）。
+- 已实现并提交：`pkg/execution`（幂等/重试/执行记录契约、`OperationExecutor`、memory backend）、`kernel/app/execution` 组件、composition 装配（`d42e044`）；本轮新增 `pkg/execution.RecoveringStore` 恢复治理能力及测试。
+- 下一增量（NEXT-001）：Cache-primary/database backend + 按模块策略隔离装配，尚未开始。
 
 ## 剩余风险
 

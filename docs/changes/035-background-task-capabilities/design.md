@@ -137,3 +137,36 @@ res, err := executionExecutor.Execute(ctx, Execution{
 - backend 具体 SQLite 表能力（TTL 清理、并发占用写入）以真实实现验证为准。
 - 是否允许业务模块直接使用单飞/占用语义，需在实现时给出可测试语义；若出现跨进程严格竞争需求，回退研究论证是否引入分布式锁/消息调度。
 - 组件是否默认启用：计划 Nodefault 为 enabled（database backend），由配置决定；确认后再定默认开关。
+
+## 11. 吸收恢复治理机制（对既有 035 的增量裁剪）
+
+吸收本目标提出的「降级不能是最终状态，必须形成完整故障恢复机制」要求，在 `pkg/execution` 新增由进程统一装配可用的 `RecoveringStore`（本项目自有契约，不强加平行治理体系，复用既有 `pkg/execution.Store` 契约与 `pkg/resilience` 语义）。
+
+### 11.1 状态机
+
+- `Healthy`：主存储可用，操作直接走主实现。
+- `Degraded`：主存储不可用，本次操作降级到本地有限实现；后台恢复循环接管探测。
+- `Recovering`：探测与基本可用性验证通过，正在回放降级期间的记录缓冲，回放完毕后原子切回 `Healthy`。
+- 恢复中再次失败（验证或回放失败）→ 回到 `Degraded`，按恢复策略继续探测，不影响整个应用。
+
+### 11.2 恢复策略
+
+- 探测不依赖下一次业务请求触发：`RecoveringStore.Start()` 起后台循环，仅在 `Degraded` 状态探测（goroutine 归属本 Store，`Stop()` 等待退出，符合 AGENTS 3.4）。
+- 探测等待采用指数退避（`InitialBackoff` 起、`*2` 增长、`MaxBackoff` 封顶）并叠加 ±20% 随机抖动，同时以 `ProbeInterval` 作为最大探测频率下限，避免依赖故障时重连风暴。
+- 探测成功不等于恢复：`VerifyAttempts` 次连续基本可用性验证（主 Store 实现 `Verifier` 则调用之；否则用保留 key 做占用+完成往返），验证通过才进入 `Recovering`。
+
+### 11.3 降级期间数据恢复
+
+- 降级期间的执行记录写入本地，并进入有界缓冲（`BufferCapacity`），主存储恢复后逐条回放（`Complete`/`Record`）。
+- 缓冲不允许无限积压：到达上限时按 `OverflowPolicy` 处理——`discard`（丢弃并计数）、`block`（阻塞直到腾出空间或上下文结束）、`alert`（丢弃并返回可区分 `ErrBufferOverflow` 供告警）。
+- 回放全部成功后才原子切回 `Healthy` 并清空缓冲；任一回放失败即退回 `Degraded` 保留剩余缓冲。
+
+### 11.4 可观测性
+
+- `RecoveringStore.Snapshot()` 输出 `State` / `Buffered` / `Dropped` / `Transitions`，供健康状态与指标上报。
+- `OnStateChange(from, to)` 在锁外触发，供应用层输出日志 / 指标 / 告警，且不造成自死锁（回调不得反向阻塞调用）。
+
+### 11.5 明确不引入
+
+- 不实现跨进程分布式锁 / 消息调度 / 主备选举；跨进程严格一次语义属后续独立论证。
+- 本增量先把恢复治理机制作为 `pkg` 能力落地并单测（对缓存的 Cache-primary、数据库 backend 与按模块策略隔离的剩余装配为下一增量，见 `tasks.md`）。

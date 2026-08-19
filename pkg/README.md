@@ -37,7 +37,7 @@
 | `codec` | `encoding/json`、`yaml.v3`、`msgpack` | 构造 JSON/YAML/msgpack 编解码器，提供内容类型、大小限制和统一错误语义。 |
 | `testkit` | 标准库 + 项目包 | 提供 fake clock、临时文件、健康 fixture 和底层库测试辅助。 |
 | `observability` | 项目自有契约 | 提供 HTTP observation、Metrics endpoint 与低敏 diagnostics；Prometheus/OTel/OTLP 只存在于 Kernel App 实现。 |
-| `execution` | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`（035）；内存 backend 由 Kernel App 在选择后注入。 |
+| `execution` | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`，以及具备完整故障恢复机制的外部依赖治理 Store `RecoveringStore`：主存储不可用时降级到本地有限实现、有界记录缓冲（丢弃/阻断/告警）+ 恢复后回放、退避/抖动/最大频率探测、可用性验证并原子切回主实现（035）；backend 由 Kernel App 在选择后注入。 |
 
 ## 暂缓路线
 
