@@ -1,0 +1,20 @@
+# Todo 模块自有 i18n 语言资源（033 i18n binding）。
+#
+# 维护位置：Todo 的 i18n 语言资源集中在模块自有的 binding/i18n 目录下维护，由
+# internal/module/todo/binding/i18n/catalog.go 暴露，并经 composition 聚合进 Kernel I18n 装配。
+# 消息 ID 约定：<domain>.<type>.<key>，例如 todo.error.todo_not_found。
+
+todo.error.todo_invalid_argument:
+  other: "Todo 输入无效"
+todo.error.todo_not_found:
+  other: "Todo 不存在"
+todo.error.todo_conflict:
+  other: "Todo 已被其他操作修改"
+todo.error.permission_denied:
+  other: "当前主体无权执行该操作"
+todo.error.todo_unavailable:
+  other: "Todo 服务暂不可用"
+todo.error.todo_timeout:
+  other: "Todo 请求已超时"
+todo.error.todo_canceled:
+  other: "Todo 请求已取消"

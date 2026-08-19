@@ -117,6 +117,26 @@ model <- service <- repo
 
 HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装箱 → composition 聚合 contract + 运行期 handler → transport 一次绑定契约校验与路由 → application Router → Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；生成器从模块契约渲染 `api/openapi.yaml` 与 operation inventory。新增模块只增加自身 Handler/运行期 handler、契约声明、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router，也不写第二份全局 OpenAPI。
 
+### 4.1 统一 binding 契约清单（033）
+
+业务模块按需提供以下 binding / 接入契约，每类的声明位置、接入方式、维护位置统一如下。仅按真实需要建立对应的 binding，不为了目录对称创建空层。
+
+| Binding / 契约 | 声明位置 | 接入方式 | 维护位置 |
+| --- | --- | --- | --- |
+| HTTP binding | 模块顶层 `handler/`（Operations/Handler/DTO/ActorAccess/错误呈现）+ `binding/http`（`ModuleContract`/`RuntimeHandlers`） | 注册 `contract-gen` 的 `registeredModules()`；`internal/composition` 聚合；`internal/transport/http` 绑定 | `internal/module/<name>/handler` 与 `binding/http` |
+| config binding | `binding/config` | composition 连接模块 Config | `internal/module/<name>/binding/config` |
+| cli binding | `binding/cli` | cmd（command）装配 | `internal/module/<name>/binding/cli` |
+| migration binding | `binding/migration` | composition / migrate 使用 | `internal/module/<name>/binding/migration` |
+| i18n binding | `binding/i18n`（模块自有语言资源 + 窄契约，如 `MessageFiles()`/`fs.FS`/catalog） | composition 显式聚合进 Non-Essential I18n 装配，再按模块注入 `pkg/i18n.Translator` | `internal/module/<name>/binding/i18n` 与模块内语言资源 |
+| middleware | `middleware/`（横切策略） | composition 挂载 | `internal/module/<name>/middleware` |
+
+**新增业务模块必须接入的基础契约**：
+
+- 若暴露 HTTP operation：必须提供 `handler/` + `binding/http` 的 `ModuleContract`/`RuntimeHandlers`，并注册 `contract-gen`；不得退化为手写固定路由。
+- 若有用户可见翻译：必须提供 i18n binding（自有语言资源 + `binding/i18n`），经 composition/kernel 聚合后通过注入的 `pkg/i18n.Translator` 消费；不得绕过注入直接读 `pkg/i18n` 默认配置。
+- `module.go` 只做纯内存装配并返回窄 Handler/Service 与 contribution；`internal/composition` 是唯一跨模块连接点。
+- 保留 032 配置边界：`pkg/*` 只提供通用能力 + 基础默认；`kernel/app/*` 负责应用层默认与装配，不隐式依赖 `pkg/*.DefaultConfig()`。
+
 ## 5. 资源和运行 owner
 
 一个功能可以同时包含底层共享资源和模块专属运行单元，必须分别确定 owner：
@@ -220,13 +240,14 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 
 ### 8.4 i18n 接入规范
 
-业务模块统一通过注入的 `pkg/i18n.Translator` 消费国际化，不自行创建 Translator，不直接读取或依赖 `pkg/i18n` 的默认配置（032）。
+i18n 是业务模块的正式 binding 契约（033）：业务模块按统一方式提供自身的 i18n 语言资源与 `binding/i18n`，而不是仅由底层 `kernel/app/i18n` 统一处理。业务模块统一通过注入的 `pkg/i18n.Translator` 消费翻译，不自行创建 Translator，不直接读取或依赖 `pkg/i18n` 的默认配置。
 
-- **接入方式**：`internal/composition` 用 Kernel I18n App（`internal/kernel/app/i18n`）装配出稳定的 `pkg/i18n.Translator`，注入到模块 HTTP profile 的依赖（如 Todo 的 `HTTPDependencies.Translator`）。Handler 持有该 Translator，并只在呈现边界调用 `Translate`/`MustTranslate`。
-- **统一路径**：i18n 消息文件目录统一声明为 `./locales`（由 `internal/kernel/app/i18n` 集中声明 `LocalesDir`）。语言文件按 `messages.<lang>.yaml|yml|json` 命名（lang 为 BCP 47，如 `zh-CN`、`en`）放在 `./locales` 下，并在 `internal/kernel/app/i18n` 或应用配置 `i18n.messageFiles` 中显式声明。
-- **维护位置**：新增或修改语言内容在 `./locales/messages.<lang>.yaml` 中维护；新增语言即新增对应语言文件并在 `i18n.messageFiles` 声明。默认缺失策略集中在 `kernel/app/i18n`（error，可配置为 use-id）。
-- **消息 ID 约定**：使用 `<domain>.<type>.<key>` 命名，例如 `todo.error.todo_not_found`；同一模块的消息 ID 前缀统一，避免各模块自行约定不同格式。
-- **禁止行为**：业务 handler 不得绕过统一 Translator 直接调用 `pkg/i18n.New`，不得复用 `pkg/i18n.DefaultConfig()` 作为应用默认，不得在不同模块各自创建第二套 locales 路径或消息文件维护方式。
+- **i18n binding 声明位置**：`internal/module/<name>/binding/i18n`（例如 `catalog.go`），暴露模块自有语言资源（如 `MessageFiles() []string`、`MessagesFS() fs.FS` 或静态 catalog），并在该目录下提供模块语言内容（如 `locales/messages.<lang>.yaml`，相对模块目录）。
+- **接入方式**：`internal/composition` 显式聚合各业务模块的 i18n binding 语言资源到 Kernel I18n App（`internal/kernel/app/i18n`）或组装进 `i18n.messageFiles`，再按模块注入 `pkg/i18n.Translator`（如 Todo 的 `HTTPDependencies.Translator`）。Handler 只在呈现边界调用 `Translate`/`MustTranslate`。不引入动态注册/Service Locator，聚合由 composition 显式完成。
+- **统一路径**：全局 `./locales` 仍是默认语言目录与聚合源（由 `internal/kernel/app/i18n` 集中声明 `LocalesDir`）；业务模块自有的 `binding/i18n/locales/` 语言资源可被聚合进同一 Translator。语言文件按 `messages.<lang>.yaml|yml|json` 命名（lang 为 BCP 47，如 `zh-CN`、`en`）。
+- **维护位置**：新增或修改语言内容优先在业务模块自身的 i18n binding 语言资源中维护（`internal/module/<name>/binding/i18n/locales/messages.<lang>.yaml`），并在 `binding/i18n` 暴露、经 composition 聚合；全局 `./locales/messages.<lang>.yaml` 作为聚合/默认源。新增语言即新增对应消息文件并暴露。
+- **消息 ID 约定**：使用 `<domain>.<type>.<key>` 命名，例如 `todo.error.todo_not_found`；同一模块的消息 ID 前缀统一。
+- **禁止行为**：业务 handler 不得绕过注入的 Translator 直接调用 `pkg/i18n.New`，不得复用 `pkg/i18n.DefaultConfig()` 作为应用默认；不得在未提供 i18n binding 的情况下靠全局路径散落声明，不得在不同模块各自建立第二套未聚合的语言资源维护方式。
 
 ## 9. 研究报告最小输出
 

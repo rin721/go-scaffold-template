@@ -106,8 +106,10 @@ i18n:
   # 未配置默认语言时使用 kernel/app/i18n 组件集中声明的默认语言 zh-CN。
   defaultLanguage: zh-CN
   # 消息文件目录统一为 ./locales，路径相对进程工作目录，支持 JSON、YAML 和 YML。
-  # 新增或修改语言内容在 ./locales 下按语言维护，并在此显式声明。
+  # 业务模块自有的 i18n 语言资源（如 Todo)经 i18n binding 声明并在此聚合。
+  # 新增或修改语言内容在对应业务模块 binding/i18n 或全局 ./locales 下维护。
   messageFiles:
+    - ./internal/module/todo/binding/i18n/locales/messages.zh-CN.yaml
     - ./locales/messages.zh-CN.yaml
     # - ./locales/messages.en.json
   # 缺失翻译策略：error 或 use-id。
