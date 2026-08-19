@@ -1,0 +1,28 @@
+status: active
+research_question: >
+  当前项目（go-scaffold-template）针对"后台任务/操作需要幂等、失败重试和执行记录"
+  这一需求，已经具备哪些可复用的底层能力？缺口在哪里？有哪些事实证据可复核？
+snapshot:
+  commit: f6ac785 refactor(composition): converge module HTTP wiring
+  verified: true
+findings:
+  - pkg/README.md 暂缓路线明确列出"后台任务：幂等、失败重试和执行记录"，属于当前刻意未实现、等待真实场景的能力。
+  - pkg/resilience 已提供 retry(Do)、timeout(WithTimeout)、circuit breaker(NewBreaker) 纯函数策略执行器，不拥有资源。
+  - pkg/fault 提供 Retryable(err) 分类与 Wrap 错误语义，可用于重试判断。
+  - pkg/concurrency 提供 singleflight(SingleFlight) 与固定 worker pool(NewPool)，用于并发合并与受限执行。
+  - pkg/idgen 提供 UUID 生成器，可作为幂等键来源。
+  - pkg/clock 提供系统/固定时钟，可注入执行时间与 TTL 计算。
+  - pkg/database 提供项目自有 Schema/Repository/事务契约，可作为幂等键与执行记录的持久化后端。
+  - pkg/observability 提供 HTTP observation 与低敏 diagnostics，可承载执行记录的上报/诊断（数据语义仍属能力或模块）。
+  - internal/kernel/app 组件链（clock/idgen/validation/logger/database/cache/i18n/storage/observability）与 composition.Compose/Capabilities 是底层能力装配的既定模式。
+  - 当前没有任何 idempotency / execution-record / retry-policy-assembly 的 pkg 或 kernel/app 组件；retry 只在 pkg/resilience 以纯函数形式存在，没有统一"先幂等判重，再带策略执行，再记录"的操作执行契约。
+  - 业务模块（todo 等）当前不消费上述能力；订单/支付/库存模块尚不存在（属示例场景），本任务只交付通用能力装配，不实现这些业务模块。
+inferences:
+  - 重试引擎本体已存在于 pkg/resilience，属于纯代码、无资源生命周期，不应为此重复造轮子，也不应硬塞进 kernel/app 组件（不满足"资源 + 进程统一选择"必要条件）。
+  - 真正缺失的是"操作执行装配层"：把幂等判重、重试策略、执行记录三个关注点组合成一个供业务模块消费的稳定契约，并为其键/记录提供持久化后端。
+  - 幂等键与执行记录的持久化需要后端；是否升级为 kernel/app 组件取决于"跨业务复用 + 进程统一选择"两项证据（R002 论证）。
+applies_to: 035 image: 后台任务能力装配（幂等/重试/执行记录）
+limits: >
+  仅核对当前仓库代码/文档快照；不承诺订单/支付/库存模块的任何实现；不评估外部第三方消息/任务库迁移，
+  因为需求当前不需要跨进程任务调度。
+refresh_trigger: 新增真实业务模块需要持久化幂等后端、或引入消息/任务调度能力时，应重新复核。

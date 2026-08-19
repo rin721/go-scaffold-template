@@ -37,5 +37,6 @@
 - [032 i18n 配置职责边界与集中声明](032-i18n-config-boundary/README.md)：已完成；`kernel/app/i18n` 集中声明默认配置并统一 `./locales`，logger/database 组件自声明默认值（不再复用 `pkg/*.DefaultConfig()`），cache 的 `redisstore.DefaultTagPrefix` 作为基础默认常量回退保留，并把「应用层不得隐式依赖通用库默认值」纳入架构门禁与业务 i18n 接入文档。
 - [033 业务模块统一契约与 binding 对齐](033-module-contract-alignment/README.md)：已完成；把统一绑定契约（HTTP/config/cli/migration/i18n/middleware）固化到模块开发指南，落地业务流程模块自有 i18n binding（Todo `binding/i18n`），文档化 Ops（独立 management）/Auth（横切）/Migration（纯 CLI）形态，并保留 032 的 pkg/kernel-app 配置边界。
 - [034 业务模块装配纯度与文档一致性](034-module-wiring-purity/README.md)：已完成；`internal/composition` 通过 `applicationHTTPModules()` 收敛 HTTP 契约接入，消除 `ops.go`/`service.go` 对 `todohttp.ModuleContract()` 的直接反向读取，生成器注册点 `registeredModules()` 与装配流程文档化，并让权威文档与实现一致。
+- [035 后台任务能力装配（幂等 / 重试 / 执行记录）](035-background-task-capabilities/README.md)：研究与计划已完成，待确认；为需要幂等、失败重试、执行记录的业务模块（订单、支付、库存为例）装配 `pkg/execution -> kernel/app -> composition` 底层执行能力，后端复用 `pkg/database`，重试复用 `pkg/resilience`。
 
-下一个任务序号为 `035`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `036`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

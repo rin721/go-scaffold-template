@@ -8,6 +8,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 	pkgclock "github.com/rin721/go-scaffold-template/pkg/clock"
 	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
@@ -41,6 +42,7 @@ type Capabilities struct {
 	Cache       cacheapp.Access
 	I18n        pkgi18n.Translator
 	Storage     storageapp.Access
+	Execution   executionapp.Access
 }
 
 // Compose 在本地完整构造并校验 Plan，最后一次性安装到 Kernel。
@@ -90,6 +92,10 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 	if err != nil {
 		return Capabilities{}, err
 	}
+	executionOutput, err := composeExecution(plan)
+	if err != nil {
+		return Capabilities{}, err
+	}
 	frozen, err := plan.Freeze()
 	if err != nil {
 		return Capabilities{}, fmt.Errorf("freeze component plan: %w", err)
@@ -102,5 +108,6 @@ func Compose(runtime *kernel.Kernel, options Options) (Capabilities, error) {
 		IDGenerator: idOutput.Output, Validator: validatorOutput.Output,
 		Database: databaseOutput.Output, Cache: cacheOutput.Output,
 		I18n: i18nOutput.Output, Storage: storageOutput.Output,
+		Execution: executionOutput.Output,
 	}, nil
 }

@@ -1,0 +1,21 @@
+status: active
+research_question: >
+  幂等 / 重试 / 执行记录三关注点应如何组合为稳定契约，并由进程统一装配；幂等键与执行记录的
+  持久化后端是否满足"跨业务复用 + 进程统一选择"，从而进入完整 pkg -> kernel/app -> composition 链？
+snapshot:
+  commit: f6ac785 refactor(composition): converge module HTTP wiring
+  verified: true
+findings:
+  - internal/kernel/app 只治理"同时跨业务复用且由进程统一选择"的底层资源；纯复用库停留在 pkg，不虚构组件。
+  - pkg/resilience 已提供重试/超时/熔断纯引擎；pkg/fault 提供 Retryable 分类；不应重复实现。
+  - composition.Capabilities 是进程统一选择的已有出口（Logger/Clock/IDGenerator/Validator/Database/Cache/I18n/Storage）。
+  - 幂等键与执行记录需持久化后端（database 是现有稳定 backend），由进程统一持有数据库连接，天然满足"进程统一选择"。
+  - 幂等/执行记录语义在所有业务模块（订单/支付/库存）中一致，满足"跨业务复用"。
+inferences:
+  - 重试引擎（pkg/resilience）保持 pkg 纯函数，不盲目升级 kernel/app；新装配层"操作执行器"与幂等/记录后端进入完整链。
+  - 应采用"幂等键 + 状态机"：执行前按 key 判重（进行中/成功快速返回），执行中并发单飞（复用 pkg/concurrency singleflight），成功后写记录并带 TTL 过期。
+  - 重试只对可重试错误（fault.Retryable）使用 pkg/resilience.Do；幂等结果（重复成功）不重试。
+  - 执行记录输出成功/失败/原因/耗时/触发者/键/状态与 TTL，至少保留原因链（AGENTS 3.3）。
+applies_to: 035 后台任务能力装配（幂等/重试/执行记录）
+limits: 不引入跨进程分布式锁（当前无多实例选择语义）；不做消息队列/死信；TTL 与 schema 以真实后端能力和验证为准。
+refresh_trigger: 出现多实例竞争、需要分布式锁/消息调度，或业务模块要求跨进程严格一次语义时重新复核。

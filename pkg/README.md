@@ -37,13 +37,13 @@
 | `codec` | `encoding/json`、`yaml.v3`、`msgpack` | 构造 JSON/YAML/msgpack 编解码器，提供内容类型、大小限制和统一错误语义。 |
 | `testkit` | 标准库 + 项目包 | 提供 fake clock、临时文件、健康 fixture 和底层库测试辅助。 |
 | `observability` | 项目自有契约 | 提供 HTTP observation、Metrics endpoint 与低敏 diagnostics；Prometheus/OTel/OTLP 只存在于 Kernel App 实现。 |
+| `execution` | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`（035）；内存 backend 由 Kernel App 在选择后注入。 |
 
 ## 暂缓路线
 
 以下能力属于成熟项目常见能力，但当前不阻塞底层库封装。必须等真实组件或业务场景明确后再定义契约：
 
 - 消息系统：NATS/Kafka/RabbitMQ adapter、consumer lifecycle、ack/retry/dead-letter。
-- 后台任务：幂等、失败重试和执行记录。
 - 定时调度：cron/interval 调度，以及分布式单实例执行策略。
 - 分布式锁：本地锁、Redis 锁、数据库锁，必须先明确租约和续期语义。
 - 认证授权：JWT/OIDC/password hash/RBAC，只有第一批组件包含用户身份时再进入。
