@@ -1,0 +1,38 @@
+schema_version: 1
+id: R002
+title: "模块顶层 handler 分层目标与边界"
+question: "把 handler 上移到模块顶层后，handler 层与 binding 层的目标职责如何划分，包名/目录如何组织，依赖方向如何保持单向，迁移顺序与门禁更新是什么？"
+research_type: current-project
+topics: ["application module", "layer separation", "single responsibility", "handler", "binding", "dependency direction"]
+keywords: ["handler", "binding/http", "module top level", "Operations", "RuntimeHandlers", "ModuleContract", "单一职责", "依赖单向"]
+languages: ["Go"]
+frameworks: ["pkg/httpx/contract"]
+technologies: ["net/http"]
+applicable_scenarios: ["031 设计落地", "模块顶层 handler 分层", "binding 职责收口"]
+non_applicable_scenarios: ["新增业务逻辑", "改变公开契约", "拆分服务", "动态路由"]
+status: active
+summary: "目标分层：internal/module/todo/handler 承载 HTTP 应用适配（Operations/Handler/DTO/ActorAccess/错误呈现），binding/http 只承载代码优先契约（ModuleContract）与运行期装箱（RuntimeHandlers）；handler 不 import binding，binding 可 import handler.Operations 类型；module.go 与 composition 装配两者。迁移按「先建 handler 包并同步消费方 -> 再把绑定职责收口 binding/http」单轨完成。"
+evidence:
+  types: ["source-code", "tests", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "030 已确立的 binding/http 内容"
+      locator: "internal/module/todo/binding/http/*.go"
+      snapshot: "HEAD b7fca48"
+    - title: "模块开发指南 HTTP 构造顺序"
+      locator: "docs/development/application-module-development.md"
+      snapshot: "HEAD b7fca48"
+    - title: "架构门禁现状"
+      locator: "internal/kernel/composition/architecture_test.go"
+      snapshot: "HEAD b7fca48"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["模块开发指南布局变化", "新增第二个业务模块", "binding 职责定义变化"]
+relations:
+  extends: ["R001", "030-R003"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

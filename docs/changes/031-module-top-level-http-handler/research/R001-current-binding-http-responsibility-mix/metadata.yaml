@@ -1,0 +1,38 @@
+schema_version: 1
+id: R001
+title: "当前 binding/http 职责混叠复核"
+question: "Todo 模块的 binding/http 当前实际承载了哪些职责？handler 实现是否确实与绑定混在一起，消费方（module.go、composition、transport、contract-gen）分别使用哪些符号，改包名会波及哪些文件？"
+research_type: current-project
+topics: ["application module", "HTTP handler", "binding", "single responsibility", "package ownership"]
+keywords: ["binding/http", "handler.go", "dto.go", "contract_module.go", "RuntimeHandlers", "Operations", "ActorAccess", "ModuleContract"]
+languages: ["Go"]
+frameworks: ["pkg/httpx/contract"]
+technologies: ["net/http"]
+applicable_scenarios: ["031 设计计划", "模块顶层 handler 分层", "单一职责重构"]
+non_applicable_scenarios: ["改变公开 HTTP 行为", "拆分独立服务", "新增第二个业务模块", "改变 Kernel/Host/listener"]
+status: active
+summary: "Todo 的 binding/http 目前同时承载 HTTP handler 实现、DTO/映射、代码优先契约声明与运行期装箱四类职责；handler 与绑定混在同一包，职责边界不清晰。消费方 module.go、composition、transport 测试与 contract-gen 均 import 该包并使用 ModuleContract/RuntimeHandlers/Operations/NewHandler/ActorAccess 等符号，重构需同步这些引用。"
+evidence:
+  types: ["source-code", "tests", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "Todo binding/http 职责文件"
+      locator: "internal/module/todo/binding/http/{handler.go,dto.go,contract.go,contract_module.go,handlers.go,handler_test.go}"
+      snapshot: "HEAD b7fca48"
+    - title: "消费方引用"
+      locator: "internal/module/todo/module.go; internal/composition/{http_api.go,service.go,ops.go,todo_authorization.go}; internal/transport/http/routes_test.go; internal/tools/contract-gen/main.go"
+      snapshot: "HEAD b7fca48"
+    - title: "模块目录权威约定"
+      locator: "docs/development/application-module-development.md; internal/module/README.md"
+      snapshot: "HEAD b7fca48"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["模块开发指南布局变化", "新增第二个业务模块", "binding 职责定义变化"]
+relations:
+  extends: ["030-R003"]
+  related: ["030-R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md
