@@ -16,6 +16,18 @@ const (
 	ConfigPath        = "database"
 )
 
+// 应用层默认配置（032 集中声明）：本组件集中声明数据库应用默认值，不直接复用
+// pkg/database 的 DefaultConfig()；需要回退到通用库默认时由组件显式引用其常量。
+const (
+	defaultDriver          = pkgdatabase.DriverSQLite
+	defaultDSN             = ".data/app.db"
+	defaultMaxOpenConns    = 25
+	defaultMaxIdleConns    = 5
+	defaultConnMaxLifetime = 30 * time.Minute
+	defaultConnMaxIdleTime = 5 * time.Minute
+	defaultPingTimeout     = 5 * time.Second
+)
+
 // Client 是调用方在租约内使用的数据库能力，不包含共享连接池关闭权。
 type Client interface {
 	pkgdatabase.Client
@@ -152,34 +164,40 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 	if err := ctx.Err(); err != nil {
 		return nil, config.Continue, err
 	}
-	values := pkgdatabase.DefaultConfig()
-	maxOpen, err := config.Number(fmt.Sprint(values.Pool.MaxOpenConns))
+	cfg := defaultConfig()
+	maxOpen, err := config.Number(fmt.Sprint(cfg.Pool.MaxOpenConns))
 	if err != nil {
 		return nil, config.Continue, err
 	}
-	maxIdle, err := config.Number(fmt.Sprint(values.Pool.MaxIdleConns))
+	maxIdle, err := config.Number(fmt.Sprint(cfg.Pool.MaxIdleConns))
 	if err != nil {
 		return nil, config.Continue, err
 	}
 	return config.Object{
-		config.FieldOf("driver", config.String(string(values.Driver))),
-		config.FieldOf("dsn", config.String(values.DSN)),
+		config.FieldOf("driver", config.String(string(cfg.Driver))),
+		config.FieldOf("dsn", config.String(cfg.DSN)),
 		config.FieldOf("pool", config.ObjectValue(config.Object{
 			config.FieldOf("maxOpenConns", maxOpen),
 			config.FieldOf("maxIdleConns", maxIdle),
-			config.FieldOf("connMaxLifetime", config.Duration(values.Pool.ConnMaxLifetime)),
-			config.FieldOf("connMaxIdleTime", config.Duration(values.Pool.ConnMaxIdleTime)),
+			config.FieldOf("connMaxLifetime", config.Duration(cfg.Pool.ConnMaxLifetime)),
+			config.FieldOf("connMaxIdleTime", config.Duration(cfg.Pool.ConnMaxIdleTime)),
 		})),
-		config.FieldOf("pingTimeout", config.Duration(values.PingTimeout)),
+		config.FieldOf("pingTimeout", config.Duration(cfg.PingTimeout)),
 	}, config.Continue, nil
 }
 
 func defaultConfig() Config {
-	values := pkgdatabase.DefaultConfig()
-	return Config{Driver: values.Driver, DSN: values.DSN, Pool: PoolConfig{
-		MaxOpenConns: values.Pool.MaxOpenConns, MaxIdleConns: values.Pool.MaxIdleConns,
-		ConnMaxLifetime: values.Pool.ConnMaxLifetime, ConnMaxIdleTime: values.Pool.ConnMaxIdleTime,
-	}, PingTimeout: values.PingTimeout}
+	return Config{
+		Driver: defaultDriver,
+		DSN:    defaultDSN,
+		Pool: PoolConfig{
+			MaxOpenConns:    defaultMaxOpenConns,
+			MaxIdleConns:    defaultMaxIdleConns,
+			ConnMaxLifetime: defaultConnMaxLifetime,
+			ConnMaxIdleTime: defaultConnMaxIdleTime,
+		},
+		PingTimeout: defaultPingTimeout,
+	}
 }
 
 func (c Config) packageConfig() pkgdatabase.Config { return c.PackageConfig() }

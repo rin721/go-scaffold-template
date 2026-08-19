@@ -46,7 +46,7 @@ go run ./cmd/app config init --output .data/generated-config.yaml
 | `database` | Kernel Database App | 数据库 driver、DSN、连接池和 ping timeout |
 | `migration` | Migration 模块 | one-shot migration 锁等待和操作期限 |
 | `cache` | Kernel Cache App | 缓存 backend 与 Redis 参数 |
-| `i18n` | Kernel I18n App | 默认语言、消息文件和缺失翻译策略 |
+| `i18n` | Kernel I18n App | 默认语言、消息文件（统一维护于 `./locales`）和缺失翻译策略 |
 | `storage` | Kernel Storage App | 本地、S3、MinIO 对象存储配置 |
 | `todo` | Todo 模块 | Todo 业务约束 |
 | `auth` | Auth 模块 | development-anonymous 或 JWT 鉴权配置 |

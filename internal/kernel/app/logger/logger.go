@@ -16,6 +16,15 @@ const (
 	ConfigPath        = "logger"
 )
 
+// 应用层默认配置（032 集中声明）：本组件在配置中集中声明日志应用默认值，
+// 不再直接复用 pkg/logger 的 DefaultConfig()；需要回退到通用库默认时由组件显式引用。
+const (
+	defaultEnvironment     = pkglogger.EnvironmentDevelopment
+	defaultLevel           = pkglogger.LevelDebug
+	defaultOutputPath      = "stdout"
+	defaultErrorOutputPath = "stderr"
+)
+
 // Config 是 Logger App 的 typed 配置契约。
 type Config struct {
 	Environment      pkglogger.Environment `mapstructure:"environment"`
@@ -103,22 +112,21 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 	if err := ctx.Err(); err != nil {
 		return nil, config.Continue, err
 	}
-	values := pkglogger.DefaultConfig()
+	cfg := defaultConfig()
 	return config.Object{
-		config.FieldOf("environment", config.String(string(values.Environment))),
-		config.FieldOf("level", config.String(string(values.Level))),
-		config.FieldOf("outputPaths", stringList(values.OutputPaths)),
-		config.FieldOf("errorOutputPaths", stringList(values.ErrorOutputPaths)),
+		config.FieldOf("environment", config.String(string(cfg.Environment))),
+		config.FieldOf("level", config.String(string(cfg.Level))),
+		config.FieldOf("outputPaths", stringList(cfg.OutputPaths)),
+		config.FieldOf("errorOutputPaths", stringList(cfg.ErrorOutputPaths)),
 	}, config.Continue, nil
 }
 
 func defaultConfig() Config {
-	values := pkglogger.DefaultConfig()
 	return Config{
-		Environment: values.Environment, Level: values.Level, Encoding: values.Encoding,
-		OutputPaths:      append([]string(nil), values.OutputPaths...),
-		ErrorOutputPaths: append([]string(nil), values.ErrorOutputPaths...),
-		AddCaller:        values.AddCaller, AddStacktrace: values.AddStacktrace,
+		Environment:      defaultEnvironment,
+		Level:            defaultLevel,
+		OutputPaths:      []string{defaultOutputPath},
+		ErrorOutputPaths: []string{defaultErrorOutputPath},
 	}
 }
 

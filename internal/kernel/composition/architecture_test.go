@@ -55,6 +55,9 @@ func TestProductionPackageGraphRespectsCompositionBoundaries(t *testing.T) {
 	if err := validateModuleExportBoundaries(root); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateKernelAppConfigOwnership(root); err != nil {
+		t.Fatal(err)
+	}
 	if err := validateLoggingSourceOwnership(root); err != nil {
 		t.Fatal(err)
 	}
@@ -300,6 +303,61 @@ func validateLoggingSourceOwnership(root string) error {
 			}
 			position := fileset.Position(selector.Pos())
 			violation = fmt.Errorf("production source %s:%d uses logger.Noop", path, position.Line)
+			return false
+		})
+		return violation
+	})
+}
+
+// validateKernelAppConfigOwnership 防止 application 层组件默认配置整体复用 pkg/* 默认配置。
+// 032 门禁：kernel/app/* 组件的 default 配置来源不得直接调用 pkg/*.DefaultConfig()；
+// 允许引用 pkg/* 的基础默认常量（如 redisstore.DefaultTagPrefix）作为未声明时的回退默认。
+func validateKernelAppConfigOwnership(root string) error {
+	kernelAppRoot := filepath.Join(root, "internal", "kernel", "app")
+	return filepath.WalkDir(kernelAppRoot, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read kernel app source %s: %w", path, err)
+		}
+		fileset := token.NewFileSet()
+		parsed, err := parser.ParseFile(fileset, path, source, 0)
+		if err != nil {
+			return fmt.Errorf("parse kernel app source %s: %w", path, err)
+		}
+		imports := make(map[string]string, len(parsed.Imports))
+		for _, spec := range parsed.Imports {
+			importPath, err := strconv.Unquote(spec.Path.Value)
+			if err != nil {
+				return fmt.Errorf("decode import in %s: %w", path, err)
+			}
+			name := filepath.Base(importPath)
+			if spec.Name != nil {
+				name = spec.Name.Name
+			}
+			imports[name] = importPath
+		}
+		var violation error
+		ast.Inspect(parsed, func(node ast.Node) bool {
+			call, ok := node.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok || selector.Sel.Name != "DefaultConfig" {
+				return true
+			}
+			importPath := selectorImportPath(selector, imports)
+			if !strings.HasPrefix(importPath, modulePath+"/pkg/") {
+				return true
+			}
+			position := fileset.Position(selector.Pos())
+			violation = fmt.Errorf("kernel app default config %s:%d reuses pkg default %s.DefaultConfig", path, position.Line, filepath.Base(importPath))
 			return false
 		})
 		return violation

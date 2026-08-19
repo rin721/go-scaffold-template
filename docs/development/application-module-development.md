@@ -218,6 +218,16 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 
 需要原子索引或别名切换时，必须验证具体搜索系统的原生保证；不能从 Kernel Swap 自动推导支持。
 
+### 8.4 i18n 接入规范
+
+业务模块统一通过注入的 `pkg/i18n.Translator` 消费国际化，不自行创建 Translator，不直接读取或依赖 `pkg/i18n` 的默认配置（032）。
+
+- **接入方式**：`internal/composition` 用 Kernel I18n App（`internal/kernel/app/i18n`）装配出稳定的 `pkg/i18n.Translator`，注入到模块 HTTP profile 的依赖（如 Todo 的 `HTTPDependencies.Translator`）。Handler 持有该 Translator，并只在呈现边界调用 `Translate`/`MustTranslate`。
+- **统一路径**：i18n 消息文件目录统一声明为 `./locales`（由 `internal/kernel/app/i18n` 集中声明 `LocalesDir`）。语言文件按 `messages.<lang>.yaml|yml|json` 命名（lang 为 BCP 47，如 `zh-CN`、`en`）放在 `./locales` 下，并在 `internal/kernel/app/i18n` 或应用配置 `i18n.messageFiles` 中显式声明。
+- **维护位置**：新增或修改语言内容在 `./locales/messages.<lang>.yaml` 中维护；新增语言即新增对应语言文件并在 `i18n.messageFiles` 声明。默认缺失策略集中在 `kernel/app/i18n`（error，可配置为 use-id）。
+- **消息 ID 约定**：使用 `<domain>.<type>.<key>` 命名，例如 `todo.error.todo_not_found`；同一模块的消息 ID 前缀统一，避免各模块自行约定不同格式。
+- **禁止行为**：业务 handler 不得绕过统一 Translator 直接调用 `pkg/i18n.New`，不得复用 `pkg/i18n.DefaultConfig()` 作为应用默认，不得在不同模块各自创建第二套 locales 路径或消息文件维护方式。
+
 ## 9. 研究报告最小输出
 
 新增模块的 `research/Rxxx-<semantic-name>/report.md` 至少包含：

@@ -1,4 +1,8 @@
 // Package i18n 定义由 Kernel 治理的 I18n App 组件。
+//
+// 本组件基于 pkg/i18n 完成底层封装与装配。032 约定：组件内集中声明本应用的默认配置
+// （默认语言、缺失行为、LocalesDir=./locales 与默认消息文件），不直接复用 pkg/i18n 的
+// DefaultConfig() 作为应用默认值；属于应用环境/装配的配置由本组件或使用者显式声明。
 package i18n
 
 import (
@@ -11,9 +15,21 @@ import (
 	pkgi18n "github.com/rin721/go-scaffold-template/pkg/i18n"
 )
 
+// 应用层默认配置（032 统一集中声明）。
 const (
 	ID         app.ID = "i18n"
 	ConfigPath        = "i18n"
+)
+
+// 应用层默认值：不依赖 pkg/i18n 的默认常量/DefaultConfig，按应用实际需求声明。
+//
+// LocalesDir 是 i18n 消息文件目录的统一声明。默认不强制加载某个消息文件（避免启动因
+// 文件缺失失败），业务接入时把语言文件放入 ./locales 并按需在消息配置里声明。
+const (
+	LocalesDir = "./locales"
+
+	defaultLanguage        = "zh-CN"
+	defaultMissingBehavior = pkgi18n.MissingBehaviorError
 )
 
 // Config 是 I18n App 的 typed 配置契约。
@@ -107,20 +123,20 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 	if err := ctx.Err(); err != nil {
 		return nil, config.Continue, err
 	}
-	values := pkgi18n.DefaultConfig()
+	cfg := defaultConfig()
 	return config.Object{
-		config.FieldOf("defaultLanguage", config.String(values.DefaultLanguage)),
-		config.FieldOf("messageFiles", stringList(values.MessageFiles)),
-		config.FieldOf("missingBehavior", config.String(string(values.MissingBehavior))),
+		config.FieldOf("defaultLanguage", config.String(cfg.DefaultLanguage)),
+		config.FieldOf("messageFiles", stringList(cfg.MessageFiles)),
+		config.FieldOf("missingBehavior", config.String(string(cfg.MissingBehavior))),
 	}, config.Continue, nil
 }
 
+// defaultConfig 返回本组件集中声明的应用默认配置。
 func defaultConfig() Config {
-	values := pkgi18n.DefaultConfig()
 	return Config{
-		DefaultLanguage: values.DefaultLanguage,
-		MessageFiles:    append([]string(nil), values.MessageFiles...),
-		MissingBehavior: values.MissingBehavior,
+		DefaultLanguage: defaultLanguage,
+		MessageFiles:    []string{},
+		MissingBehavior: defaultMissingBehavior,
 	}
 }
 

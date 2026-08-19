@@ -1,0 +1,21 @@
+# 中文语言包（统一维护于 ./locales，032）。
+#
+# 文件命名约定：messages.<lang>.yaml|yml|json（lang 为 BCP 47 标签）。
+# 新增语言即新增对应文件，并在 kernel/app/i18n 或应用配置的 messageFiles 中显式声明。
+# 消息 ID 命名约定：<domain>.<type>.<key>，例如 todo.error.todo_not_found。
+# Handler 通过注入的 pkg/i18n.Translator 呈现，不直接读取 pkg/i18n 默认配置。
+
+todo.error.todo_invalid_argument:
+  other: "Todo 输入无效"
+todo.error.todo_not_found:
+  other: "Todo 不存在"
+todo.error.todo_conflict:
+  other: "Todo 已被其他操作修改"
+todo.error.permission_denied:
+  other: "当前主体无权执行该操作"
+todo.error.todo_unavailable:
+  other: "Todo 服务暂不可用"
+todo.error.todo_timeout:
+  other: "Todo 请求已超时"
+todo.error.todo_canceled:
+  other: "Todo 请求已取消"
