@@ -196,6 +196,12 @@ res, err := executionExecutor.Execute(ctx, Execution{
 - 真正的外部主存储接入（Cache-primary Redis 或 database backend）作为下一增量；届时 RecoveringStore 的 Degraded/Recovering 语义在应用内实际触发。
 - 装配层已通过内部装配缝 `assemble(cfg, deps, primary, local)` 支持故障注入：组件级端到端测试覆盖「主存储故障→降级本地→后台自动恢复→回放→原子切回→去重回到主存储」，验证降级/恢复语义在经 `Access` 的完整链路上成立。
 
+## 14. 执行记录异步持久化（避免阻塞业务链路）
+
+- `pkg/execution.AsyncRecorder`：Store 装饰器。幂等占用与完成状态（`Claim`/`IsCompleted`/`Complete`）**同步**交给底层 Store（保证去重不重跑）；仅「过程/失败执行记录」（`Record`）进入有界后台队列（`AsyncConfig.Capacity`）异步落盘，返回时业务链路不被记录写入阻塞。
+- 溢出策略复用 `OverflowPolicy`：`discard`（丢弃不报错）/ `alert`（丢弃并返回 `ErrBufferOverflow`）/ `block`（等待队列腾出空间或上下文结束）。`a.ch` 永不关闭、`stop` 信号显式触发排空，Shutdown 幂等且排空剩余队列后退出工作线程，无向已关闭 channel 发送的竞态。
+- `kernel/app/execution` 在 `assemble` 中以 `RecoveringStore` 为底层、`AsyncRecorder` 为外层，`NewExecutor(recorder)` 装配；`Config.Async`（`capacity`/`overflow`）由应用层集中声明并校验；`stop()` 先 `recorder.Shutdown()` 排空再 `recovering.Stop()`；异步写入失败经注入 Logger 输出 Warn。
+
 ## 13. 恢复治理可观测性（日志 / 健康状态 / 状态快照）
 
 - `kernel/app/execution` 组件经 `DependencySet` 注入结构化 `pkg/logger.Logger`，`build()` 注册 `RecoveringStore.OnStateChange` 回调：进入 `Degraded` 记 Warn（告警信号），进入 `Recovering`/`Healthy` 记 Info；日志仅含 `from`/`state` 稳定字段，不含敏感文本。

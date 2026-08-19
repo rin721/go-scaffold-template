@@ -55,6 +55,12 @@ const (
 	defaultRecoveryOverflow         = pkgexecution.OverflowDiscard
 )
 
+// 异步执行记录持久化默认参数（应用层集中声明）。
+const (
+	defaultAsyncCapacity = 1000
+	defaultAsyncOverflow = pkgexecution.OverflowDiscard
+)
+
 // Config 是 Execution App 的 typed 配置契约。
 type Config struct {
 	Driver           Driver                  `mapstructure:"driver"`
@@ -63,6 +69,13 @@ type Config struct {
 	RetryMaxWait     int                     `mapstructure:"retryMaxWaitMs"`
 	Policies         map[string]PolicyConfig `mapstructure:"policies"`
 	Recovery         RecoveryConfig          `mapstructure:"recovery"`
+	Async            AsyncConfig             `mapstructure:"async"`
+}
+
+// AsyncConfig 控制异步执行记录持久化（有界队列 + 溢出策略）。
+type AsyncConfig struct {
+	Capacity int                         `mapstructure:"capacity"`
+	Overflow pkgexecution.OverflowPolicy `mapstructure:"overflow"`
 }
 
 // PolicyConfig 是业务模块按需独立声明的执行策略（模块之间策略隔离）。
@@ -109,6 +122,7 @@ type resource struct {
 	defaultPolicy resilience.RetryPolicy
 	policies      map[string]policySpec
 	recovering    *pkgexecution.RecoveringStore
+	recorder      *pkgexecution.AsyncRecorder
 }
 
 type access struct {
@@ -258,13 +272,33 @@ func assemble(cfg Config, deps componentDeps, primary, local pkgexecution.Store)
 	recovering := pkgexecution.NewRecoveringStore(primary, local, recoveryConfig(cfg.Recovery))
 	recovering.OnStateChange(logTransition(deps.logger))
 	recovering.Start()
+	// 执行记录采用异步持久化：幂等占用/完成仍同步（保证去重），过程/失败记录异步落盘避免阻塞链路。
+	asyncCfg := asyncConfig(cfg.Async)
+	asyncCfg.OnError = func(err error) {
+		if deps.logger != nil {
+			deps.logger.Warn("execution record persistence failed", pkglogger.String("error", err.Error()))
+		}
+	}
+	recorder := pkgexecution.NewAsyncRecorder(recovering, asyncCfg)
+	recorder.Start()
 	return &resource{
 		driver:        DriverMemory,
-		executor:      pkgexecution.NewExecutor(recovering),
+		executor:      pkgexecution.NewExecutor(recorder),
 		defaultPolicy: policy,
 		policies:      policies,
 		recovering:    recovering,
+		recorder:      recorder,
 	}, nil
+}
+
+func asyncConfig(cfg AsyncConfig) pkgexecution.AsyncConfig {
+	if cfg.Capacity <= 0 {
+		cfg.Capacity = defaultAsyncCapacity
+	}
+	if cfg.Overflow == "" {
+		cfg.Overflow = defaultAsyncOverflow
+	}
+	return pkgexecution.AsyncConfig{Capacity: cfg.Capacity, Overflow: cfg.Overflow}
 }
 
 // logTransition 返回恢复治理状态变化的结构化日志回调（Degraded 告警，Recovering/Healthy 信息）。
@@ -297,10 +331,17 @@ func ready(ctx context.Context, current *resource) error {
 }
 
 func stop(_ context.Context, current *resource) error {
-	if current == nil || current.recovering == nil {
+	if current == nil {
 		return nil
 	}
-	return current.recovering.Stop()
+	// 先排空异步记录队列，再停止恢复探测循环，避免关闭顺序问题。
+	if current.recorder != nil {
+		current.recorder.Shutdown()
+	}
+	if current.recovering != nil {
+		return current.recovering.Stop()
+	}
+	return nil
 }
 
 func recoveryConfig(cfg RecoveryConfig) pkgexecution.RecoveryConfig {
@@ -348,6 +389,17 @@ func decode(snapshot config.Snapshot) (Config, error) {
 		cfg.Recovery.MaxBackoffMs < 0 || cfg.Recovery.VerifyAttempts < 0 ||
 		cfg.Recovery.BufferCapacity < 0 {
 		return Config{}, fmt.Errorf("execution recovery values must be non-negative")
+	}
+	if cfg.Async.Overflow == "" {
+		cfg.Async.Overflow = defaultAsyncOverflow
+	}
+	switch cfg.Async.Overflow {
+	case pkgexecution.OverflowDiscard, pkgexecution.OverflowBlock, pkgexecution.OverflowAlert:
+	default:
+		return Config{}, fmt.Errorf("unsupported execution async overflow policy %q", cfg.Async.Overflow)
+	}
+	if cfg.Async.Capacity < 0 {
+		return Config{}, fmt.Errorf("execution async capacity must be non-negative")
 	}
 	for name, p := range cfg.Policies {
 		name = strings.TrimSpace(name)
@@ -400,6 +452,10 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 	if err != nil {
 		return nil, config.Continue, err
 	}
+	asyncCap, err := config.Number(fmt.Sprint(cfg.Async.Capacity))
+	if err != nil {
+		return nil, config.Continue, err
+	}
 	fields := []config.Field{
 		config.FieldOf("driver", config.String(string(cfg.Driver))),
 		config.FieldOf("retryMaxAttempts", attempts),
@@ -412,6 +468,10 @@ func (defaults) Defaults(ctx context.Context) (config.Object, config.Control, er
 			config.FieldOf("verifyAttempts", verify),
 			config.FieldOf("bufferCapacity", capacity),
 			config.FieldOf("overflow", config.String(string(cfg.Recovery.Overflow))),
+		})),
+		config.FieldOf("async", config.ObjectValue(config.Object{
+			config.FieldOf("capacity", asyncCap),
+			config.FieldOf("overflow", config.String(string(cfg.Async.Overflow))),
 		})),
 	}
 	// 按模块的策略隔离：逐个声明命名策略，键排序保证默认对象确定性。
@@ -460,6 +520,10 @@ func defaultConfig() Config {
 			VerifyAttempts:   defaultRecoveryVerifyAttempts,
 			BufferCapacity:   defaultRecoveryBufferCapacity,
 			Overflow:         defaultRecoveryOverflow,
+		},
+		Async: AsyncConfig{
+			Capacity: defaultAsyncCapacity,
+			Overflow: defaultAsyncOverflow,
 		},
 	}
 }
