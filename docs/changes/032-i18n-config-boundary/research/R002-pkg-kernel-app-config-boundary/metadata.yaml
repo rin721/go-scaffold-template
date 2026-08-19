@@ -1,0 +1,44 @@
+schema_version: 1
+id: R002
+title: "pkg 通用库与 kernel/app 组件配置职责边界审计"
+question: "所有 kernel/app/* 组件在基于 pkg/* 通用库封装时，是否存在「直接复用通用库默认配置，或把应由应用层/使用者显式声明的动态值交给通用库默认值」的问题；哪些组件已正确自声明默认配置，可作为模板？"
+research_type: current-project
+topics: ["config boundary", "kernel app", "pkg defaults", "component ownership", "single responsibility"]
+keywords: ["DefaultConfig", "defaults", "kernel/app", "pkg", "configuration ownership", "TagPrefix", "DefaultLanguage"]
+languages: ["Go"]
+frameworks: ["Kernel App 组件", "pkg/* 通用库"]
+technologies: ["config Scheduler", "fs.FS"]
+applicable_scenarios: ["032 设计计划", "配置职责边界审计", "组件默认值对齐"]
+non_applicable_scenarios: ["改变 pkg 通用能力契约", "引入外部配置平台", "重构 Kernel 生命周期"]
+status: active
+summary: "审计发现 kernel/app/{logger,database} 直接复用 pkg/{logger,database}.DefaultConfig() 作为应用组件默认值；cache 使用 redisstore.DefaultTagPrefix；storage 自声明 defaultLocalBasePath 与 defaultConfig()、observability 自声明 DefaultConfig(). 可作为正确模板。核心边界：pkg 只提供通用能力与基础默认；应用/装配/业务/运行时的配置由 kernel/app/* 或使用者显式声明。"
+evidence:
+  types: ["source-code", "tests"]
+  primary_sources:
+    - title: "logger 组件默认值"
+      locator: "internal/kernel/app/logger/logger.go"
+      snapshot: "HEAD 49409c3"
+    - title: "database 组件默认值"
+      locator: "internal/kernel/app/database/database.go"
+      snapshot: "HEAD 49409c3"
+    - title: "cache 组件默认值与 TagPrefix"
+      locator: "internal/kernel/app/cache/cache.go"
+      snapshot: "HEAD 49409c3"
+    - title: "storage 组件默认值"
+      locator: "internal/kernel/app/storage/storage.go"
+      snapshot: "HEAD 49409c3"
+    - title: "observability 默认配置（正确模板）"
+      locator: "internal/kernel/app/observability/config.go"
+      snapshot: "HEAD 49409c3"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["新增 kernel/app 组件", "pkg/* DefaultConfig 变化", "组件配置契约变化"]
+relations:
+  extends: ["R001", "011-R001"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

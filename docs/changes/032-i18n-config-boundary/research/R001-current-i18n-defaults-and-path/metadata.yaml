@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前 i18n 组件默认值与路径声明复核"
+question: "internal/kernel/app/i18n 目前如何取得默认配置，i18n 消息文件路径如何声明，业务模块如何消费 Translator；这些是否导致应用层隐式依赖 pkg/i18n 默认值或路径/常量散落？"
+research_type: current-project
+topics: ["i18n", "kernel app", "default config", "locales path", "config boundary", "dependency"]
+keywords: ["kernel/app/i18n", "pkg/i18n", "DefaultConfig", "DefaultLanguage", "MissingBehavior", "locales", "MessageFiles", "Translator"]
+languages: ["Go"]
+frameworks: ["pkg/i18n (go-i18n 包装)", "Kernel App 组件"]
+technologies: ["net/http", "fs.FS"]
+applicable_scenarios: ["032 设计计划", "i18n 接入规范", "配置职责边界"]
+non_applicable_scenarios: ["改变翻译引擎第三方", "新增语言文件格式", "构建 i18n 平台"]
+status: active
+summary: "kernel/app/i18n 在 defaults{}.Defaults() 与 defaultConfig() 中直接复用 pkg/i18n.DefaultConfig()（默认语言 zh-CN、缺失行为 error、消息文件为空）；MessageFS 用 os.DirFS(\".\")，消息文件路径未在组件内统一为 ./locales；ConfigPath、路径等常量/字符串散落 i18n.go 与注释。业务模块（Todo handler）通过注入 pkg/i18n.Translator 消费，未直接接触配置。"
+evidence:
+  types: ["source-code", "tests", "config", "authoritative-project-documentation"]
+  primary_sources:
+    - title: "kernel/app/i18n 组件实现"
+      locator: "internal/kernel/app/i18n/i18n.go; i18n_test.go"
+      snapshot: "HEAD 49409c3"
+    - title: "pkg/i18n 默认值与解析"
+      locator: "pkg/i18n/{defaults.go,constants.go,config.go,builder.go}"
+      snapshot: "HEAD 49409c3"
+    - title: "业务模块 Translator 消费"
+      locator: "internal/module/todo/handler/handler.go; internal/module/todo/module.go"
+      snapshot: "HEAD 49409c3"
+    - title: "配置示例与集成测试中的 i18n 段"
+      locator: "config.example.yaml; internal/kernel/composition/capabilities_integration_test.go; reload_integration_test.go"
+      snapshot: "HEAD 49409c3"
+researched_at: "2026-08-19"
+verified_at: "2026-08-19"
+validity:
+  mode: snapshot
+  review_after: "2026-09-19"
+  refresh_triggers: ["pkg/i18n 默认值变化", "新增业务模块 i18n 接入", "Kernel App 配置契约变化"]
+relations:
+  extends: ["011-R001"]
+  related: ["R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

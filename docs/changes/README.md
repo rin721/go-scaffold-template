@@ -34,5 +34,6 @@
 - [029 本地启动与配置闭环](029-local-startup-config-closure/README.md)：已完成；generated config、Migration、Todo CLI 与 Service 共用 application-owned 配置集合，本地启动与配置说明已收束到根 README、本地启动指南和配置说明。
 - [030 模块自有代码优先契约](030-module-owned-code-first-contract/README.md)：已完成；契约 authority 反转为模块自有 typed 声明，`contract-gen` 从代码生成 `api/openapi.yaml` 与 operation inventory，删除 oapi-codegen 生成链与 nethttp-middleware，transport 从同一份契约单一绑定。
 - [031 模块顶层 HTTP Handler 分责](031-module-top-level-http-handler/README.md)：已完成；Todo 的 HTTP handler 层从 `binding/http` 迁移到模块顶层 `handler`，`binding/http` 只做代码优先契约与运行期装箱，每层职责分明。
+- [032 i18n 配置职责边界与集中声明](032-i18n-config-boundary/README.md)：研究与计划已完成，待确认；拟让 `kernel/app/i18n` 集中声明默认配置与 `./locales` 路径、对齐 logger/database/cache 默认值来源，并把「应用层不得隐式依赖通用库默认值」纳入门禁与文档。
 
-下一个任务序号为 `032`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `033`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
