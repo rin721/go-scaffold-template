@@ -94,6 +94,9 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{modulePath + "/internal/module/auth/model"}}},
 		{{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{"github.com/go-chi/chi/v5"}}},
 		{{ImportPath: modulePath + "/internal/module/todo/binding/http", Imports: []string{"github.com/oapi-codegen/nethttp-middleware"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/handler", Imports: []string{modulePath + "/internal/module/todo/binding/http"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/handler", Imports: []string{modulePath + "/internal/transport/http"}}},
+		{{ImportPath: modulePath + "/internal/module/todo/handler", Imports: []string{"github.com/go-chi/chi/v5"}}},
 		{{ImportPath: modulePath + "/internal/module/todo", Imports: []string{modulePath + "/internal/kernel/composition"}}},
 		{{ImportPath: modulePath + "/internal/module/example/service", Imports: []string{"github.com/example/sdk"}}},
 		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{"github.com/example/sdk"}}},
@@ -235,6 +238,13 @@ func validatePackageGraph(graph []packageNode) error {
 			}
 			if moduleCorePackage(node.ImportPath) && forbiddenModuleCoreImport(imported) {
 				return fmt.Errorf("module core package %s imports forbidden boundary %s", node.ImportPath, imported)
+			}
+			if moduleHandlerPackage(node.ImportPath) && (moduleBindingImport(imported) ||
+				strings.HasPrefix(imported, modulePath+"/internal/transport/")) {
+				return fmt.Errorf("module handler %s imports framework/binding boundary %s", node.ImportPath, imported)
+			}
+			if moduleHandlerPackage(node.ImportPath) && forbiddenModuleHTTPBindingImport(imported) {
+				return fmt.Errorf("module handler %s imports application route infrastructure %s", node.ImportPath, imported)
 			}
 		}
 	}
@@ -573,6 +583,26 @@ func moduleHTTPBindingPackage(importPath string) bool {
 	}
 	parts := strings.Split(strings.TrimPrefix(importPath, prefix), "/")
 	return len(parts) >= 3 && parts[1] == "binding" && parts[2] == "http"
+}
+
+// moduleHandlerPackage 识别模块顶层 handler 层（internal/module/<name>/handler）。
+func moduleHandlerPackage(importPath string) bool {
+	prefix := modulePath + "/internal/module/"
+	if !strings.HasPrefix(importPath, prefix) {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(importPath, prefix), "/")
+	return len(parts) >= 2 && parts[1] == "handler"
+}
+
+// moduleBindingImport 判断 imported 是否属于同一模块的 binding/**。
+func moduleBindingImport(imported string) bool {
+	prefix := modulePath + "/internal/module/"
+	if !strings.HasPrefix(imported, prefix) {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(imported, prefix), "/")
+	return len(parts) >= 3 && parts[1] == "binding"
 }
 
 func forbiddenModuleHTTPBindingImport(importPath string) bool {

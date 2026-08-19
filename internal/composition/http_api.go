@@ -7,6 +7,7 @@ import (
 
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	todohandler "github.com/rin721/go-scaffold-template/internal/module/todo/handler"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
 	"github.com/rin721/go-scaffold-template/pkg/httpx/contract"
 )
@@ -56,7 +57,7 @@ type contractDispatcher struct {
 	handlers map[contract.OperationID]contract.Handler
 }
 
-func newContractDispatcher(todoOperations todohttp.Operations) (*contractDispatcher, error) {
+func newContractDispatcher(todoOperations todohandler.Operations) (*contractDispatcher, error) {
 	if nilDependency(todoOperations) {
 		return nil, fmt.Errorf("Todo HTTP operations are nil")
 	}

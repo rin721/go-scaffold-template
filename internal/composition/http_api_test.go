@@ -7,7 +7,7 @@ import (
 	"time"
 
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
-	todohttp "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	todohandler "github.com/rin721/go-scaffold-template/internal/module/todo/handler"
 	httptransport "github.com/rin721/go-scaffold-template/internal/transport/http"
 )
 
@@ -90,22 +90,22 @@ func (s *operationAuthorizerStub) EnforceOperation(context.Context, authmodel.Pr
 
 type todoOperationsStub struct{ createCalls int }
 
-func (*todoOperationsStub) ListTodos(context.Context, todohttp.ListTodosParams) (todohttp.TodoList, error) {
-	return todohttp.TodoList{}, nil
+func (*todoOperationsStub) ListTodos(context.Context, todohandler.ListTodosParams) (todohandler.TodoList, error) {
+	return todohandler.TodoList{}, nil
 }
 
-func (s *todoOperationsStub) CreateTodo(context.Context, todohttp.CreateTodoRequest) (todohttp.Todo, error) {
+func (s *todoOperationsStub) CreateTodo(context.Context, todohandler.CreateTodoRequest) (todohandler.Todo, error) {
 	s.createCalls++
-	return todohttp.Todo{}, nil
+	return todohandler.Todo{}, nil
 }
 
-func (*todoOperationsStub) GetTodo(context.Context, string) (todohttp.Todo, error) {
-	return todohttp.Todo{}, nil
+func (*todoOperationsStub) GetTodo(context.Context, string) (todohandler.Todo, error) {
+	return todohandler.Todo{}, nil
 }
 
-func (*todoOperationsStub) CompleteTodo(context.Context, string) (todohttp.Todo, error) {
-	return todohttp.Todo{}, nil
+func (*todoOperationsStub) CompleteTodo(context.Context, string) (todohandler.Todo, error) {
+	return todohandler.Todo{}, nil
 }
 
-var _ = todoOperationsStub{}
+var _ todohandler.Operations = (*todoOperationsStub)(nil)
 var _ operationAuthorizer = (*operationAuthorizerStub)(nil)

@@ -1,4 +1,4 @@
-package httpbinding
+package handler
 
 import (
 	"context"

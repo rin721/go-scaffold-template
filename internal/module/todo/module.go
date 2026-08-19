@@ -6,7 +6,7 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/module"
 	configbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/config"
-	httpbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	todohandler "github.com/rin721/go-scaffold-template/internal/module/todo/handler"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/repo"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
 	"github.com/rin721/go-scaffold-template/pkg/clock"
@@ -35,13 +35,13 @@ type Module struct {
 type HTTPDependencies struct {
 	Dependencies
 	Translator i18n.Translator
-	Actors     httpbinding.ActorAccess
+	Actors     todohandler.ActorAccess
 }
 
 // HTTPModule 是 Todo 长期 Service profile 的完整输出。
 type HTTPModule struct {
 	Module
-	Operations httpbinding.Operations
+	Operations todohandler.Operations
 }
 
 // New 纯内存构造 Todo Service、Adapter 与 contribution。
@@ -63,15 +63,15 @@ func New(dependencies Dependencies) (Module, error) {
 	return Module{Service: todoService, Contribution: contribution}, nil
 }
 
-// NewHTTP 纯内存构造 Todo core 与模块自有 HTTP binding。
+// NewHTTP 纯内存构造 Todo core 与模块顶层 HTTP handler。
 func NewHTTP(dependencies HTTPDependencies) (HTTPModule, error) {
 	core, err := New(dependencies.Dependencies)
 	if err != nil {
 		return HTTPModule{}, err
 	}
-	handler, err := httpbinding.NewHandler(core.Service, dependencies.Translator, dependencies.Actors)
+	handler, err := todohandler.NewHandler(core.Service, dependencies.Translator, dependencies.Actors)
 	if err != nil {
-		return HTTPModule{}, fmt.Errorf("compose todo HTTP binding: %w", err)
+		return HTTPModule{}, fmt.Errorf("compose todo HTTP handler: %w", err)
 	}
 	return HTTPModule{Module: core, Operations: handler}, nil
 }

@@ -1,8 +1,5 @@
-// Package httpbinding 把 Todo 模块的 HTTP 契约适配到 Todo UseCases。
-//
-// 030 代码优先：本模块声明自己的路由契约（见 contract_module.go），Handler 使用模块自有 DTO
-// （见 dto.go），不再依赖全局生成包 internal/transport/http/api。
-package httpbinding
+// Package handler 提供模块顶层 HTTP handler 层（031 分责）的业务适配实现。
+package handler
 
 import (
 	"context"

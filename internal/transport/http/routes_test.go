@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	todohandler "github.com/rin721/go-scaffold-template/internal/module/todo/handler"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
 	"github.com/rin721/go-scaffold-template/pkg/httpx/contract"
 )
@@ -30,15 +31,15 @@ func newDispatcherStub() *dispatcherStub {
 	return &dispatcherStub{
 		authenticated: true,
 		handlers: map[contract.OperationID]contract.Handler{
-			"createTodo": contract.JSONBody(func(ctx context.Context, body httpbinding.CreateTodoRequest) (httpbinding.Todo, error) {
-				return httpbinding.Todo{ID: "00000000-0000-0000-0000-000000000001", Title: body.Title, Status: httpbinding.StatusPending}, nil
+			"createTodo": contract.JSONBody(func(ctx context.Context, body todohandler.CreateTodoRequest) (todohandler.Todo, error) {
+				return todohandler.Todo{ID: "00000000-0000-0000-0000-000000000001", Title: body.Title, Status: todohandler.StatusPending}, nil
 			}, http.StatusCreated),
-			"listTodos": contract.Query(func(ctx context.Context, params httpbinding.ListTodosParams) (httpbinding.TodoList, error) {
-				return httpbinding.TodoList{}, nil
+			"listTodos": contract.Query(func(ctx context.Context, params todohandler.ListTodosParams) (todohandler.TodoList, error) {
+				return todohandler.TodoList{}, nil
 			}, http.StatusOK),
-			"getTodo": contract.Path("id", func(ctx context.Context, id string) (httpbinding.Todo, error) { return httpbinding.Todo{ID: id}, nil }, http.StatusOK),
-			"completeTodo": contract.Path("id", func(ctx context.Context, id string) (httpbinding.Todo, error) {
-				return httpbinding.Todo{ID: id, Status: httpbinding.StatusCompleted}, nil
+			"getTodo": contract.Path("id", func(ctx context.Context, id string) (todohandler.Todo, error) { return todohandler.Todo{ID: id}, nil }, http.StatusOK),
+			"completeTodo": contract.Path("id", func(ctx context.Context, id string) (todohandler.Todo, error) {
+				return todohandler.Todo{ID: id, Status: todohandler.StatusCompleted}, nil
 			}, http.StatusOK),
 		},
 	}
@@ -70,7 +71,7 @@ func TestRouteBindingUsesGeneratedRoutesAndRequestMetadata(t *testing.T) {
 	if recorder.Code != http.StatusCreated || recorder.Header().Get("Content-Type") != "application/json" {
 		t.Fatalf("create response = status %d headers %#v body %s", recorder.Code, recorder.Header(), recorder.Body.String())
 	}
-	var created httpbinding.Todo
+	var created todohandler.Todo
 	if err := json.Unmarshal(recorder.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create body: %v", err)
 	}
@@ -140,8 +141,8 @@ func TestRouteBindingEnforcesOperationGate(t *testing.T) {
 func TestRouteBindingRedactsUnexpectedHandlerError(t *testing.T) {
 	dispatcher := newDispatcherStub()
 	delete(dispatcher.handlers, "listTodos")
-	dispatcher.handlers["listTodos"] = contract.Query(func(ctx context.Context, params httpbinding.ListTodosParams) (httpbinding.TodoList, error) {
-		return httpbinding.TodoList{}, errors.New("dsn=password private SQL")
+	dispatcher.handlers["listTodos"] = contract.Query(func(ctx context.Context, params todohandler.ListTodosParams) (todohandler.TodoList, error) {
+		return todohandler.TodoList{}, errors.New("dsn=password private SQL")
 	}, http.StatusOK)
 	routes := newRouteBinding(t, dispatcher, &operationGateStub{authenticated: true})
 	recorder := httptest.NewRecorder()

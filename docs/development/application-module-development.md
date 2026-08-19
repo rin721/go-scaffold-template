@@ -85,11 +85,12 @@ internal/module/<capability>/
 ├── service/        # 用例与调用方拥有的窄 port
 ├── adapter/        # 仅模块专属第三方实现；不得向外泄漏技术类型
 ├── repo/           # 持久化 Adapter；仅在真实需要时建立
+├── handler/        # 模块顶层 HTTP handler：Operations/Handler、DTO 映射、错误呈现、请求窄端口
 ├── middleware/     # 模块拥有的 HTTP 横切策略
 ├── binding/
 │   ├── config/     # 模块配置 owner
 │   ├── model/      # Schema/migration 等完成品
-│   ├── http/       # 模块自有 HTTP Handler、DTO 映射与请求窄端口
+│   ├── http/       # 只做代码优先契约声明（ModuleContract）与运行期装箱（RuntimeHandlers）
 │   └── cli/        # 模块自有 CLI Handler/已绑定命令 contract
 └── module.go       # 纯内存局部装配与 contribution 输出
 ```
@@ -98,9 +99,10 @@ Todo 是当前完整示例，但只复制依赖方向和验证方法，不复制
 
 ```text
 model <- service <- repo
-           ↑         ↑
-     binding/http  module.go <- internal/composition
-     binding/cli     middleware ─┘
+   ↑         ↑
+ handler  module.go <- internal/composition
+   ↑
+ binding/http   （契约声明 + RuntimeHandlers 装箱）
 ```
 
 开发顺序：
@@ -109,11 +111,11 @@ model <- service <- repo
 2. Service 定义用例和自己需要的 Repository、跨模块、Clock、ID 等窄 port。
 3. 先用 fake port、固定时间和固定 ID 验证成功、冲突、依赖失败、取消与超时。
 4. 实现实际需要的数据库、缓存、远程协议或其他 Adapter，并验证第三方错误转换、exported 类型、配置和资源边界；只有跨业务复用与进程统一选择两项均有证据时才走完整底层 Capability 路径。
-5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP binding 以 `pkg/httpx/contract` 在模块内声明自有 operation 契约并实现窄 typed Handler，不创建 Router、不加载 OpenAPI、不由全局生成包决定 DTO；不同入口复用同一 Service，不互相回环。
+5. 实现真实验收需要的 HTTP、CLI 或后台入口；HTTP 语义适配落在模块顶层 `handler/`（实现 `Operations`/`Handler`、DTO、错误呈现与 `ActorAccess`），`binding/http` 只声明代码优先契约（`pkg/httpx/contract.Module`）与 `RuntimeHandlers` 装箱；handler 不创建 Router、不加载 OpenAPI、不 import `binding/**` 或 `internal/transport/**`；不同入口复用同一 Service，不互相回环。
 6. `module.go` 只做无 I/O、无 goroutine、无资源探测的局部装配，并返回窄 Handler/Service 与完成品 contribution。
-7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、聚合全部模块契约与运行期 handler、合并 contribution 并建立 Host；`internal/tools/contract-gen` 从模块契约生成 `api/openapi.yaml` 与 operation inventory，`internal/transport/http` 只把完整契约绑定一次路由与校验。
+7. `internal/composition` 显式选择模块、适配最小 Capability、连接跨模块 port、聚合模块基础契约与运行期 handler、合并 contribution 并建立 Host；`internal/tools/contract-gen` 从模块契约生成 `api/openapi.yaml` 与 operation inventory，`internal/transport/http` 只把完整契约绑定一次路由与校验。
 
-HTTP 的固定构造顺序是 `模块契约声明 + typed Handler → composition 聚合 contract + 运行期 handler → transport 一次绑定契约校验与路由 → application Router → Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；生成器从模块契约渲染 `api/openapi.yaml` 与 operation inventory。新增模块只增加自身契约、Handler/运行期 handler、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router，也不写第二份全局 OpenAPI。
+HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装箱 → composition 聚合 contract + 运行期 handler → transport 一次绑定契约校验与路由 → application Router → Server`。最外层 Router 只拥有全局 middleware 和一次 API route tree 挂载；生成器从模块契约渲染 `api/openapi.yaml` 与 operation inventory。新增模块只增加自身 Handler/运行期 handler、契约声明、aggregate 转发与 composition 连接，不修改既有模块 Handler，不复制 method/path 或完整 Router，也不写第二份全局 OpenAPI。
 
 ## 5. 资源和运行 owner
 

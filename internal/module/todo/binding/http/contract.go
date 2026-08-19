@@ -1,8 +1,9 @@
-// Package HTTP contract 声明 Todo 模块拥有的 HTTP 契约（030 代码优先）。
+// Package httpbinding 提供 Todo 模块 HTTP 的「绑定」职责（031 分责）。
 //
-// 本文件以项目自有 pkg/httpx/contract 类型声明 Todo 的全部公开 operation、DTO 与策略；
-// internal/tools/contract-gen 据此渲染 api/openapi.yaml 与 operation inventory。这是 Todo
-// 模块自己的路由契约，不再依赖全局生成包 internal/transport/http/api。
+// 只负责代码优先契约声明（schemas、ModuleContract）与运行期把模块顶层 typed handler 装箱为
+// contract.Handler（RuntimeHandlers）；不承载业务 handler 实现、DTO 映射或错误呈现（这些在本
+// 模块顶层 handler 包 internal/module/todo/handler）。internal/tools/contract-gen 据此渲染
+// api/openapi.yaml 与 operation inventory。
 package httpbinding
 
 import (

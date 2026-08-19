@@ -1,13 +1,14 @@
-package httpbinding
+// Package handler 提供模块顶层 HTTP handler 层（031 分责）：HTTP 应用语义适配到 Todo UseCases。
+//
+// 职责：读 actor、组装 UseCases 命令/查询、DTO 映射与错误呈现。不创建 Router、不加载 OpenAPI、
+// 不 import binding/** 或 internal/transport/**，也不使用第三方 HTTP 框架。
+package handler
 
 import (
 	"time"
 
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 )
-
-// 模块自有 HTTP DTO（030：契约属于模块，由代码生成 api/openapi.yaml；Handler 只在 HTTP 边界
-// 使用这些 wire 类型，不进入 model/service）。
 
 // TodoStatus 是 Todo 状态在 HTTP 边界的可枚举字符串。
 type TodoStatus string

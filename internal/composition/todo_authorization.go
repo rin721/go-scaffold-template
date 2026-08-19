@@ -7,7 +7,7 @@ import (
 
 	authmodel "github.com/rin721/go-scaffold-template/internal/module/auth/model"
 	authservice "github.com/rin721/go-scaffold-template/internal/module/auth/service"
-	httpbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/http"
+	todohandler "github.com/rin721/go-scaffold-template/internal/module/todo/handler"
 	todoservice "github.com/rin721/go-scaffold-template/internal/module/todo/service"
 )
 
@@ -62,4 +62,4 @@ func (todoActorAccessAdapter) Actor(ctx context.Context) (todoservice.Actor, boo
 }
 
 var _ todoservice.Authorizer = todoAuthorizerAdapter{}
-var _ httpbinding.ActorAccess = todoActorAccessAdapter{}
+var _ todohandler.ActorAccess = todoActorAccessAdapter{}
