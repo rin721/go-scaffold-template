@@ -2,6 +2,8 @@ package execution
 
 import (
 	"context"
+	"errors"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -240,6 +242,148 @@ type fakeLease struct{ current *resource }
 
 func (l *fakeLease) Use(ctx context.Context, fn func(*resource) error) error {
 	return fn(l.current)
+}
+
+// faultyStore 是可按开关注入主存储故障的测试 Store，内存作为真实持久化承载，便于断言回放。
+type faultyStore struct {
+	inner *pkgexecution.MemoryStore
+	fail  atomic.Bool
+}
+
+func (f *faultyStore) setFail(v bool) { f.fail.Store(v) }
+
+func (f *faultyStore) Claim(ctx context.Context, key pkgexecution.Key, ttl time.Duration, now time.Time) (bool, error) {
+	if f.fail.Load() {
+		return false, errors.New("primary: backend down")
+	}
+	return f.inner.Claim(ctx, key, ttl, now)
+}
+
+func (f *faultyStore) IsCompleted(ctx context.Context, key pkgexecution.Key) (bool, error) {
+	if f.fail.Load() {
+		return false, errors.New("primary: backend down")
+	}
+	return f.inner.IsCompleted(ctx, key)
+}
+
+func (f *faultyStore) Complete(ctx context.Context, key pkgexecution.Key, rec pkgexecution.Record) error {
+	if f.fail.Load() {
+		return errors.New("primary: backend down")
+	}
+	return f.inner.Complete(ctx, key, rec)
+}
+
+func (f *faultyStore) Record(ctx context.Context, key pkgexecution.Key, rec pkgexecution.Record) error {
+	if f.fail.Load() {
+		return errors.New("primary: backend down")
+	}
+	return f.inner.Record(ctx, key, rec)
+}
+
+func (f *faultyStore) Records(ctx context.Context, key pkgexecution.Key) ([]pkgexecution.Record, error) {
+	return f.inner.Records(ctx, key)
+}
+
+// TestAccessDegradeRecoverEndToEnd 验证经 Access 装配的完整链路：
+// 主存储故障→降级本地有限能力→后台自动恢复探测→回放→原子切回→幂等去重回到主存储，
+// 并验证 Recovery() 状态与 Health()/日志随状态变化输出。
+func TestAccessDegradeRecoverEndToEnd(t *testing.T) {
+	primary := &faultyStore{inner: pkgexecution.NewMemoryStore()}
+	primary.setFail(true)
+	logs := logger.NewTestLogger()
+	cfg := Config{
+		Driver:           DriverMemory,
+		RetryMaxAttempts: 3,
+		RetryInitialWait: 1,
+		RetryMaxWait:     5,
+		Recovery: RecoveryConfig{
+			ProbeIntervalMs:  5,
+			InitialBackoffMs: 1,
+			MaxBackoffMs:     50,
+			VerifyAttempts:   1,
+			BufferCapacity:   100,
+			Overflow:         pkgexecution.OverflowDiscard,
+		},
+	}
+	resource, err := assemble(cfg, componentDeps{logger: logs}, primary, pkgexecution.NewMemoryStore())
+	if err != nil {
+		t.Fatalf("assemble: %v", err)
+	}
+	defer func() { _ = stop(context.Background(), resource) }()
+	acc := &access{delegate: &fakeLease{current: resource}}
+
+	// 主存储故障：成功操作经本地有限能力完成，并升入 Degraded。
+	okKey := pkgexecution.Key("pay:ok")
+	res, err := acc.Execute(context.Background(), pkgexecution.Execution{
+		Key: okKey, Operation: func(context.Context) (any, error) { return "ok", nil },
+	})
+	if err != nil {
+		t.Fatalf("execute under degradation: %v", err)
+	}
+	if res.Status != pkgexecution.StatusCompleted {
+		t.Fatalf("result=%+v want completed", res)
+	}
+	if snap, _ := acc.Recovery(); snap.State != pkgexecution.StateDegraded {
+		t.Fatalf("recovery=%+v want degraded", snap)
+	}
+	if result, _ := acc.Health(); result.Status != health.StatusWarn {
+		t.Fatalf("degraded health=%q want warn", result.Status)
+	}
+
+	// 主存储恢复：等待后台探测自动切回 Healthy 并回放缓冲。
+	primary.setFail(false)
+	waitState(t, acc, pkgexecution.StateHealthy, 2*time.Second)
+	if got, _ := primary.Records(context.Background(), "pay:ok"); len(got) != 1 {
+		t.Fatalf("primary recovered records=%d want 1 replayed", len(got))
+	}
+	if result, _ := acc.Health(); result.Status != health.StatusPass {
+		t.Fatalf("recovered health=%q want pass", result.Status)
+	}
+
+	// 恢复后幂等去重回到主存储：重复提交不重跑。
+	var calls int32
+	res, err = acc.Execute(context.Background(), pkgexecution.Execution{
+		Key: okKey, Operation: func(context.Context) (any, error) {
+			atomic.AddInt32(&calls, 1)
+			return "ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("duplicate execute: %v", err)
+	}
+	if !res.Duplicate || res.Status != pkgexecution.StatusCompleted {
+		t.Fatalf("duplicate result=%+v want Duplicate completed", res)
+	}
+	if atomic.LoadInt32(&calls) != 0 {
+		t.Fatalf("operation should not rerun on duplicate, calls=%d", calls)
+	}
+
+	// 状态变化应已输出 Warn（degraded）与 Info（recovered）日志。
+	var warn, info int
+	for _, entry := range logs.Entries() {
+		switch entry.Level {
+		case "warn":
+			warn++
+		case "info":
+			info++
+		}
+	}
+	if warn < 1 || info < 1 {
+		t.Fatalf("logs warn=%d info=%d want >=1 each", warn, info)
+	}
+}
+
+func waitState(t *testing.T, acc *access, want pkgexecution.RecoveryState, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		snap, err := acc.Recovery()
+		if err == nil && snap.State == want {
+			return
+		}
+		time.Sleep(2 * time.Millisecond)
+	}
+	t.Fatalf("recovery state not %q within %s", want, timeout)
 }
 
 // decodeCfg 用给定 execution 配置段构建真实快照并交给 decode，覆盖其归一化与校验逻辑。

@@ -194,6 +194,7 @@ res, err := executionExecutor.Execute(ctx, Execution{
 ### 12.4 剩余增量
 
 - 真正的外部主存储接入（Cache-primary Redis 或 database backend）作为下一增量；届时 RecoveringStore 的 Degraded/Recovering 语义在应用内实际触发。
+- 装配层已通过内部装配缝 `assemble(cfg, deps, primary, local)` 支持故障注入：组件级端到端测试覆盖「主存储故障→降级本地→后台自动恢复→回放→原子切回→去重回到主存储」，验证降级/恢复语义在经 `Access` 的完整链路上成立。
 
 ## 13. 恢复治理可观测性（日志 / 健康状态 / 状态快照）
 

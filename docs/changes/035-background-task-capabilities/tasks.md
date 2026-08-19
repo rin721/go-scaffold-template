@@ -14,6 +14,7 @@
 | NEXT-001 | RCV-001 | 把 `RecoveringStore` 接入 `kernel/app/execution`（恢复治理配置 + 命令式按模块策略隔离 `Config.Policies`/`Execution.PolicyName`），memory backend 装配恢复治理并接线 terminal finalizer | `Access.Execute` 依命名策略解析；恢复配置校验与默认值集中声明；组件 `ready` 不阻塞启动；本地降级边界文档化 | 已完成 `本轮` |
 | NEXT-002 | NEXT-001 | 接入真正外部主存储（Cache-primary Redis 或 database backend），使 `RecoveringStore` 的 Degraded/Recovering 语义在应用内实际触发；composition 接线缓存/数据库依赖 | 装配出可用 `Capabilities.Execution`；多实例能力边界明确 | 待确认 |
 | OBS-001 | NEXT-001 | 恢复治理可观测性接线：`Access.Recovery()`/`Access.Health()`、组件注入结构化 Logger 并在状态变化时输出 Warn/Info 日志、`pkg/execution.RecoveringStore.Health()` | 组件单测覆盖 Recovery/Health/日志回调；不泄漏敏感字段 | 已完成 `本轮` |
+| INT-001 | OBS-001 | 组件级端到端验证：经 `Access` 注入故障主存储，覆盖 主存储故障→降级本地有限能力→后台自动恢复探测→回放→原子切回→幂等去重回到主存储，并验证 Recovery()/Health()/日志随状态变化输出 | 端到端单测（`-race`）通过；`assemble` 内部装配缝支持故障注入 | 已完成 `本轮` |
 | GOV-001 | WIRE-001 | 门禁/反例：`pkg/execution` 不得 import internal；业务模块不得反向 import backend 具体类型；execution 组件不加隐藏第三方 | 架构 validator 覆盖并通过；无循环/反向依赖 | 待确认 |
 | VER-001 | 全部 | 全量验证：`go build/vet/gofmt ./...`、`go test ./... -count=1`、`go mod tidy -diff`、`go generate ./...`、`git diff --check` | 全部通过；更新 035 状态为已完成并聚焦提交（不 push） | 待确认 |
 

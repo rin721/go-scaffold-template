@@ -237,31 +237,34 @@ func build(ctx context.Context, cfg Config, deps componentDeps) (*resource, erro
 	case DriverDisabled:
 		return &resource{driver: DriverDisabled}, nil
 	case DriverMemory:
-		policy := retryPolicy(cfg.RetryMaxAttempts, cfg.RetryInitialWait, cfg.RetryMaxWait)
-		policies := make(map[string]policySpec, len(cfg.Policies))
-		for name, p := range cfg.Policies {
-			policies[name] = policySpec{
-				retry:   retryPolicy(p.RetryMaxAttempts, p.RetryInitialWait, p.RetryMaxWait),
-				timeout: time.Duration(p.TimeoutMs) * time.Millisecond,
-			}
-		}
-		// 主存储（当前为进程内 memory backend；外部主存储接入为后续增量）与降级兜底同为内存，
-		// 由 RecoveringStore 治理启动/停止与恢复生命周期；外部主存储接入后降级语义即生效。
-		primary := pkgexecution.NewMemoryStore()
-		local := pkgexecution.NewMemoryStore()
-		recovering := pkgexecution.NewRecoveringStore(primary, local, recoveryConfig(cfg.Recovery))
-		recovering.OnStateChange(logTransition(deps.logger))
-		recovering.Start()
-		return &resource{
-			driver:        DriverMemory,
-			executor:      pkgexecution.NewExecutor(recovering),
-			defaultPolicy: policy,
-			policies:      policies,
-			recovering:    recovering,
-		}, nil
+		// 当前 memory backend 同时兼作外部主存储缺位时的降级兜底；外部主存储接入为后续增量。
+		return assemble(cfg, deps, pkgexecution.NewMemoryStore(), pkgexecution.NewMemoryStore())
 	default:
 		return nil, fmt.Errorf("unsupported execution driver %q", cfg.Driver)
 	}
+}
+
+// assemble 用给定主存储与本地降级兜底装配执行资源并提供恢复治理。
+// primary/local 通常为进程内 memory；测试可用故障注入主存储以覆盖降级与恢复语义。
+func assemble(cfg Config, deps componentDeps, primary, local pkgexecution.Store) (*resource, error) {
+	policy := retryPolicy(cfg.RetryMaxAttempts, cfg.RetryInitialWait, cfg.RetryMaxWait)
+	policies := make(map[string]policySpec, len(cfg.Policies))
+	for name, p := range cfg.Policies {
+		policies[name] = policySpec{
+			retry:   retryPolicy(p.RetryMaxAttempts, p.RetryInitialWait, p.RetryMaxWait),
+			timeout: time.Duration(p.TimeoutMs) * time.Millisecond,
+		}
+	}
+	recovering := pkgexecution.NewRecoveringStore(primary, local, recoveryConfig(cfg.Recovery))
+	recovering.OnStateChange(logTransition(deps.logger))
+	recovering.Start()
+	return &resource{
+		driver:        DriverMemory,
+		executor:      pkgexecution.NewExecutor(recovering),
+		defaultPolicy: policy,
+		policies:      policies,
+		recovering:    recovering,
+	}, nil
 }
 
 // logTransition 返回恢复治理状态变化的结构化日志回调（Degraded 告警，Recovering/Healthy 信息）。
