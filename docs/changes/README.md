@@ -38,5 +38,6 @@
 - [033 业务模块统一契约与 binding 对齐](033-module-contract-alignment/README.md)：已完成；把统一绑定契约（HTTP/config/cli/migration/i18n/middleware）固化到模块开发指南，落地业务流程模块自有 i18n binding（Todo `binding/i18n`），文档化 Ops（独立 management）/Auth（横切）/Migration（纯 CLI）形态，并保留 032 的 pkg/kernel-app 配置边界。
 - [034 业务模块装配纯度与文档一致性](034-module-wiring-purity/README.md)：已完成；`internal/composition` 通过 `applicationHTTPModules()` 收敛 HTTP 契约接入，消除 `ops.go`/`service.go` 对 `todohttp.ModuleContract()` 的直接反向读取，生成器注册点 `registeredModules()` 与装配流程文档化，并让权威文档与实现一致。
 - [035 后台任务能力装配（幂等 / 重试 / 执行记录）](035-background-task-capabilities/README.md)：已完成；为需要幂等、失败重试、执行记录的业务模块（订单、支付、库存为例）装配 `pkg/execution -> kernel/app/execution -> composition` 底层执行能力（默认内存 backend + 组件开关），重试复用 `pkg/resilience`（`d42e044`）；并在 `pkg/execution` 追加外部依赖故障恢复治理 `RecoveringStore`（Healthy/Degraded/Recovering 状态机、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现）与执行记录异步持久化 `AsyncRecorder`，`kernel/app/execution` 装配恢复治理 + 异步记录、按 `Config.Policies`/`Execution.PolicyName` 提供命令式按模块策略隔离，并经注入 Logger 输出状态变化日志、`Access.Recovery()`/`Access.Health()` 导出恢复治理观测；缓存 Cache-primary/数据库外部主存储接入列为下一增量。
+- [036 业务模块接入 execution（Todo 落地）](036-business-module-execution-adoption/README.md)：接入指南（纯文档）已完成；为需要幂等、失败重试、执行记录的业务模块沉淀单一权威入口 `docs/development/execution-capability.md`（声明式命名策略、`OperationExecutor` 用法、错误语义、Trace、观测与多实例边界，并由模块开发指南索引）；非文档的 Todo 真实接入（service 窄 port + composition 注入 + 命名策略）待计划确认。
 
-下一个任务序号为 `036`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `037`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

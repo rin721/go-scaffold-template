@@ -6,6 +6,8 @@
 
 新增业务能力必须先完整收口到 `internal/module/<name>`。这里的“完整”指 model、repo、service、handler、Adapter、binding、配置、migration/运行单元与 contribution 等真实职责都由该模块拥有，不要求为不存在的职责制造空目录。只有能力评估同时证明资源跨业务复用且由进程统一选择，才允许把底层资源提升到完整 Kernel Capability 链。
 
+需要幂等 / 失败重试 / 执行记录的业务操作，接入 `execution` 能力的方法见 [业务模块接入 execution 能力](./execution-capability.md)（声明式命名策略、`OperationExecutor` 用法、错误语义、观测与多实例边界）。
+
 ## 1. 开始条件
 
 收到“新增应用模块”请求后，不先复制 Todo 目录，也不先创建空 Handler、Repository、配置或 CLI。研究阶段先写清：
