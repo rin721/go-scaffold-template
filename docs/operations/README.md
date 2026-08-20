@@ -1,6 +1,6 @@
 # 交付与运维
 
-本目录是当前构建、容器、迁移、发布、复制和安全运维的唯一使用入口。`docs/changes/024-production-ready-one-shot-completion` 保存施工证据，不替代这里的现行操作说明。
+本目录是当前构建、容器、迁移、发布、复制和安全运维的使用入口，承接 [项目手册](../README.md) 的验证与运维部分。`docs/changes/**` 保存施工证据，不替代这里的现行操作说明。
 
 - [构建与容器](build-and-container.md)
 - [数据库迁移与回滚](migration-and-rollback.md)

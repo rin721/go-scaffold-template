@@ -41,5 +41,6 @@
 - [036 业务模块接入 execution（Todo 落地）](036-business-module-execution-adoption/README.md)：接入指南（纯文档）已完成；为需要幂等、失败重试、执行记录的业务模块沉淀单一权威入口 `docs/development/execution-capability.md`（声明式命名策略、`OperationExecutor` 用法、错误语义、Trace、观测与多实例边界，并由模块开发指南索引）；非文档的 Todo 真实接入（service 窄 port + composition 注入 + 命名策略）待计划确认。
 - [037 定时调度能力](037-scheduled-task-capability/README.md)：已确认并实施；模块通过显式 Schedule Binding 声明 cron/fixedDelay 与任务策略，Application Generation 统一治理触发、并发、Execution/Tracing、Ops 与基于 Cache Redis owner 的分布式执行权，严格任务不隐式本地降级并可在协调恢复后自动重新参与。
 - [038 消息系统适配能力](038-messaging-adapter-capability/README.md)：已实现项目自有 Message Contract/Binding、显式多 Provider、RabbitMQ Adapter、Execution 可靠性协作与 Application Generation Consumer admission；本地工程门禁通过，RabbitMQ 4.3 真实协议门禁因本机无 Docker/WSL 保持未验证。
+- [039 文档体系闭环整理](039-documentation-system-closure/README.md)：已完成；根 README、项目手册总目录、开发入口、架构入口和运维入口按项目生命周期形成闭环，并明确当前主题文档、研究快照与任务证据的 authority 边界。
 
-下一个任务序号为 `039`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `040`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

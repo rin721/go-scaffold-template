@@ -1,10 +1,10 @@
 # go-scaffold-template
 
-`go-scaffold-template` 是一个 Go HTTP 服务脚手架，用一套显式 composition root 连接配置、日志、数据库、迁移、HTTP、management 和业务模块。当前默认应用包含 Todo 垂直切片，可作为本地开发、模块扩展和交付流程的参考实现。
+`go-scaffold-template` 是一个 Go HTTP 服务脚手架，用显式 composition root 串联配置、日志、数据库、迁移、HTTP、management、后台任务、定时调度、消息系统和业务模块。当前默认应用包含 Todo 垂直切片，可作为本地开发、模块扩展和交付流程的参考实现。
 
 ## 五分钟本地启动
 
-前置条件：安装仓库要求的 Go 版本，并在仓库根目录执行命令。
+前置条件：安装仓库要求的 Go 版本，并在仓库根目录执行命令：
 
 ```powershell
 go run ./cmd/app config init
@@ -22,25 +22,19 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 
 如果本地已经存在 `config.yaml`，`config init` 会拒绝覆盖。不要为了“重新生成”随手使用 `--force`；需要对比时先输出到临时路径，详细关系见 [本地启动指南](docs/getting-started/local-development.md) 与 [配置说明](docs/configuration/README.md)。
 
-## 文档地图
+## 项目手册
 
-| 你要做什么 | 入口 |
+完整文档从 [docs/README.md](docs/README.md) 进入，按项目生命周期连续组织：启动、配置、架构、开发、能力接入、API、验证、运维、研究与变更历史。
+
+| 内容 | 入口 |
 | --- | --- |
-| 本地启动、首次迁移、常见启动错误 | [本地启动指南](docs/getting-started/local-development.md) |
-| 配置来源、环境变量、`config init`、`config.example.yaml` | [配置说明](docs/configuration/README.md) |
-| API 路由与接口清单 | [API 文档](api/README.md) |
-| 开发应用模块 | [应用模块开发](docs/development/application-module-development.md) |
-| 声明、生产与消费消息 | [消息系统适配能力](docs/development/messaging-capability.md) |
-| 声明 cron / fixedDelay 定时任务 | [定时调度能力](docs/development/scheduled-task-capability.md) |
-| 日志打印规范 | [开发日志规范](docs/development/logging.md) |
-| Kernel 与 Application Generation | [Kernel 运行与配置](internal/kernel/README.md) |
-| Kernel App 组件 | [Kernel App 组件](internal/kernel/app/README.md) |
-| 底层能力库 | [pkg 能力说明](pkg/README.md) |
-| 构建、迁移、发布和安全运维 | [运维文档](docs/operations/README.md) |
-| 任务级研究、计划与实施证据 | [变更记录](docs/changes/README.md) |
-| AI Agent 协作规则 | [AGENTS.md](AGENTS.md) |
-
-`docs/changes` 是历史账本，不作为当前启动或配置的唯一说明。当前使用方式以上面的主题文档为准。
+| 本地启动与首次迁移 | [本地启动指南](docs/getting-started/local-development.md) |
+| 配置来源、环境变量和默认配置生成 | [配置说明](docs/configuration/README.md) |
+| Kernel、Application Generation 和模块边界 | [架构说明](docs/architecture/README.md) |
+| 应用模块、日志、执行、调度和消息开发 | [开发指南](docs/development/README.md) |
+| API 路由与契约生成结果 | [API 文档](api/README.md) |
+| 构建、迁移、发布、复制和安全运维 | [运维文档](docs/operations/README.md) |
+| 研究快照与任务证据 | [研究档案](docs/research/README.md)、[变更记录](docs/changes/README.md) |
 
 ## 架构摘要
 
@@ -49,6 +43,13 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 配置严格按 owner 注册，未知配置节会在资源副作用前失败；`config init`、`db migrate` 和长期 Service 必须识别同一套应用配置节，避免“生成的配置自己不能启动”的漂移。
 
 日志是开发必备能力。开发阶段默认可见 debug 级别日志，业务和基础设施代码必须遵守 [开发日志规范](docs/development/logging.md)，在真正决定处理策略的边界记录，避免泄露凭据或重复打印同一错误链。
+
+## 文档权威边界
+
+- 当前怎么启动、配置、开发和运维，以根 README 与 [项目手册](docs/README.md) 下的主题文档为准。
+- `docs/changes/**` 保存任务级研究、计划、实施和验证证据，不替代当前主题文档。
+- `docs/research/**` 保存阶段性研究快照，不把目标设计写成已经实现的能力。
+- `pkg/**/README.md` 与 `internal/**/README.md` 是局部包说明，由主题文档链接进入，不作为全局阅读入口。
 
 ## License
 

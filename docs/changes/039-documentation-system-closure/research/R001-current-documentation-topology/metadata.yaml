@@ -1,0 +1,41 @@
+schema_version: 1
+id: R001
+title: "当前文档拓扑与闭环缺口"
+question: "当前项目文档为什么呈现为分散片段，以及怎样形成连续项目手册？"
+research_type: current-project
+topics: ["documentation", "information-architecture", "go-scaffold-template"]
+keywords: ["README.md", "docs/README.md", "docs/development", "docs/architecture", "docs/operations", "docs/changes", "docs/research"]
+applicable_scenarios: ["项目文档入口整理", "主题文档导航闭环", "历史证据与当前权威分层"]
+non_applicable_scenarios: ["源码架构改造", "配置或 CLI 行为变更", "外部技术选型"]
+status: active
+summary: "当前文档已有主题内容和历史证据，但入口把使用、开发、架构、包说明和历史账本放在同一层；应按项目生命周期建立项目手册总目录，并明确当前主题文档与历史证据边界。"
+evidence:
+  types: ["documentation", "repository-state"]
+  primary_sources:
+    - title: "根 README"
+      locator: "README.md"
+      snapshot: "2026-08-20 working tree before 039"
+    - title: "项目文档入口"
+      locator: "docs/README.md"
+      snapshot: "2026-08-20 working tree before 039"
+    - title: "任务级变更记录"
+      locator: "docs/changes/README.md"
+      snapshot: "2026-08-20 working tree before 039"
+    - title: "开发主题文档"
+      locator: "docs/development/*.md"
+      snapshot: "2026-08-20 working tree before 039"
+    - title: "运维主题入口"
+      locator: "docs/operations/README.md"
+      snapshot: "2026-08-20 working tree before 039"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2026-09-20"
+  refresh_triggers: ["新增或移动主题文档", "新增公共开发流程", "变更 docs/changes 工作流", "根 README 或 docs/README.md 再次重写"]
+relations:
+  extends: []
+  related: ["docs/research/README.md", "docs/changes/013-research-plan-implementation-gate"]
+  supersedes: []
+  superseded_by: []
+report: report.md
