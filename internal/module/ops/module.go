@@ -13,6 +13,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/module/ops/model"
 	"github.com/rin721/go-scaffold-template/internal/module/ops/service"
 	"github.com/rin721/go-scaffold-template/pkg/httpx"
+	"github.com/rin721/go-scaffold-template/pkg/logger"
 	pkgobservability "github.com/rin721/go-scaffold-template/pkg/observability"
 )
 
@@ -23,6 +24,7 @@ type Dependencies struct {
 	Runtime       service.RuntimeSource
 	Build         model.BuildInfo
 	Config        configbinding.Config
+	Logger        logger.Logger
 	Observability pkgobservability.Capabilities
 	Access        httpbinding.Access
 	Operations    []pkgobservability.Operation
@@ -49,7 +51,7 @@ func New(ctx context.Context, dependencies Dependencies) (Module, error) {
 	if dependencies.Observability.Metrics == nil || dependencies.Observability.Telemetry == nil {
 		return Module{}, fmt.Errorf("ops observability capabilities are incomplete")
 	}
-	managementHTTP, err := httpbinding.New(opsService, dependencies.Observability.Metrics.Handler(), dependencies.Access, dependencies.Config.Management.MetricsAccess)
+	managementHTTP, err := httpbinding.New(opsService, dependencies.Observability.Metrics.Handler(), dependencies.Access, dependencies.Config.Management.MetricsAccess, dependencies.Logger)
 	if err != nil {
 		return Module{}, fmt.Errorf("compose management HTTP: %w", err)
 	}

@@ -1,0 +1,47 @@
+schema_version: 1
+id: R001
+title: "当前日志覆盖与治理缺口审计"
+question: "当前项目已有日志、Tracing、Execution Record、Health 与 Diagnostics 能力如何分工，哪些关键运行路径仍缺少有诊断价值且低敏的结构化日志与测试门禁？"
+research_type: current-project
+topics: ["logging", "observability", "execution", "schedule", "messaging", "health", "diagnostics", "migration"]
+keywords: ["pkg/logger", "application generation", "AccessLog", "AsyncRecorder", "RecoveringStore", "scheduler", "messaging provider", "Consumer", "Migration", "readyz"]
+languages: ["Go"]
+technologies: ["zap", "RabbitMQ", "GORM", "Application Generation"]
+applicable_scenarios: ["041 设计计划", "日志体系治理", "关键路径日志补齐", "日志测试门禁"]
+non_applicable_scenarios: ["集中日志平台选型", "OTLP Logs", "日志采样", "审计日志持久化", "分布式 tracing 后端选型"]
+status: active
+summary: "项目已有 Logger 与多个关键事件日志，不应重建观测体系；当前缺口集中在 one-shot migration、Execution 异步错误脱敏、Messaging Consumer disposition、management outcome、schedule/messaging 日志测试门禁和文档门禁细化。"
+evidence:
+  types: ["source-code", "tests", "configuration", "authoritative-project-documentation", "existing-change-records"]
+  primary_sources:
+    - title: "日志规范与 Logger 能力"
+      locator: "docs/development/logging.md; pkg/logger/README.md; pkg/logger/*.go"
+      snapshot: "f86825b52eb19e8dd807c0db7f59d5d7c7e7102a"
+    - title: "Service、Application Generation 与 HTTP 日志"
+      locator: "cmd/app/main.go; internal/composition/service.go; internal/kernel/generation.go; pkg/httpx/production_middleware.go"
+      snapshot: "f86825b52eb19e8dd807c0db7f59d5d7c7e7102a"
+    - title: "Execution、AsyncRecorder 与恢复治理"
+      locator: "internal/kernel/app/execution/execution.go; pkg/execution/async.go; pkg/execution/recovery.go; docs/development/execution-capability.md"
+      snapshot: "f86825b52eb19e8dd807c0db7f59d5d7c7e7102a"
+    - title: "Scheduler 与 Messaging 运行边界"
+      locator: "internal/kernel/app/schedule/schedule.go; internal/kernel/app/messaging/messaging.go; internal/kernel/app/messaging/rabbitmq/rabbitmq.go"
+      snapshot: "f86825b52eb19e8dd807c0db7f59d5d7c7e7102a"
+    - title: "Migration、Management 与 Ops 状态"
+      locator: "internal/composition/migration.go; internal/module/migration/service.go; internal/module/ops/binding/http/handler.go; internal/composition/ops.go"
+      snapshot: "f86825b52eb19e8dd807c0db7f59d5d7c7e7102a"
+    - title: "既有日志与能力变更记录"
+      locator: "docs/changes/028-required-development-logging; docs/changes/035-background-task-capabilities; docs/changes/037-scheduled-task-capability; docs/changes/038-messaging-adapter-capability"
+      snapshot: "verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2026-09-20"
+  refresh_triggers: ["Logger contract changes", "Application Generation lifecycle changes", "execution/schedule/messaging component changes", "management HTTP or diagnostics changes", "new external dependency or async runtime owner is introduced"]
+relations:
+  extends: ["028-required-development-logging", "035-background-task-capabilities", "037-scheduled-task-capability", "038-messaging-adapter-capability"]
+  related: ["023-full-configuration-seamless-reload", "040-documentation-system-rebuild"]
+  supersedes: []
+  superseded_by: []
+report: report.md
+

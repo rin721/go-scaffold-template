@@ -65,7 +65,9 @@ type Application struct{ config Config }
 
 // Run 从进程入口输入构造基线日志与 Application，并完整释放入口拥有的日志资源。
 func Run(ctx context.Context, cfg EntryConfig, args []string) (runErr error) {
-	baseline, err := pkglogger.New(nil)
+	baselineConfig := pkglogger.DefaultConfig()
+	baselineConfig.OutputPaths = []string{"stderr"}
+	baseline, err := pkglogger.New(&baselineConfig)
 	if err != nil {
 		return fmt.Errorf("create baseline logger: %w", err)
 	}

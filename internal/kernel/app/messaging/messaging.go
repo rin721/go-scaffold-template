@@ -160,7 +160,8 @@ func build(ctx context.Context, cfg Config, dependencies Dependencies) (*resourc
 			return nil, fmt.Errorf("messaging provider %q has no factory for driver %q", name, providerConfig.Driver)
 		}
 		provider, err := factory.Build(ctx, name, providerConfig, ProviderDependencies{
-			Logger: dependencies.Logger, Clock: dependencies.Clock, Recovery: cfg.Recovery,
+			Generation: dependencies.Generation,
+			Logger:     dependencies.Logger, Clock: dependencies.Clock, Recovery: cfg.Recovery,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("build messaging provider %q: %w", name, err)
@@ -517,6 +518,8 @@ func (r *resource) monitorExecution(ctx context.Context, initial bool) {
 			if err := r.setConsumerAdmission(ctx, current); err != nil && ctx.Err() == nil {
 				r.dependencies.Logger.Warn("messaging execution admission transition failed",
 					pkglogger.String("owner", "messaging-consumer"), pkglogger.String("phase", "execution-health"),
+					pkglogger.Any("generation", r.dependencies.Generation),
+					pkglogger.Bool("desired", current),
 					pkglogger.String("error_type", messageErrorType(err)),
 				)
 				continue
@@ -605,16 +608,48 @@ func (c *consumerRuntime) handle(ctx context.Context, incoming Incoming) Disposi
 	}
 	c.lastError.Store(messageErrorType(err))
 	if errors.Is(err, pkgexecution.ErrBackend) || errors.Is(err, pkgexecution.ErrAlreadyRunning) || ctx.Err() != nil {
+		c.logDisposition(DispositionDeferUncounted, incoming, err)
 		return DispositionDeferUncounted
 	}
 	// Handler 自身超时必须消耗业务交付预算；只有上游 delivery context 取消才属于不计数的基础设施延后。
 	if (fault.Retryable(err) || errors.Is(err, context.DeadlineExceeded)) &&
 		incoming.DeliveryCount+1 < c.binding.Delivery().MaxDeliveries() {
 		c.rejected.Add(1)
+		c.logDisposition(DispositionRetryCounted, incoming, err)
 		return DispositionRetryCounted
 	}
 	c.deadLettered.Add(1)
+	c.logDisposition(DispositionDeadLetter, incoming, err)
 	return DispositionDeadLetter
+}
+
+func (c *consumerRuntime) logDisposition(disposition Disposition, incoming Incoming, err error) {
+	if c == nil || c.owner == nil || c.owner.dependencies.Logger == nil {
+		return
+	}
+	fields := []pkglogger.Field{
+		pkglogger.String("owner", "messaging-consumer"),
+		pkglogger.String("phase", "delivery"),
+		pkglogger.Any("generation", c.owner.dependencies.Generation),
+		pkglogger.String("consumer", string(c.binding.ID())),
+		pkglogger.String("route", string(c.binding.Route())),
+		pkglogger.String("contract", incoming.Message.Contract().String()),
+		pkglogger.String("message_id", string(incoming.Message.ID())),
+		pkglogger.Any("delivery_count", incoming.DeliveryCount),
+		pkglogger.String("disposition", disposition.String()),
+		pkglogger.String("error_type", messageErrorType(err)),
+	}
+	if incoming.TraceID != "" {
+		fields = append(fields, pkglogger.String("trace_id", incoming.TraceID))
+	}
+	switch disposition {
+	case DispositionDeadLetter:
+		c.owner.dependencies.Logger.Error("messaging consumer dead-lettered delivery", fields...)
+	case DispositionRetryCounted:
+		c.owner.dependencies.Logger.Warn("messaging consumer scheduled retry", fields...)
+	case DispositionDeferUncounted:
+		c.owner.dependencies.Logger.Warn("messaging consumer deferred delivery", fields...)
+	}
 }
 
 func (r *resource) diagnostics() pkgmessaging.Diagnostics {
@@ -700,6 +735,10 @@ func messageErrorType(err error) string {
 		if errors.Is(err, item.target) {
 			return item.name
 		}
+	}
+	var panicErr consumerPanicError
+	if errors.As(err, &panicErr) {
+		return "consumer_panic"
 	}
 	return reflect.TypeOf(err).String()
 }

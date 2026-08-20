@@ -18,6 +18,15 @@
 
 协调依赖恢复后，`skip`、`pause` 和 best-effort `local` 任务会自动重新争抢后续执行权，不要求重启。不要通过临时修改为 `local` 来“修复”严格任务；严格策略会拒绝这种配置组合。
 
+日志排障时关注：
+
+- `application scheduler started/draining/stopped`：确认当前 Generation 是否已经开放或撤销准入；
+- `scheduled task coordination state changed`：按 `phase`、`task`、`generation`、`error_type` 判断 skip/pause/weaken/lost；
+- `scheduled task failed`：单次 occurrence 失败，结合 Execution 记录和业务幂等键处理；
+- `scheduled task entered fatal state`：该任务已经进入 Generation fatal 通道，按进程失败策略处置。
+
+这些日志不包含 Redis token、连接凭据、业务参数或原始错误文本；工单中只引用 Task ID、Generation、稳定错误类型和必要时间窗口。
+
 ## 故障演练
 
 上线严格任务前，在目标部署环境至少验证：

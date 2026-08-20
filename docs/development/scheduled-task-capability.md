@@ -115,7 +115,10 @@ scheduler:
 
 现有 management diagnostics 的 `scheduler` 字段提供 `enabled`、`ready`、`degraded`、Generation 和逐任务状态；`schedulerHealth` 给出 `pass` / `warn` / `fail`。日志只记录 Task ID、phase、generation、state 和稳定错误类型，不记录 Redis token、业务参数或原始错误文本。
 
-模块测试至少验证 Binding 构造、任务取消、业务错误和自有依赖；底层测试已覆盖 cron/fixedDelay、并发、两逻辑实例竞争、失权、策略隔离、自动恢复和 Generation 切换。真实部署还必须演练 Redis 中断、恢复、failover 和长暂停，并按目标系统能力评估 fencing / 业务幂等。
+生命周期 start/drain/stop 是 Info，单次任务失败和协调依赖导致的可恢复状态变化是 Warn，进入 `failed` fatal state 是 Error。
+正常 standby、未取得租约、健康完成和优雅取消不得打印 Warn/Error。
+
+模块测试至少验证 Binding 构造、任务取消、业务错误和自有依赖；底层测试已覆盖 cron/fixedDelay、并发、两逻辑实例竞争、失权、策略隔离、自动恢复、Generation 切换以及任务失败/fatal 日志门禁。真实部署还必须演练 Redis 中断、恢复、failover 和长暂停，并按目标系统能力评估 fencing / 业务幂等。
 
 相关入口：
 

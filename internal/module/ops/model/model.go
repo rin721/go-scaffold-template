@@ -19,6 +19,8 @@ const (
 )
 
 const (
+	// OperationBuild 是构建信息读取的稳定审计 identity。
+	OperationBuild = "ops.build"
 	// OperationDiagnostics 是完整诊断读取的稳定审计 identity。
 	OperationDiagnostics = "ops.diagnostics"
 	// OperationMetrics 是受保护 metrics 读取的稳定审计 identity。

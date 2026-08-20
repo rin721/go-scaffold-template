@@ -153,6 +153,21 @@ func report() { log.Print("bypass") }
 	if err := validateLoggingSourceOwnership(globalRoot); err == nil {
 		t.Fatal("global standard logger fixture passed")
 	}
+
+	rawErrorRoot := t.TempDir()
+	writeModuleBoundaryFixture(t, rawErrorRoot, "internal/example/example.go", `package example
+import (
+	"errors"
+	projectlogger "github.com/rin721/go-scaffold-template/pkg/logger"
+)
+func report(log projectlogger.Logger) {
+	err := errors.New("unsafe detail")
+	log.Warn("failed", projectlogger.String("error", err.Error()))
+}
+`)
+	if err := validateLoggingSourceOwnership(rawErrorRoot); err == nil {
+		t.Fatal("raw error string logging fixture passed")
+	}
 }
 
 func TestModuleExportRulesAcceptPrivateImplementationAndRejectLeaks(t *testing.T) {
@@ -307,15 +322,43 @@ func validateLoggingSourceOwnership(root string) error {
 				return true
 			}
 			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok || selector.Sel.Name != "Noop" || selectorImportPath(selector, imports) != modulePath+"/pkg/logger" {
+			if !ok {
 				return true
 			}
-			position := fileset.Position(selector.Pos())
-			violation = fmt.Errorf("production source %s:%d uses logger.Noop", path, position.Line)
-			return false
+			if selector.Sel.Name == "Noop" && selectorImportPath(selector, imports) == modulePath+"/pkg/logger" {
+				position := fileset.Position(selector.Pos())
+				violation = fmt.Errorf("production source %s:%d uses logger.Noop", path, position.Line)
+				return false
+			}
+			if logsRawErrorString(call, selector, imports) {
+				position := fileset.Position(selector.Pos())
+				violation = fmt.Errorf("production source %s:%d logs raw err.Error() through logger.String(\"error\", ...)", path, position.Line)
+				return false
+			}
+			return true
 		})
 		return violation
 	})
+}
+
+func logsRawErrorString(call *ast.CallExpr, selector *ast.SelectorExpr, imports map[string]string) bool {
+	if selector.Sel.Name != "String" || selectorImportPath(selector, imports) != modulePath+"/pkg/logger" || len(call.Args) < 2 {
+		return false
+	}
+	key, ok := call.Args[0].(*ast.BasicLit)
+	if !ok || key.Kind != token.STRING {
+		return false
+	}
+	unquoted, err := strconv.Unquote(key.Value)
+	if err != nil || unquoted != "error" {
+		return false
+	}
+	valueCall, ok := call.Args[1].(*ast.CallExpr)
+	if !ok || len(valueCall.Args) != 0 {
+		return false
+	}
+	valueSelector, ok := valueCall.Fun.(*ast.SelectorExpr)
+	return ok && valueSelector.Sel.Name == "Error"
 }
 
 // validateKernelAppConfigOwnership 防止 application 层组件默认配置整体复用 pkg/* 默认配置。

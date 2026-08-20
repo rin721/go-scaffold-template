@@ -221,8 +221,9 @@ func TestStrictFailUsesExistingFatalChannel(t *testing.T) {
 	engine := newFakeEngine()
 	binding := fixedDelayBinding(t, "settlement.close", policy, func(context.Context) error { return nil })
 	failures := make(chan error, 1)
+	logs := logger.NewTestLogger()
 	current, err := build(context.Background(), testConfig(), Dependencies{
-		ApplicationName: "test-application", Generation: 1, Logger: logger.Noop(), Clock: pkgclock.System(),
+		ApplicationName: "test-application", Generation: 1, Logger: logs, Clock: pkgclock.System(),
 		Execution: &recordingExecutor{}, Coordination: newSharedManager(false), Telemetry: &recordingTelemetry{},
 		Bindings: []pkgschedule.Binding{binding}, ReportFailure: func(err error) { failures <- err },
 		engineFactory: func(Config, pkgclock.Clock) (triggerEngine, error) { return engine, nil },
@@ -243,6 +244,7 @@ func TestStrictFailUsesExistingFatalChannel(t *testing.T) {
 		t.Fatal("fatal policy did not report into generation failure channel")
 	}
 	waitTaskState(t, current, binding.ID(), pkgschedule.StateFailed)
+	assertLogEntry(t, logs, "error", "scheduled task entered fatal state")
 }
 
 func TestBestEffortLocalFallbackIsExplicitAndRecoversToLeader(t *testing.T) {
@@ -380,10 +382,11 @@ func TestHubSwitchPreventsOldGenerationFromExecuting(t *testing.T) {
 
 func TestTaskPanicIsContainedAndRecorded(t *testing.T) {
 	engine := newFakeEngine()
+	logs := logger.NewTestLogger()
 	binding := fixedDelayBinding(t, "panic.task", pkgschedule.Local(), func(context.Context) error {
 		panic("secret business payload")
 	})
-	current := buildTestResource(t, engine, coordination.Unavailable(), &recordingExecutor{}, &recordingTelemetry{}, binding)
+	current := buildTestResourceWithLogger(t, logs, engine, coordination.Unavailable(), &recordingExecutor{}, &recordingTelemetry{}, binding)
 	defer stopTestResource(t, current)
 	if err := current.activate(); err != nil {
 		t.Fatalf("activate: %v", err)
@@ -395,6 +398,7 @@ func TestTaskPanicIsContainedAndRecorded(t *testing.T) {
 	if snapshot.Active != 0 || snapshot.LastErrorType != "task_panic" {
 		t.Fatalf("panic snapshot=%+v", snapshot)
 	}
+	assertLogEntry(t, logs, "warn", "scheduled task failed")
 }
 
 func fixedDelayBinding(t *testing.T, id pkgschedule.TaskID, policy pkgschedule.CoordinationPolicy, run pkgschedule.Task) pkgschedule.Binding {
@@ -457,6 +461,27 @@ func buildTestResourceWithConfig(
 	return current
 }
 
+func buildTestResourceWithLogger(
+	t *testing.T,
+	logging logger.Logger,
+	engine *fakeEngine,
+	manager coordination.Manager,
+	executor pkgexecution.OperationExecutor,
+	telemetry pkgobservability.Telemetry,
+	bindings ...pkgschedule.Binding,
+) *resource {
+	t.Helper()
+	current, err := build(context.Background(), testConfig(), Dependencies{
+		ApplicationName: "test-application", Generation: 1, Logger: logging, Clock: pkgclock.System(),
+		Execution: executor, Coordination: manager, Telemetry: telemetry, Bindings: bindings,
+		ReportFailure: func(error) {}, engineFactory: func(Config, pkgclock.Clock) (triggerEngine, error) { return engine, nil },
+	})
+	if err != nil {
+		t.Fatalf("build resource: %v", err)
+	}
+	return current
+}
+
 func stopTestResource(t *testing.T, current *resource) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -464,6 +489,16 @@ func stopTestResource(t *testing.T, current *resource) {
 	if err := stop(ctx, current); err != nil {
 		t.Errorf("stop resource: %v", err)
 	}
+}
+
+func assertLogEntry(t *testing.T, logs *logger.TestLogger, level string, message string) {
+	t.Helper()
+	for _, entry := range logs.Entries() {
+		if entry.Level == level && entry.Message == message {
+			return
+		}
+	}
+	t.Fatalf("missing %s log %q in %#v", level, message, logs.Entries())
 }
 
 func waitTaskState(t *testing.T, current *resource, id pkgschedule.TaskID, want pkgschedule.RuntimeState) {

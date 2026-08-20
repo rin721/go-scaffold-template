@@ -74,6 +74,39 @@ func TestHandleDeliveryMapsCountedAndUncountedDisposition(t *testing.T) {
 	}
 }
 
+func TestHandleDeliveryLogsRejectedDecodeBoundary(t *testing.T) {
+	contract := testContract(t)
+	acknowledger := &recordingAcknowledger{}
+	logs := logger.NewTestLogger()
+	delivery := amqp.Delivery{
+		Acknowledger: acknowledger, DeliveryTag: 7,
+		Headers:     amqp.Table{headerContractID: "orders.created", headerContractVer: int64(1)},
+		ContentType: "text/plain", MessageId: "message-42", Timestamp: time.Now(),
+		Type: contract.Ref().String(), Body: []byte(`{"orderId":"42"}`),
+	}
+	current := &provider{
+		name: "primary", ctx: context.Background(),
+		dependencies: messagingapp.ProviderDependencies{Generation: 9, Logger: logs, Clock: pkgclock.System()},
+	}
+	current.lastError.Store("")
+	current.handleDelivery(context.Background(), messagingapp.Consumer{
+		Route: testRoute(contract), Handle: func(context.Context, messagingapp.Incoming) messagingapp.Disposition {
+			return messagingapp.DispositionAck
+		},
+	}, delivery)
+
+	if acknowledger.operation != "reject" || acknowledger.requeue {
+		t.Fatalf("ack operation=%q requeue=%v", acknowledger.operation, acknowledger.requeue)
+	}
+	entries := logs.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("entries=%d want 1", len(entries))
+	}
+	if entries[0].Level != "warn" || entries[0].Message != "messaging delivery rejected" {
+		t.Fatalf("entry=%#v", entries[0])
+	}
+}
+
 func TestHandleDeliveryKeepsAcknowledgementAmbiguityInDiagnostics(t *testing.T) {
 	contract := testContract(t)
 	acknowledger := &recordingAcknowledger{err: errors.New("channel closed")}

@@ -79,7 +79,8 @@ func TestConsumerUsesExecutionForIdempotencyAndBrokerRetryBudget(t *testing.T) {
 	}
 
 	retryFactory := &testFactory{}
-	retryCurrent := buildTestResource(t, retryFactory, pkgexecution.NewExecutor(pkgexecution.NewMemoryStore()))
+	retryLogs := logger.NewTestLogger()
+	retryCurrent := buildTestResourceWithLogger(t, retryFactory, retryLogs, pkgexecution.NewExecutor(pkgexecution.NewMemoryStore()))
 	retryCatalog, retryMessage := testCatalog(t, func(context.Context, pkgmessaging.Message) error {
 		return fault.Wrap(errors.New("dependency unavailable"), fault.CodeUnavailable, "orders.consume", true)
 	})
@@ -99,6 +100,8 @@ func TestConsumerUsesExecutionForIdempotencyAndBrokerRetryBudget(t *testing.T) {
 	if disposition := retryConsumer.Handle(context.Background(), Incoming{Message: retryMessage, DeliveryCount: 2, Redelivered: true}); disposition != DispositionDeadLetter {
 		t.Fatalf("耗尽 disposition=%v want dead letter", disposition)
 	}
+	assertLogEntry(t, retryLogs, "warn", "messaging consumer scheduled retry")
+	assertLogEntry(t, retryLogs, "error", "messaging consumer dead-lettered delivery")
 }
 
 func TestConsumerIdempotencyIsScopedByConsumerAndContract(t *testing.T) {
@@ -144,7 +147,8 @@ func TestConsumerIdempotencyIsScopedByConsumerAndContract(t *testing.T) {
 
 func TestConsumerDefersWhenExecutionBackendIsUnavailable(t *testing.T) {
 	factory := &testFactory{}
-	current := buildTestResource(t, factory, unavailableExecutor{})
+	logs := logger.NewTestLogger()
+	current := buildTestResourceWithLogger(t, factory, logs, unavailableExecutor{})
 	catalog, message := testCatalog(t, func(context.Context, pkgmessaging.Message) error { return nil })
 	if err := current.freeze(catalog); err != nil {
 		t.Fatal(err)
@@ -158,6 +162,7 @@ func TestConsumerDefersWhenExecutionBackendIsUnavailable(t *testing.T) {
 	if disposition := factory.provider.consumer(t).Handle(context.Background(), Incoming{Message: message}); disposition != DispositionDeferUncounted {
 		t.Fatalf("disposition=%v want uncounted defer", disposition)
 	}
+	assertLogEntry(t, logs, "warn", "messaging consumer deferred delivery")
 }
 
 func TestConsumerDefersActiveLeaseAndDeadLettersPermanentOrPanickingHandler(t *testing.T) {
@@ -192,7 +197,8 @@ func TestConsumerDefersActiveLeaseAndDeadLettersPermanentOrPanickingHandler(t *t
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			terminalFactory := &testFactory{}
-			terminal := buildTestResource(t, terminalFactory, pkgexecution.NewExecutor(pkgexecution.NewMemoryStore()))
+			logs := logger.NewTestLogger()
+			terminal := buildTestResourceWithLogger(t, terminalFactory, logs, pkgexecution.NewExecutor(pkgexecution.NewMemoryStore()))
 			terminalCatalog, terminalMessage := testCatalog(t, test.handler)
 			if err := terminal.freeze(terminalCatalog); err != nil {
 				t.Fatal(err)
@@ -206,6 +212,7 @@ func TestConsumerDefersActiveLeaseAndDeadLettersPermanentOrPanickingHandler(t *t
 			if disposition := terminalFactory.provider.consumer(t).Handle(context.Background(), Incoming{Message: terminalMessage}); disposition != DispositionDeadLetter {
 				t.Fatalf("disposition=%v want dead letter", disposition)
 			}
+			assertLogEntry(t, logs, "error", "messaging consumer dead-lettered delivery")
 		})
 	}
 }
@@ -430,8 +437,13 @@ func TestDecodeAcceptsNamedProviderAndRouteMaps(t *testing.T) {
 
 func buildTestResource(t *testing.T, factory Factory, executor pkgexecution.OperationExecutor) *resource {
 	t.Helper()
+	return buildTestResourceWithLogger(t, factory, logger.Noop(), executor)
+}
+
+func buildTestResourceWithLogger(t *testing.T, factory Factory, logging logger.Logger, executor pkgexecution.OperationExecutor) *resource {
+	t.Helper()
 	current, err := build(context.Background(), testConfig(), Dependencies{
-		Generation: 1, Logger: logger.Noop(), Clock: pkgclock.Fixed(time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)),
+		Generation: 1, Logger: logging, Clock: pkgclock.Fixed(time.Date(2026, 8, 20, 1, 2, 3, 0, time.UTC)),
 		Execution: executor, ExecutionHealth: func() (health.Result, error) {
 			return health.Result{Status: health.StatusPass}, nil
 		}, Telemetry: passthroughTelemetry{}, Factories: []Factory{factory},
@@ -441,6 +453,16 @@ func buildTestResource(t *testing.T, factory Factory, executor pkgexecution.Oper
 	}
 	t.Cleanup(func() { _ = stop(context.Background(), current) })
 	return current
+}
+
+func assertLogEntry(t *testing.T, logs *logger.TestLogger, level string, message string) {
+	t.Helper()
+	for _, entry := range logs.Entries() {
+		if entry.Level == level && entry.Message == message {
+			return
+		}
+	}
+	t.Fatalf("missing %s log %q in %#v", level, message, logs.Entries())
 }
 
 func testConfig() Config {

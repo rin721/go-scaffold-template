@@ -3,6 +3,9 @@ package execution
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -184,6 +187,36 @@ func TestLogTransitionEmitsWarnOnDegraded(t *testing.T) {
 func TestLogTransitionNilLoggerNoop(t *testing.T) {
 	if fn := logTransition(nil); fn != nil {
 		t.Fatal("nil logger should produce nil transition callback")
+	}
+}
+
+func TestAsyncRecordErrorLogDoesNotExposeRawErrorText(t *testing.T) {
+	logPath := filepath.Join(t.TempDir(), "execution.log")
+	logResource, err := logger.New(&logger.Config{
+		Environment:      logger.EnvironmentProduction,
+		Level:            logger.LevelDebug,
+		Encoding:         logger.EncodingJSON,
+		OutputPaths:      []string{logPath},
+		ErrorOutputPaths: []string{filepath.Join(t.TempDir(), "execution-error.log")},
+	})
+	if err != nil {
+		t.Fatalf("logger: %v", err)
+	}
+	defer func() { _ = logResource.Close() }()
+	logExecutionRecordError(logResource, errors.New("backend write failed: password=secret token=abc"))
+	if err := logResource.Sync(); err != nil {
+		t.Fatalf("sync logger: %v", err)
+	}
+	content, err := os.ReadFile(logPath)
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	text := string(content)
+	if !strings.Contains(text, "execution record persistence failed") {
+		t.Fatalf("log content missing async error entry: %s", text)
+	}
+	if strings.Contains(text, "password=secret") || strings.Contains(text, "token=abc") {
+		t.Fatalf("log content leaked raw error text: %s", text)
 	}
 }
 

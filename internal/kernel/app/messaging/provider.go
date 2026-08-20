@@ -20,9 +20,10 @@ type Capabilities struct {
 
 // ProviderDependencies 是 Factory 构造资源时可用的项目稳定能力。
 type ProviderDependencies struct {
-	Logger   pkglogger.Logger
-	Clock    pkgclock.Clock
-	Recovery RecoveryConfig
+	Generation uint64
+	Logger     pkglogger.Logger
+	Clock      pkgclock.Clock
+	Recovery   RecoveryConfig
 }
 
 // Factory 由 composition 显式提交，避免业务模块或 Kernel App 隐式查找 Driver。
@@ -68,6 +69,21 @@ const (
 	DispositionDeferUncounted
 	DispositionDeadLetter
 )
+
+func (d Disposition) String() string {
+	switch d {
+	case DispositionAck:
+		return "ack"
+	case DispositionRetryCounted:
+		return "retry_counted"
+	case DispositionDeferUncounted:
+		return "defer_uncounted"
+	case DispositionDeadLetter:
+		return "dead_letter"
+	default:
+		return "unknown"
+	}
+}
 
 // Consumer 把 Binding、物理 Route 与治理 Handler 显式交给 Provider。
 type Consumer struct {

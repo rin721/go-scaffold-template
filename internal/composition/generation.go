@@ -381,6 +381,7 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.opsModule, err = ops.New(ctx, ops.Dependencies{
 		Runtime: generationOpsSource{process: f.opsRuntime, generation: generation}, Build: f.build, Config: opsConfig,
+		Logger:        generation.logger.value(),
 		Observability: pkgobservability.Capabilities{Metrics: generation.metrics.value(), Telemetry: generation.telemetry.output},
 		Access:        opsAccessAdapter{auth: generation.authModule}, Operations: opsOperations(),
 	})

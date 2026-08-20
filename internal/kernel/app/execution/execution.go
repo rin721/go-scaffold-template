@@ -7,7 +7,9 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -290,9 +292,7 @@ func assemble(cfg Config, deps componentDeps, primary, local pkgexecution.Store)
 	// 执行记录采用异步持久化：幂等占用/完成仍同步（保证去重），过程/失败记录异步落盘避免阻塞链路。
 	asyncCfg := asyncConfig(cfg.Async)
 	asyncCfg.OnError = func(err error) {
-		if deps.logger != nil {
-			deps.logger.Warn("execution record persistence failed", pkglogger.String("error", err.Error()))
-		}
+		logExecutionRecordError(deps.logger, err)
 	}
 	recorder := pkgexecution.NewAsyncRecorder(recovering, asyncCfg)
 	recorder.Start()
@@ -316,6 +316,18 @@ func asyncConfig(cfg AsyncConfig) pkgexecution.AsyncConfig {
 	return pkgexecution.AsyncConfig{Capacity: cfg.Capacity, Overflow: cfg.Overflow}
 }
 
+func logExecutionRecordError(logging pkglogger.Logger, err error) {
+	if logging == nil || err == nil {
+		return
+	}
+	logging.Warn("execution record persistence failed",
+		pkglogger.String("owner", "execution"),
+		pkglogger.String("phase", "async-record"),
+		pkglogger.String("error_type", executionErrorType(err)),
+		pkglogger.String("cause_type", fmt.Sprintf("%T", err)),
+	)
+}
+
 // logTransition 返回恢复治理状态变化的结构化日志回调（Degraded 告警，Recovering/Healthy 信息）。
 func logTransition(logger pkglogger.Logger) func(pkgexecution.RecoveryState, pkgexecution.RecoveryState) {
 	if logger == nil {
@@ -331,6 +343,28 @@ func logTransition(logger pkglogger.Logger) func(pkgexecution.RecoveryState, pkg
 				pkglogger.String("from", string(from)), pkglogger.String("state", string(to)))
 		}
 	}
+}
+
+func executionErrorType(err error) string {
+	if err == nil {
+		return ""
+	}
+	classifications := []struct {
+		target error
+		name   string
+	}{
+		{context.Canceled, "context_canceled"},
+		{context.DeadlineExceeded, "context_deadline_exceeded"},
+		{pkgexecution.ErrBufferOverflow, "execution_buffer_overflow"},
+		{pkgexecution.ErrStopped, "execution_recovery_stopped"},
+		{pkgexecution.ErrBackend, "execution_backend_unavailable"},
+	}
+	for _, classification := range classifications {
+		if errors.Is(err, classification.target) {
+			return classification.name
+		}
+	}
+	return reflect.TypeOf(err).String()
 }
 
 func ready(ctx context.Context, current *resource) error {

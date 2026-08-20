@@ -36,6 +36,16 @@ required Route 不可用会令 `messagingHealth=fail` 并使 readiness 失败；
 这只决定流量治理，不改变发布错误：任何 Route 都不会静默成功、写内存兜底或隐式切换 Provider。Execution health
 失败时 Consumer intake 会暂停，恢复后自动开放。
 
+同时关注结构化日志：
+
+- `messaging provider state changed`：按 `provider`、`driver`、`state`、`generation` 和 `error_type` 判断是连接恢复、
+  拓扑失败还是正常停止排空；
+- `messaging delivery rejected`：RabbitMQ Envelope/Contract 在 Provider 边界被拒绝，先核对 Contract header、
+  content type、message type 和 route 配置；
+- `messaging consumer deferred delivery`：Execution backend、active lease 或上游取消导致不计数延后；
+- `messaging consumer scheduled retry`：业务可重试错误或 Handler timeout 已消耗一次投递预算；
+- `messaging consumer dead-lettered delivery`：预算耗尽、永久错误或 panic 已进入 DLX，应按 Consumer 和 Message ID 查业务补偿。
+
 ## 发布故障处置
 
 - `ErrUnavailable`：Broker/session 尚未 ready；由调用方按业务入口策略呈现失败，不在 Adapter 内缓存。

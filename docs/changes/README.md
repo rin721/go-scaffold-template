@@ -43,5 +43,6 @@
 - [038 消息系统适配能力](038-messaging-adapter-capability/README.md)：已实现项目自有 Message Contract/Binding、显式多 Provider、RabbitMQ Adapter、Execution 可靠性协作与 Application Generation Consumer admission；本地工程门禁通过，RabbitMQ 4.3 真实协议门禁因本机无 Docker/WSL 保持未验证。
 - [039 文档体系闭环整理](039-documentation-system-closure/README.md)：已完成；根 README、项目手册总目录、开发入口、架构入口和运维入口按项目生命周期形成闭环，并明确当前主题文档、研究快照与任务证据的 authority 边界。
 - [040 项目文档体系系统重构](040-documentation-system-rebuild/README.md)：已完成；系统审计正式与历史文档、建立审计矩阵，按真实使用路径重构项目手册和 architecture/development/operations 入口，补齐 `pkg/execution` 局部说明，并修正 Kernel 局部 README 的过期阶段边界。
+- [041 日志体系补齐与治理](041-logging-observability-governance/README.md)：已完成；在既有 Logger、Tracing、Execution Record、Health、Diagnostics 与 Observability 能力上补齐 migration、execution、messaging、management、scheduler 的低敏结构化日志、测试门禁和开发规范，避免重复建设平行观测体系。
 
-下一个任务序号为 `041`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。
+下一个任务序号为 `042`。已完成记录只保存历史证据；当前行为必须回到根 [README](../../README.md) 和对应主题文档确认。

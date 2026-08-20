@@ -89,6 +89,8 @@ res, err := executor.Execute(ctx, pkgexecution.Execution{
 - `Access.Recovery()`：恢复治理快照（状态 / 缓冲 / 丢弃 / 状态变化次数）。
 - `Access.Health()`：Healthy=pass，Degraded/Recovering=warn。
 - 状态变化自动输出日志（Degraded=Warn，Recovering/Healthy=Info），异步记录失败输出 Warn。
+- 异步记录失败日志只记录 `owner=execution`、`phase=async-record`、`error_type` 和 `cause_type`，不记录原始错误文本、
+  幂等键、执行结果或业务参数。需要验证真实编码/脱敏时使用临时文件 logger，而不是只断言内存 TestLogger。
 
 ## 6. 边界（必须明确）
 

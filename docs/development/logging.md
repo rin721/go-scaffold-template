@@ -27,6 +27,20 @@ Logger 的 API、配置和资源所有权见 [`pkg/logger`](../../pkg/logger/REA
 
 不要逐函数、逐行记录，也不要在高频循环重复打印同一状态。业务输入校验错误由协议边界统一呈现时，下层 Service 只返回可识别错误，不再重复记录。
 
+当前已落地 owner 的最低要求如下：
+
+| owner | 必记事件 | 级别 |
+| --- | --- | --- |
+| `application` / generation | 启动、ready、drain、commit、reload reject、cleanup debt、最终 service failure | 成功里程碑 Info；候选拒绝 Warn；终结失败或 cleanup debt Error |
+| `execution` | 外部依赖 degraded/recovered、异步执行记录持久化失败 | Degraded/异步记录失败 Warn；恢复 Info |
+| `migration` | `db.migrate.status` / `db.migrate.up` 的 start、completed、failed | start Debug；兼容完成 Info；dirty/incompatible Warn；operation failed Error |
+| `messaging-provider` | provider state change、RabbitMQ decode reject、连接/拓扑确定性失败 | 状态正常 Info；恢复中/失败/Envelope reject Warn |
+| `messaging-consumer` | Execution admission 变化失败、delivery defer/retry/dead-letter | defer/retry/admission 失败 Warn；dead-letter Error |
+| `scheduler` | start/drain/stop、协调降级/恢复相关状态、task failure、fatal state | 生命周期 Info/Debug；可恢复协调与单次失败 Warn；fatal Error |
+| `management` | probe fail、protected operation reject、diagnostics/build operation failed | 4xx/不通过探针 Warn；5xx 或 operation 终结失败 Error |
+
+成功健康轮询、standby 竞争未获租约、publisher 正常 confirm、completed duplicate 和正常优雅取消不应额外打印高频 Info/Warn。
+
 ## 3. 级别
 
 日志级别表示最低输出阈值。development 默认 `debug`，因此 Debug、Info、Warn、Error 都可见；production 未显式配置时默认 `info`。
@@ -61,6 +75,9 @@ Logger 的 API、配置和资源所有权见 [`pkg/logger`](../../pkg/logger/REA
 - reload：`changed_sections`、`previous_generation`、`current_generation`；
 - HTTP：`method`、`operation`、`request_id`、`trace_id`、`duration`、`status`、`status_class`、`error_code`；
 - 失败：`error_type`、`cause_type`。
+- messaging：`provider`、`driver`、`consumer`、`route`、`contract`、`message_id`、`disposition`、`delivery_count`、`desired`；
+- scheduler：`task`、`state`、`generation`；
+- migration：`operation`、`current_version`、`target_version`、`dirty`、`empty`、`compatible`；
 
 禁止记录密码、Token、Secret、完整 DSN、Authorization、Cookie、原始 CLI args、完整 URL/query、请求/响应 body、完整 Config/Snapshot、subject 或业务对象。需要关联身份或资源时使用已有低敏 hash，不自行散列可逆或低熵秘密。
 
@@ -87,5 +104,6 @@ Logger 的 API、配置和资源所有权见 [`pkg/logger`](../../pkg/logger/REA
 - HTTP 测试覆盖成功、4xx、429、受控 503、5xx 和 panic，并验证 request/trace correlation。
 - 进程级测试只使用临时目录、loopback 临时端口和临时资源，结束后证明端口与文件句柄已释放。
 - production 源码不得调用 `logger.Noop()`，`cmd/internal` 不得导入标准全局 logger，zap 只能存在于 `pkg/logger` 实现边界。
+- production 源码不得使用 `logger.String("error", err.Error())` 记录原始错误文本；应使用稳定 `error_type`、`cause_type` 或经过审查的错误码。
 
 构建通过不能替代日志语义、脱敏或真实过滤验证。

@@ -622,6 +622,17 @@ func (p *provider) consume(current *session, consumerCtx context.Context, channe
 func (p *provider) handleDelivery(ctx context.Context, consumer messagingapp.Consumer, delivery amqp.Delivery) {
 	incoming, err := decodeDelivery(consumer.Route, delivery)
 	if err != nil {
+		p.dependencies.Logger.Warn("messaging delivery rejected",
+			pkglogger.String("owner", "messaging-provider"),
+			pkglogger.String("phase", "decode"),
+			pkglogger.Any("generation", p.dependencies.Generation),
+			pkglogger.String("provider", p.name),
+			pkglogger.String("driver", string(messagingapp.DriverRabbitMQ)),
+			pkglogger.String("consumer", string(consumer.Binding.ID())),
+			pkglogger.String("route", string(consumer.Route.ID)),
+			pkglogger.String("message_id", delivery.MessageId),
+			pkglogger.String("error_type", errorType(err)),
+		)
 		_ = delivery.Reject(false)
 		return
 	}
@@ -720,6 +731,7 @@ func (p *provider) setState(state pkgmessaging.ProviderState, err error) {
 	fields := []pkglogger.Field{
 		pkglogger.String("owner", "messaging-provider"), pkglogger.String("provider", p.name),
 		pkglogger.String("driver", string(messagingapp.DriverRabbitMQ)), pkglogger.String("state", string(state)),
+		pkglogger.Any("generation", p.dependencies.Generation),
 	}
 	if err != nil {
 		fields = append(fields, pkglogger.String("error_type", errorType(err)))

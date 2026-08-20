@@ -114,6 +114,16 @@ route.deliveryLimit + 1 == consumer.delivery.MaxDeliveries
 副作用时，业务目标仍须以 Message ID 实现自身幂等。Outbox/Inbox、数据库事务与消息发布原子性、端到端 exactly-once
 不属于当前能力，必须由真实事务用例另行设计。
 
+非成功 delivery disposition 会在统一 Consumer runtime 记录结构化日志：
+
+- `DispositionDeferUncounted` / `DispositionRetryCounted` 使用 Warn；
+- `DispositionDeadLetter` 使用 Error；
+- 字段只包含 `generation`、`consumer`、`route`、`contract`、`message_id`、`delivery_count`、`disposition`、`error_type`
+  以及可选 `trace_id`。
+
+RabbitMQ Provider 在 Envelope 无效或 Contract 不匹配时记录 `messaging delivery rejected` Warn 并拒绝投递；日志不包含
+payload、headers 全量、Broker URI、queue 内容或原始错误文本。
+
 ## 5. Route 与 Provider 配置
 
 逻辑 Route ID 属业务声明，物理 topology 只存在于应用配置。当前生产 composition 提供 RabbitMQ Factory；同一进程

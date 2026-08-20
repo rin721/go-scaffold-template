@@ -11,6 +11,7 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	kernellogging "github.com/rin721/go-scaffold-template/internal/kernel/logging"
+	"github.com/rin721/go-scaffold-template/internal/module/migration"
 	"github.com/rin721/go-scaffold-template/pkg/logger"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
@@ -199,6 +200,37 @@ func TestReportServiceFailureClassifiesWithoutErrorText(t *testing.T) {
 	}
 	if bytes.Contains(payload, []byte("UNSAFE_ERROR_DETAIL_SENTINEL")) || !bytes.Contains(payload, []byte("cause_type")) {
 		t.Fatalf("service failure log is not safely classified: %s", payload)
+	}
+}
+
+func TestMigrationLogsClassifyCompletionAndFailureWithoutErrorText(t *testing.T) {
+	log := logger.NewTestLogger()
+	logMigrationCompleted(log, "db.migrate.status", migration.Status{Current: 1, Target: 1, Compatible: true})
+	logMigrationCompleted(log, "db.migrate.status", migration.Status{Current: 1, Target: 2, Compatible: false})
+	entries := log.Entries()
+	if len(entries) != 2 || entries[0].Level != "info" || entries[1].Level != "warn" {
+		t.Fatalf("migration completion entries = %#v", entries)
+	}
+
+	path := filepath.Join(t.TempDir(), "migration.log")
+	addCaller := false
+	resource, err := logger.New(&logger.Config{
+		Environment: logger.EnvironmentProduction,
+		OutputPaths: []string{path}, ErrorOutputPaths: []string{path}, AddCaller: &addCaller,
+	})
+	if err != nil {
+		t.Fatalf("logger.New() error = %v", err)
+	}
+	logMigrationFailed(resource, "db.migrate.up", "run", errors.New("connect postgres://user:secret@example.invalid/app"))
+	if err := resource.Close(); err != nil {
+		t.Fatalf("logger.Close() error = %v", err)
+	}
+	payload, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile() error = %v", err)
+	}
+	if bytes.Contains(payload, []byte("secret")) || !bytes.Contains(payload, []byte("error_type")) {
+		t.Fatalf("migration log is not safely classified: %s", payload)
 	}
 }
 
