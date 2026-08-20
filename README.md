@@ -24,16 +24,16 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 
 ## 项目手册
 
-完整文档从 [docs/README.md](docs/README.md) 进入，按项目生命周期连续组织：启动、配置、架构、开发、能力接入、API、验证、运维、研究与变更历史。
+完整文档从 [docs/README.md](docs/README.md) 进入，按项目真实使用路径连续组织：认识项目、启动项目、使用能力、开发业务、接入基础设施、理解架构、扩展能力、调试排障、运行维护和深入底层设计。
 
-| 内容 | 入口 |
+| 阅读节点 | 入口 |
 | --- | --- |
 | 本地启动与首次迁移 | [本地启动指南](docs/getting-started/local-development.md) |
 | 配置来源、环境变量和默认配置生成 | [配置说明](docs/configuration/README.md) |
-| Kernel、Application Generation 和模块边界 | [架构说明](docs/architecture/README.md) |
 | 应用模块、日志、执行、调度和消息开发 | [开发指南](docs/development/README.md) |
+| Kernel、Application Generation 和模块边界 | [架构说明](docs/architecture/README.md) |
 | API 路由与契约生成结果 | [API 文档](api/README.md) |
-| 构建、迁移、发布、复制和安全运维 | [运维文档](docs/operations/README.md) |
+| 构建、迁移、发布、复制、安全、排障和运行维护 | [运维文档](docs/operations/README.md) |
 | 研究快照与任务证据 | [研究档案](docs/research/README.md)、[变更记录](docs/changes/README.md) |
 
 ## 架构摘要
@@ -50,6 +50,7 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 - `docs/changes/**` 保存任务级研究、计划、实施和验证证据，不替代当前主题文档。
 - `docs/research/**` 保存阶段性研究快照，不把目标设计写成已经实现的能力。
 - `pkg/**/README.md` 与 `internal/**/README.md` 是局部包说明，由主题文档链接进入，不作为全局阅读入口。
+- 新增或修改能力时，先更新对应主题 authority；局部 README 只保留本包或本模块的实现边界和到 authority 的链接。
 
 ## License
 

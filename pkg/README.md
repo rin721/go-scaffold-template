@@ -2,6 +2,8 @@
 
 `pkg` 只存放面向应用模块开放的通用底层 Capability。这里不是示例代码区，也不是第三方库转发层；每个包都必须有明确能力名、构造入口、错误语义、配置语义、资源边界和测试。
 
+本页是局部能力索引，不承担项目级开发、架构或运维 authority。业务接入流程回到 [开发指南](../docs/development/README.md)，底层装配回到 [架构说明](../docs/architecture/README.md)，运行维护回到 [交付与运维](../docs/operations/README.md)。
+
 ## 封装原则
 
 - 只收纳跨业务域复用的底层能力库，不放具体业务规则、领域模型、页面逻辑或一次性 glue code。
@@ -37,10 +39,10 @@
 | `codec` | `encoding/json`、`yaml.v3`、`msgpack` | 构造 JSON/YAML/msgpack 编解码器，提供内容类型、大小限制和统一错误语义。 |
 | `testkit` | 标准库 + 项目包 | 提供 fake clock、临时文件、健康 fixture 和底层库测试辅助。 |
 | `observability` | 项目自有契约 | 提供 HTTP observation、后台 `Work` span、Metrics endpoint 与低敏 diagnostics；Prometheus/OTel/OTLP 只存在于 Kernel App 实现。 |
-| `execution` | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency`/`health` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`；执行记录可携带经 context 传递的全链路追踪标识（`WithTrace`/`TraceFrom`）；外部依赖治理 Store `RecoveringStore`（主存储故障降级到本地、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，`Snapshot()`/`OnStateChange`/`Health()` 观测）与执行记录异步持久化 `AsyncRecorder`（幂等占用/完成同步、记录异步有界队列 + 溢出策略 + 排空式 Shutdown）（035）；backend 由 Kernel App 在选择后注入。 |
-| `schedule` | 项目自有声明契约；`gocron/v2` 只存在于内部 Adapter | 模块声明 cron/fixedDelay、任务级并发和分布式执行策略；不暴露 scheduler、生命周期或注册权。 |
-| `messaging` | 项目自有 Contract/Binding/Publisher；`amqp091-go` 只存在于内部 RabbitMQ Adapter | 模块声明消息 Contract、生产/消费关系、交付预算、重要性和并发；composition 解析逻辑 Route 并治理 confirm、ack、重投、死信、恢复和 Consumer 代际，不暴露 Broker Client 或物理 topology。 |
-| `coordination` | 项目自有租约契约；production Adapter 复用 Cache 的 `go-redis/v9` client | 表达 acquire/renew/release、未获得、不可用与失权；不把 Redis 类型或 token 暴露给业务模块。 |
+| [`execution`](execution/README.md) | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency`/`health` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`；执行记录可携带经 context 传递的全链路追踪标识（`WithTrace`/`TraceFrom`）；外部依赖治理 Store `RecoveringStore`（主存储故障降级到本地、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，`Snapshot()`/`OnStateChange`/`Health()` 观测）与执行记录异步持久化 `AsyncRecorder`（幂等占用/完成同步、记录异步有界队列 + 溢出策略 + 排空式 Shutdown）（035）；backend 由 Kernel App 在选择后注入。 |
+| [`schedule`](schedule/README.md) | 项目自有声明契约；`gocron/v2` 只存在于内部 Adapter | 模块声明 cron/fixedDelay、任务级并发和分布式执行策略；不暴露 scheduler、生命周期或注册权。 |
+| [`messaging`](messaging/README.md) | 项目自有 Contract/Binding/Publisher；`amqp091-go` 只存在于内部 RabbitMQ Adapter | 模块声明消息 Contract、生产/消费关系、交付预算、重要性和并发；composition 解析逻辑 Route 并治理 confirm、ack、重投、死信、恢复和 Consumer 代际，不暴露 Broker Client 或物理 topology。 |
+| [`coordination`](coordination/README.md) | 项目自有租约契约；production Adapter 复用 Cache 的 `go-redis/v9` client | 表达 acquire/renew/release、未获得、不可用与失权；不把 Redis 类型或 token 暴露给业务模块。 |
 
 ## 暂缓路线
 

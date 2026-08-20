@@ -17,7 +17,7 @@ pkg/<name>
 - `internal/kernel/composition` 手工选择 Definition、建立有序 Plan，并用 typed `Replace` 指明替换目标；所有检查成功后才一次性安装。
 - one-shot Coordinator 是对应 Loader 的唯一调用者；Service GenerationCoordinator 是长期 watcher 的唯一 Loader 调用者。Kernel 只执行冻结计划，完整代际由 application composition root 显式构造。
 
-当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database、Cache、I18n、Storage。修改清单只发生在 composition，不使用 `init` 自动注册。
+当前显式清单固定为 Kernel 内置 Logger、可选配置化 Logger replacement、Clock、ID Generator、Validator、Database、Cache、I18n、Storage、Observability、Execution、Schedule 和 Messaging。修改清单只发生在 composition，不使用 `init` 自动注册。
 
 ## 两类输出
 
@@ -32,7 +32,7 @@ clock := clockAdded.Output
 now := clock.Now()
 ```
 
-它们没有配置、Defaults、CLI、生命周期或换代，因此也没有 `Access.Use`。需要这些能力的后续底层组件通过 `Binding/Input` 声明依赖；当前尚未建设的上层消费者未来只需接收普通接口。
+它们没有配置、Defaults、CLI、生命周期或换代，因此也没有 `Access.Use`。需要这些能力的后续底层组件通过 `Binding/Input` 声明依赖；业务模块消费者只接收普通接口或由 composition 注入后的窄契约，不查询 Kernel。
 
 Database 使用 `ManagedConfigured + Leased + KernelInstanceSwap`，输出稳定 Access：
 
@@ -160,12 +160,12 @@ Reload 比较的是合并后的有效配置段摘要：如果文件字段已被�
 
 当前进程级示例集中在 `internal/composition`：`Application.Run` 按参数选择 one-shot CLI 或长期 Service；`prepareTodo` 只服务 invocation-scoped CLI，`runService` 创建 GenerationCoordinator、完整 generation factory、ListenerHub 与 Supervisor。`cmd/app/main.go` 只负责进程 I/O、基线日志与信号入口。
 
-`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 application-owned HTTP/Todo 配置与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md)、[本地启动指南](../../docs/getting-started/local-development.md) 与 [Todo 模块说明](../module/todo/README.md)。
+`kernel.New` 只创建空运行时并要求显式 baseline logging manager。`composition.Compose` 完成底层组件装配；`Coordinator.Prepare` 只加载一次初始候选，供 invocation-scoped CLI 与 Kernel 共用。创建 Host 不会新增或查找组件。应用模块的实际目录和运行命令见根 [README](../../README.md)、[本地启动指南](../../docs/getting-started/local-development.md) 与 [Todo 模块说明](../module/todo/README.md)。
 
 ## 边界
 
 - 当前默认 Service 已接入完整 Application Generation；Router 安装进程 middleware 和 Todo route contribution，未匹配请求仍保持 404。
-- Kernel App Plan 只服务底层组件；不为未来业务对象预设容器或构造职责。
+- Kernel App Plan 只服务底层组件；业务对象由 `internal/module/<name>` 和 `internal/composition` 显式装配，Kernel 不提供业务对象容器或构造查询职责。
 - 基线 Logger 由应用入口拥有和关闭；配置化 Logger Resource 由 Logger App 关闭。
 - Database App 的私有实例持有 `Close`，Access 只暴露使用能力；Cache App 终结 Redis，泛型 Cache Client 由其构造调用方关闭。当前 StorageManager 属于 `NoFinalization`，公开 `Close` 只保留独立消费者 API。
 - 文件 Watch 的单次 Reload 错误通过回调上报并继续监听；底层 watcher 错误才终止 Task。

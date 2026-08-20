@@ -140,6 +140,6 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/schedule`：Application Generation 持有的配置化调度 Component。Prepare 构建暂停的 gocron Adapter，进程稳定 `ScheduleHub` 在 Commit/Retire 切换准入；分布式执行权通过 Cache Redis owner 提供的项目 `coordination.Manager` 协调，任务统一进入 Telemetry 与 Execution。它不作为普通 Participant 提前启动，也不向模块暴露 Access 或第三方类型。
 - `app/messaging`：Application Generation 持有的配置化消息 Component。模块只贡献 `pkg/messaging` Contract/Binding；composition 聚合 Catalog 并显式提交命名 Provider Factory。当前 RabbitMQ Adapter 负责 confirm、manual ack、quorum delayed retry、DLX 和自动重连，进程稳定 `MessagingHub` 在 Commit/Retire 切换 Consumer admission；generation-local Publisher 保持到旧 HTTP 请求排空。完整接入见[消息系统适配能力](../../../docs/development/messaging-capability.md)。
 
-当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。
+当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener、Todo 业务模块、Auth 横切模块、Ops management 模块、Migration one-shot 模块以及 Application Generation。业务 middleware、handler、service、repository、model 和 binding 位于 `internal/module/<name>`，由 `internal/composition` 显式装配；本组件模型不替业务对象定义容器职责，也不允许业务代码查询 Kernel。
 
 Observability 的项目契约、稳定 Metrics identity 与 generation-owned Telemetry 分裂实现见 [027](../../../docs/changes/027-business-module-third-party-isolation/README.md)。Application Generation 通过底层 composition 选择 Definition，不直接构造 Prometheus/OTel，也不把技术类型交给 Ops。

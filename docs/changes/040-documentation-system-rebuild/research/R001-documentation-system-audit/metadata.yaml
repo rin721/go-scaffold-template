@@ -1,0 +1,50 @@
+id: DOC-R01
+title: 文档体系审计与当前代码事实核对
+status: passed
+date: 2026-08-20
+scope:
+  - README.md
+  - docs/**
+  - api/README.md
+  - internal/**/README.md
+  - pkg/**/README.md
+  - cmd/app
+  - internal/composition
+  - internal/kernel
+  - internal/module
+  - pkg
+snapshot:
+  branch: main
+  git_status: "clean; ahead origin/main by 3"
+  markdown_files: 353
+questions:
+  - 当前正式文档是否能按项目真实使用路径连续阅读？
+  - 是否存在代码已有能力但正式文档缺少入口？
+  - 是否存在正式文档继续描述过期目标或旧阶段边界？
+  - 包级和模块级 README 是否承担了项目级公共契约 authority？
+evidence:
+  - "README.md"
+  - "docs/README.md"
+  - "docs/architecture/README.md"
+  - "docs/development/README.md"
+  - "docs/operations/README.md"
+  - "docs/configuration/README.md"
+  - "api/README.md"
+  - "internal/kernel/README.md"
+  - "internal/kernel/app/README.md"
+  - "internal/module/README.md"
+  - "pkg/README.md"
+  - "pkg/execution/*.go"
+  - "internal/composition/application.go"
+  - "internal/composition/configuration.go"
+  - "internal/composition/http_contracts.go"
+  - "internal/composition/service.go"
+  - "internal/module/contracts.go"
+  - "go.mod"
+limitations:
+  - 历史 docs/changes 与 docs/research 不逐项重写，只审计其 authority 边界。
+  - 本任务不运行 Go 测试、构建或服务启动。
+refresh_triggers:
+  - 新增或删除 pkg/internal module 能力。
+  - 修改 composition root、配置 owner、Application Generation 或 module Contribution。
+  - 新增正式主题文档目录或改变文档门禁规则。
