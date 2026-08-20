@@ -10,6 +10,10 @@
 
 需要 cron / fixedDelay 触发的业务任务，通过 `module.Contribution.Schedules` 接入，完整声明、策略与恢复语义见 [业务模块接入定时调度能力](./scheduled-task-capability.md)。模块不得自行创建 scheduler、Redis client 或隐式注册流程。
 
+需要生产或消费外部消息时，通过 `module.Contribution.Messages` 声明 Contract/Binding，完整生产、消费、可靠性与
+Provider 边界见[业务模块接入消息系统适配能力](./messaging-capability.md)。模块不得创建 Broker Client、直接 ack/nack
+或建立隐式订阅。
+
 ## 1. 开始条件
 
 收到“新增应用模块”请求后，不先复制 Todo 目录，也不先创建空 Handler、Repository、配置或 CLI。研究阶段先写清：
@@ -62,7 +66,7 @@ composition root 从现有稳定能力取出模块真正需要的最小接口并
 
 只服务单个业务语义、没有跨模块稳定契约价值的第三方 SDK、Client 或协议转换，留在 `internal/module/<name>/adapter/<technology>`。Adapter 依赖并实现模块调用方定义的窄 port；第三方类型、错误、配置对象、Option、Client 和关闭权不得越过 Adapter package。模块的 Model、Service、binding、`Dependencies`、`Module` 与 contribution 只暴露标准库或项目自有类型，composition 不得穿透模块根导入其私有 Adapter。
 
-模块专属 cache、goroutine、migration、消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；拥有第三方 SDK 或 goroutine 本身不构成 Kernel Capability 升级理由。
+模块专属 cache、goroutine、migration、非消息协议消费者循环、索引同步或清理任务以有明确 owner 的 binding/contribution/Participant 接入应用；统一消息 Consumer 的协议循环由 Messaging Component 拥有，模块只贡献 Handler Binding。拥有第三方 SDK 或 goroutine 本身不构成 Kernel Capability 升级理由。
 
 ### 3.3 跨业务且由进程统一选择的底层 Capability
 
@@ -134,6 +138,7 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 | i18n binding | `binding/i18n`（模块自有语言资源 + 窄契约，如 `MessageFiles()`/`fs.FS`/catalog） | composition 显式聚合进 Non-Essential I18n 装配，再按模块注入 `pkg/i18n.Translator` | `internal/module/<name>/binding/i18n` 与模块内语言资源 |
 | middleware | `middleware/`（横切策略） | composition 挂载 | `internal/module/<name>/middleware` |
 | schedule binding | `module.go` 构造 `pkg/schedule.Binding` | `module.Contribution.Schedules`，由 application composition 统一聚合 | 模块 Service 与 `module.go` |
+| message binding | 模块 `binding/message` 或 `module.go` 构造 `pkg/messaging` Contract/Producer/Consumer Binding | `module.Contribution.Messages`，由 application composition 聚合 Catalog、解析 Route 并注入窄 Publisher | 模块 wire contract、payload Adapter、Service Handler 与 `module.go` |
 
 **新增业务模块必须接入的基础契约**：
 
@@ -142,13 +147,14 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 - `module.go` 只做纯内存装配并返回窄 Handler/Service 与 contribution；`internal/composition` 是唯一跨模块连接点。
 - 保留 032 配置边界：`pkg/*` 只提供通用能力 + 基础默认；`kernel/app/*` 负责应用层默认与装配，不隐式依赖 `pkg/*.DefaultConfig()`。
 - 若声明定时任务：业务逻辑留在模块 Service，`module.go` 只构造不可变 Binding；触发、并发、协调、Execution、Tracing、健康与 Generation 切换均由统一底层能力负责。
+- 若声明消息生产/消费：payload 编解码与业务 Handler 留在模块，`module.go` 只构造不可变 Contract/Binding；Provider、confirm、ack/retry/DLX、Execution、Tracing、健康与 Consumer 代际均由统一消息能力负责。
 
 ## 5. 资源和运行 owner
 
 一个功能可以同时包含底层共享资源和模块专属运行单元，必须分别确定 owner：
 
 - 共享连接、连接池、可换代 Client 或稳定能力出口只有同时跨业务复用且由进程统一选择时才由 Kernel App 管理；
-- 业务消费者、migration、索引任务和模块 Cleanup 由模块 contribution 声明并由 Host/Supervisor 管理；
+- 业务 Handler、migration、索引任务和模块 Cleanup 由模块 contribution 声明；统一消息 Consumer 协议循环由 Messaging Component 管理，其他模块专属运行单元由 Host/Supervisor 管理；
 - listener、Server 和进程级 runner 由 application owner 管理，模块不自行创建第二套 Server；
 - 创建资源的一方负责关闭，借用者不获得共享资源 `Close` 权；
 - 每个 goroutine 必须能指出 owner、取消来源和 Wait 位置；
@@ -202,21 +208,19 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 
 ## 8. 典型能力示例
 
-以下示例只展示必须研究的问题和所有权拆分。项目当前没有选择或实现通用消息、邮件、搜索 Capability，真实任务必须重新研究技术选型和契约。
+以下示例展示当前能力或后续能力必须回答的问题和所有权拆分。项目已经实现 RabbitMQ 消息适配；邮件、搜索仍未选择
+通用 Capability，真实任务必须重新研究技术选型和契约。
 
 ### 8.1 消息系统
 
-共享连接、连接池或稳定 Publisher/Subscriber 出口只有同时存在跨业务消费者并由进程统一选择时才是底层 Capability；具体业务 Consumer、消息转换和订阅语义属于拥有用例的模块，其长期消费循环作为 Participant 交给 Host/Supervisor。
+当前消息能力采用 `pkg/messaging -> internal/kernel/app/messaging -> internal/composition` 单轨：模块声明 Contract、
+Producer/Consumer Binding 与 Handler；composition 显式聚合并选择命名 Provider；Messaging Component 拥有连接、
+confirm、ack/retry/DLX、恢复循环和 Consumer handoff。当前生产 Provider 为 RabbitMQ 4.3，公共语义是 Broker confirm
+与 at-least-once，不承诺 Outbox/Inbox、事务发布或 exactly-once。
 
-研究必须回答：
-
-- at-most-once、at-least-once 或其他交付语义；
-- ack/nack、幂等、排序、重试、死信和背压；
-- 断线恢复、订阅就绪和停机排空；
-- 消息处理与数据库提交的一致性或补偿；
-- 配置变化是否要求消费者组排他 Handoff。
-
-如果消费者组切换要求无损原子交接，不能把普通 `KernelInstanceSwap` 当作已经支持；应选择重启生效或建立新的生命周期设计。
+完整接入、配置、错误映射、多实例幂等边界和后续 Provider 扩展条件以[消息系统适配能力](./messaging-capability.md)为准。
+如果真实用例要求 Kafka transaction、NATS Stream/Consumer、分区全序、数据库事务原子发布或跨进程 exactly-once，
+当前契约不适用，必须建立新的研究与变更，不得把 RabbitMQ 语义或普通 `KernelInstanceSwap` 扩大解释。
 
 ### 8.2 邮件
 

@@ -32,11 +32,18 @@ func (s *scriptedStore) IsCompleted(ctx context.Context, key Key) (bool, error) 
 	return s.MemoryStore.IsCompleted(ctx, key)
 }
 
-func (s *scriptedStore) Complete(ctx context.Context, key Key, rec Record) error {
+func (s *scriptedStore) Complete(ctx context.Context, key Key, retentionTTL time.Duration, rec Record) error {
 	if s.failAtomic.Load() {
 		return errors.New("primary: backend down")
 	}
-	return s.MemoryStore.Complete(ctx, key, rec)
+	return s.MemoryStore.Complete(ctx, key, retentionTTL, rec)
+}
+
+func (s *scriptedStore) Release(ctx context.Context, key Key) error {
+	if s.failAtomic.Load() {
+		return errors.New("primary: backend down")
+	}
+	return s.MemoryStore.Release(ctx, key)
 }
 
 func (s *scriptedStore) Record(ctx context.Context, key Key, rec Record) error {
@@ -76,7 +83,7 @@ func TestRecoveringHealthyRoutesPrimary(t *testing.T) {
 	local := NewMemoryStore()
 	rec := NewRecoveringStore(primary, local, recoveryCfg())
 
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k", Status: StatusCompleted}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k", Status: StatusCompleted}); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	if snap := rec.Snapshot(); snap.State != StateHealthy || snap.Buffered != 0 {
@@ -97,7 +104,7 @@ func TestRecoveringDegradesAndServesLocal(t *testing.T) {
 	local := NewMemoryStore()
 	rec := NewRecoveringStore(primary, local, recoveryCfg())
 
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k", Status: StatusCompleted}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k", Status: StatusCompleted}); err != nil {
 		t.Fatalf("complete under degradation: %v", err)
 	}
 	snap := rec.Snapshot()
@@ -240,7 +247,7 @@ func TestRecoveringNonDependencyErrorPropagates(t *testing.T) {
 	local := &failingLocal{}
 	rec := NewRecoveringStore(primary, local, cfg)
 	// 主存储正常时应返回 nil（主成功）。
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k"}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k"}); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	if snap := rec.Snapshot(); snap.State != StateHealthy {
@@ -257,7 +264,10 @@ func (f *failingLocal) Claim(context.Context, Key, time.Duration, time.Time) (bo
 func (f *failingLocal) IsCompleted(context.Context, Key) (bool, error) {
 	return false, errors.New("local should not be used")
 }
-func (f *failingLocal) Complete(context.Context, Key, Record) error {
+func (f *failingLocal) Complete(context.Context, Key, time.Duration, Record) error {
+	return errors.New("local should not be used")
+}
+func (f *failingLocal) Release(context.Context, Key) error {
 	return errors.New("local should not be used")
 }
 func (f *failingLocal) Record(context.Context, Key, Record) error {
@@ -272,7 +282,7 @@ func TestRecoveringStateObserverFires(t *testing.T) {
 	rec.OnStateChange(func(from, to RecoveryState) {
 		atomic.AddInt32(&transitions, 1)
 	})
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k"}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k"}); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	if rec.Snapshot().State != StateDegraded {
@@ -300,7 +310,7 @@ func TestRecoveringHealthReflectsState(t *testing.T) {
 		t.Fatalf("healthy status=%q want pass", result.Status)
 	}
 	primary.setFail(true)
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k", Status: StatusCompleted}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k", Status: StatusCompleted}); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	if rec.Snapshot().State != StateDegraded {
@@ -335,8 +345,8 @@ func TestExecutorWithRecoveringStoreReplaysRecordsAndDedupes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("execute ok under degradation: %v", err)
 	}
-	if snap := rec.Snapshot(); snap.State != StateDegraded || snap.Buffered != 2 {
-		t.Fatalf("snapshot=%+v want degraded 2 buffered", snap)
+	if snap := rec.Snapshot(); snap.State != StateDegraded || snap.Buffered != 3 {
+		t.Fatalf("snapshot=%+v want degraded 3 buffered (release + failed record + completion)", snap)
 	}
 
 	// 主存储恢复：等待回放并切回 Healthy。

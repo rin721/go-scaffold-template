@@ -1,0 +1,35 @@
+schema_version: 1
+id: R001
+title: "当前消息相邻能力与真实缺口"
+question: "当前项目已有何种模块声明、执行治理、代际、健康和恢复能力可复用，统一消息生产消费还缺什么？"
+research_type: current-project
+topics: ["messaging", "module-binding", "application-generation", "execution", "health", "lifecycle"]
+keywords: ["MessageContract", "ProducerBinding", "ConsumerBinding", "Contribution", "Execution", "ClaimTTL", "Release", "ScheduleHub", "Supervisor"]
+applicable_scenarios: ["消息系统适配", "模块消息声明", "Broker 故障恢复", "配置重载与消费者排空"]
+non_applicable_scenarios: ["具体业务事件设计", "Outbox 事务实现", "远程工作流", "exactly-once 业务副作用"]
+status: active
+summary: "项目已有显式模块贡献、Application Generation、Execution、Telemetry、Health/Ops 与 Supervisor，但没有消息运行链；现有 Execution 还把运行 lease 与完成去重共用 ClaimTTL，失败 Record 不释放 claim，不能原样承接 Broker redelivery。"
+evidence:
+  types: ["source-code", "tests", "project-docs", "git-snapshot"]
+  primary_sources:
+    - title: "模块 Contribution 与 Application Generation"
+      locator: "internal/module/contracts.go; internal/composition/generation.go"
+      snapshot: "00083be local HEAD, origin/main a675f33, verified 2026-08-20"
+    - title: "Execution、Schedule、Telemetry 与 Ops 当前实现"
+      locator: "pkg/execution; internal/kernel/app/execution; pkg/schedule; internal/kernel/app/schedule; pkg/observability; internal/composition/ops.go"
+      snapshot: "00083be local HEAD, verified 2026-08-20"
+    - title: "Kernel App 组件边界"
+      locator: "internal/kernel/app/README.md; internal/kernel/composition/bootstrap.go"
+      snapshot: "00083be local HEAD, verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2027-02-20"
+  refresh_triggers: ["037 基线被重写", "Contribution/Generation/Execution 契约变化", "仓库出现消息 Provider 或 Outbox"]
+relations:
+  extends: ["035:R001", "037:R001", "037:R003"]
+  related: ["023:R001", "027:R001", "034:R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

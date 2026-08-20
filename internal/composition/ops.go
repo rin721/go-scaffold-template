@@ -99,6 +99,20 @@ func (s generationOpsSource) Snapshot(ctx context.Context) (opsmodel.RuntimeSnap
 	result.Scheduler = scheduler
 	result.SchedulerHealth = string(schedulerHealth.Status)
 	result.Ready = result.Ready && scheduler.Ready
+	if s.generation.messaging == nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("messaging diagnostics are unavailable")
+	}
+	messaging, messagingErr := s.generation.messaging.output.Control.Diagnostics(ctx)
+	if messagingErr != nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read messaging diagnostics: %w", messagingErr)
+	}
+	messagingHealth, messagingHealthErr := s.generation.messaging.output.Control.Health(ctx)
+	if messagingHealthErr != nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read messaging health: %w", messagingHealthErr)
+	}
+	result.Messaging = messaging
+	result.MessagingHealth = string(messagingHealth.Status)
+	result.Ready = result.Ready && messagingHealth.Status != "fail"
 	telemetry, diagnosticsErr := s.generation.telemetry.output.Diagnostics(ctx)
 	if diagnosticsErr != nil {
 		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read telemetry diagnostics: %w", diagnosticsErr)

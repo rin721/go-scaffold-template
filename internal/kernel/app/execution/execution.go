@@ -222,7 +222,7 @@ func (a *access) Execute(ctx context.Context, exec pkgexecution.Execution) (pkge
 			return fmt.Errorf("execution instance is nil")
 		}
 		if current.driver == DriverDisabled || current.executor == nil {
-			return fmt.Errorf("execution backend is disabled")
+			return pkgexecution.WrapBackend(fmt.Errorf("execution backend is disabled"))
 		}
 		// 按模块声明的命名策略解析；未声明时回退到组件集中声明的默认策略。
 		if err := current.applyPolicy(&exec); err != nil {

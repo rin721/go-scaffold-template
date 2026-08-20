@@ -60,7 +60,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "execution", "todo", "scheduler", "auth", "ops", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "execution", "messaging", "todo", "scheduler", "auth", "ops", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
@@ -92,7 +92,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
 	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "execution"}) ||
-		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "todo", "scheduler", "auth", "ops", "http"}) {
+		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "messaging", "todo", "scheduler", "auth", "ops", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
 	if status := createTodo(t, after.BoundAddress, strings.Repeat("x", 100)); status != http.StatusBadRequest {
@@ -360,6 +360,7 @@ func TestEachConfigurationSectionCreatesOneCompleteGeneration(t *testing.T) {
 			return strings.Replace(payload, filepath.ToSlash(filepath.Join(directory, "storage")), filepath.ToSlash(filepath.Join(directory, "storage-next")), 1)
 		}},
 		{section: "scheduler", update: replaceConfig("maxConcurrency: 32", "maxConcurrency: 31")},
+		{section: "messaging", update: replaceConfig("publishConfirmTimeout: 5s", "publishConfirmTimeout: 4s")},
 		{section: "http", update: replaceConfig("maxHeaderBytes: 1048576", "maxHeaderBytes: 2097152")},
 		{section: "todo", update: replaceConfig("titleMaxRunes: 120", "titleMaxRunes: 80")},
 	}
@@ -711,6 +712,9 @@ scheduler:
   enabled: false
   timezone: UTC
   maxConcurrency: 32
+messaging:
+  enabled: false
+  publishConfirmTimeout: 5s
 todo:
   titleMaxRunes: %d
   defaultListLimit: 20

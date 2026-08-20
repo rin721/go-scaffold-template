@@ -9,6 +9,7 @@ import (
 	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	i18napp "github.com/rin721/go-scaffold-template/internal/kernel/app/i18n"
 	loggerapp "github.com/rin721/go-scaffold-template/internal/kernel/app/logger"
+	messagingapp "github.com/rin721/go-scaffold-template/internal/kernel/app/messaging"
 	scheduleapp "github.com/rin721/go-scaffold-template/internal/kernel/app/schedule"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 	kernelcli "github.com/rin721/go-scaffold-template/internal/kernel/cli"
@@ -53,7 +54,7 @@ func ComposeBootstrap(cfg pkgcli.Config, options BootstrapOptions) (Bootstrap, e
 // ConfigurationBindings 返回当前完整配置文件的底层与 application-owned 契约。
 // 本函数只构造校验元数据，不创建资源、listener 或 goroutine。
 func ConfigurationBindings(application ...config.Binding) ([]config.Binding, error) {
-	bindings := make([]config.Binding, 0, 7+len(application))
+	bindings := make([]config.Binding, 0, 8+len(application))
 	loggerDefinition, err := loggerapp.Replacement()
 	if err != nil {
 		return nil, fmt.Errorf("define bootstrap logger configuration: %w", err)
@@ -90,6 +91,7 @@ func ConfigurationBindings(application ...config.Binding) ([]config.Binding, err
 		bindingOf(storageDefinition),
 		{value: executionapp.Configuration(), ok: true},
 		{value: scheduleapp.Configuration(), ok: true},
+		{value: messagingapp.Configuration(), ok: true},
 	} {
 		if !binding.ok {
 			return nil, fmt.Errorf("bootstrap component configuration is missing")

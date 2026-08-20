@@ -53,7 +53,7 @@ func TestResourcePrepareDoesNotStartAndActivateRunsThroughGovernance(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("任务未进入业务函数")
 	}
-	if got := executor.last(); got.ClaimTTL != current.config.OccurrenceRetention || got.Trigger != "schedule.fixedDelay" {
+	if got := executor.last(); got.LeaseTTL != current.config.OccurrenceRetention || got.RetentionTTL != current.config.OccurrenceRetention || got.Trigger != "schedule.fixedDelay" {
 		t.Fatalf("execution mapping=%+v", got)
 	}
 	if telemetry.calls.Load() != 1 {

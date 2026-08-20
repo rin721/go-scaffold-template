@@ -7,6 +7,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
+	messagingapp "github.com/rin721/go-scaffold-template/internal/kernel/app/messaging"
 	scheduleapp "github.com/rin721/go-scaffold-template/internal/kernel/app/schedule"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
@@ -47,11 +48,12 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 		return preparedTodo{}, fmt.Errorf("compose application capabilities: %w", err)
 	}
 	// CLI 与 Service 共用正式配置文件，因此两种模式都声明 application-owned 配置节。
-	// 这里只补齐 Application Generation 拥有的 HTTP / scheduler 配置契约，
+	// 这里只补齐 Application Generation 拥有的 HTTP / scheduler / messaging 配置契约，
 	// 不会构造 listener、调度器、Host 或 watcher。
 	bindings := append([]config.Binding{
 		kernelcomposition.HTTPConfiguration(),
 		scheduleapp.Configuration(),
+		messagingapp.Configuration(),
 	}, applicationOwnedConfigurationBindings()...)
 	coordinator, err := kernel.NewCoordinator(runtime, bindings...)
 	if err != nil {

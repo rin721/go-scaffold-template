@@ -617,8 +617,10 @@ func (t *taskRuntime) execute(ctx context.Context, scheduledAt time.Time) (runEr
 	}, func(observed context.Context) error {
 		observed = pkgexecution.WithTrace(observed, pkgobservability.TraceIDFrom(observed))
 		_, err := t.owner.dependencies.Execution.Execute(observed, pkgexecution.Execution{
-			Key: pkgexecution.Key(occurrenceKey(t.binding, scheduledAt)), ClaimTTL: t.owner.config.OccurrenceRetention,
-			Trigger: "schedule." + string(t.binding.Trigger().Kind()), PolicyName: t.binding.ExecutionPolicy(),
+			Key:          pkgexecution.Key(occurrenceKey(t.binding, scheduledAt)),
+			LeaseTTL:     t.owner.config.OccurrenceRetention,
+			RetentionTTL: t.owner.config.OccurrenceRetention,
+			Trigger:      "schedule." + string(t.binding.Trigger().Kind()), PolicyName: t.binding.ExecutionPolicy(),
 			Operation: func(operationCtx context.Context) (any, error) {
 				return nil, t.binding.Run(operationCtx)
 			},

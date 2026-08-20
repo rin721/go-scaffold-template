@@ -1,0 +1,47 @@
+schema_version: 1
+id: R002
+title: "消息可靠性与 Provider 主源比较"
+question: "RabbitMQ、NATS JetStream、Kafka 与 Watermill 的确认、重投递、死信、恢复和事务语义中，哪些可进入公共契约，首个 Provider 应如何选择？"
+research_type: external-primary-source
+topics: ["RabbitMQ", "NATS JetStream", "Kafka", "Watermill", "ack", "redelivery", "dead-letter"]
+keywords: ["publisher confirms", "manual ack", "delayed retry", "basic.reject", "basic.nack", "DLX", "delivery limit", "offset commit", "DoubleAck", "Router"]
+applicable_scenarios: ["消息 Provider 选型", "at-least-once 消费", "Broker 原生可靠性", "多 Provider 扩展"]
+non_applicable_scenarios: ["业务消息 Schema", "部署容量规划", "跨 Broker 原子双写", "外部存储 exactly-once"]
+status: active
+summary: "RabbitMQ 4.3 的 confirms、manual ack、quorum delayed retry、delivery-limit 与 DLX 最适合首个 Provider；业务重试用 counted reject，基础设施延后用 non-counting nack，Kafka/NATS 差异留在后续 Provider。"
+evidence:
+  types: ["official-docs", "official-source", "official-release"]
+  primary_sources:
+    - title: "RabbitMQ acknowledgements and publisher confirms"
+      locator: "https://www.rabbitmq.com/docs/confirms"
+      snapshot: "RabbitMQ 4.3 docs, verified 2026-08-20"
+    - title: "RabbitMQ reliability and dead lettering"
+      locator: "https://www.rabbitmq.com/docs/reliability; https://www.rabbitmq.com/docs/dlx"
+      snapshot: "RabbitMQ 4.3 docs, verified 2026-08-20"
+    - title: "RabbitMQ 4.3 quorum queue delayed retry and delivery counting"
+      locator: "https://www.rabbitmq.com/docs/next/quorum-queues; https://www.rabbitmq.com/blog/2026/04/23/rabbitmq-4.3-release"
+      snapshot: "RabbitMQ 4.3 release and current next docs, verified 2026-08-20"
+    - title: "RabbitMQ official Go client"
+      locator: "https://github.com/rabbitmq/amqp091-go; https://github.com/rabbitmq/amqp091-go/releases/tag/v1.14.0"
+      snapshot: "v1.14.0 released 2026-08-18, verified 2026-08-20"
+    - title: "Apache Kafka delivery semantics"
+      locator: "https://kafka.apache.org/41/design/design/"
+      snapshot: "Kafka 4.1 docs, verified 2026-08-20"
+    - title: "NATS JetStream delivery and acknowledgement"
+      locator: "https://docs.nats.io/learn/jetstream/delivery-and-acknowledgment"
+      snapshot: "verified 2026-08-20"
+    - title: "Watermill Publisher/Subscriber and middleware"
+      locator: "https://watermill.io/learn/getting-started/; https://watermill.io/docs/middlewares/"
+      snapshot: "verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2026-11-20"
+  refresh_triggers: ["实现时客户端已有更新版本", "首个 Provider 改为 Kafka/NATS/SQS", "RabbitMQ delayed retry/delivery count/topology/DLX 保证变化"]
+relations:
+  extends: []
+  related: ["R001", "037:R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

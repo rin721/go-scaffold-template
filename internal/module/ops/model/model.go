@@ -4,6 +4,7 @@ package model
 import (
 	"time"
 
+	pkgmessaging "github.com/rin721/go-scaffold-template/pkg/messaging"
 	"github.com/rin721/go-scaffold-template/pkg/observability"
 	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 )
@@ -55,6 +56,8 @@ type RuntimeSnapshot struct {
 	Telemetry         observability.Diagnostics `json:"telemetry"`
 	Scheduler         pkgschedule.Diagnostics   `json:"scheduler"`
 	SchedulerHealth   string                    `json:"schedulerHealth"`
+	Messaging         pkgmessaging.Diagnostics  `json:"messaging"`
+	MessagingHealth   string                    `json:"messagingHealth"`
 	Since             time.Time                 `json:"since"`
 }
 

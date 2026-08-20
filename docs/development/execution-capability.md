@@ -28,7 +28,8 @@ type Execution struct {
     Key        Key                 // 幂等键 = 业务域 + 业务/请求 ID
     Policy     resilience.RetryPolicy // 直接给策略（未用命名策略时）
     Timeout    time.Duration        // 0 = 不额外超时
-    ClaimTTL   time.Duration        // 幂等占用与完成去重窗口；0 = Store 保持不过期
+    LeaseTTL     time.Duration      // running 占用窗口；0 = Store 保持不过期
+    RetentionTTL time.Duration      // 成功完成后的去重窗口；0 = Store 保持不过期
     Trigger    string               // 低敏触发者/来源，写入执行记录
     Operation  Operation            // func(ctx) (any, error) 业务执行体
     PolicyName string               // 引用配置里按模块声明的命名策略（推荐）
@@ -44,7 +45,9 @@ type Result struct {
 - 幂等：同 `Key` 重复提交 → `Result.Duplicate=true`，`Operation` 不执行、不重试。
 - 重试：对可重试错误按策略退避；重试次数、间隔在策略中治理。
 - 执行记录：自动落记录，并携带经 `context` 传递的低敏全链路追踪标识。
-- `ClaimTTL`：由调用场景显式提供真实保留窗口；调度能力使用 `scheduler.occurrenceRetention`，不再依赖执行器隐藏默认值。
+- `LeaseTTL`：由调用场景显式提供 running 占用窗口，处理进程消失后允许重新取得执行权。
+- `RetentionTTL`：从成功完成时起计算去重窗口；调度能力当前同时使用 `scheduler.occurrenceRetention` 作为
+  lease 与 retention，消息消费则分别声明处理 lease 与 Message ID 去重窗口。
 
 ## 3. 按模块声明命名策略（策略隔离）
 

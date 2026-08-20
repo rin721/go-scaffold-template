@@ -13,6 +13,8 @@ import (
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
+	messagingapp "github.com/rin721/go-scaffold-template/internal/kernel/app/messaging"
+	rabbitmqapp "github.com/rin721/go-scaffold-template/internal/kernel/app/messaging/rabbitmq"
 	scheduleapp "github.com/rin721/go-scaffold-template/internal/kernel/app/schedule"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
@@ -43,6 +45,7 @@ type applicationGenerationFactory struct {
 	hub             *httpx.ListenerHub
 	managementHub   *httpx.ListenerHub
 	scheduleHub     *scheduleapp.Hub
+	messagingHub    *messagingapp.Hub
 	opsRuntime      *opsRuntimeSource
 	applicationName string
 
@@ -75,6 +78,7 @@ type applicationGeneration struct {
 	metrics   *resourceHandle[pkgobservability.Metrics]
 	telemetry *immutableComponent[pkgobservability.Telemetry]
 	scheduler *immutableComponent[scheduleapp.Access]
+	messaging *immutableComponent[messagingapp.Output]
 
 	module            todo.HTTPModule
 	authModule        auth.Module
@@ -118,7 +122,8 @@ func newApplicationGenerationFactory(logging *kernellogging.Manager, application
 		return nil, err
 	}
 	factory := &applicationGenerationFactory{
-		logging: logging, hub: hub, managementHub: managementHub, scheduleHub: scheduleapp.NewHub(), applicationName: applicationName,
+		logging: logging, hub: hub, managementHub: managementHub,
+		scheduleHub: scheduleapp.NewHub(), messagingHub: messagingapp.NewHub(), applicationName: applicationName,
 		build:         opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
 		loggerPool:    newResourcePool[logger.Logger]("logger"),
 		databasePool:  newResourcePool[databaseapp.Access]("database"),
@@ -339,6 +344,21 @@ func (f *applicationGenerationFactory) Prepare(
 	}
 	generation.recordResource("execution", reused)
 
+	messagingDefinition, err := messagingapp.Definition(messagingapp.Dependencies{
+		Generation: generation.id, Logger: generation.logger.value(), Clock: clock.System(),
+		Execution: generation.execution.value(), ExecutionHealth: generation.execution.value().Health,
+		Telemetry: generation.telemetry.output,
+		Factories: []messagingapp.Factory{rabbitmqapp.Factory()},
+	})
+	if err != nil {
+		return abort(fmt.Errorf("define messaging app: %w", err))
+	}
+	generation.messaging, err = startImmutableComponent(ctx, snapshot, f.logging, messagingDefinition)
+	if err != nil {
+		return abort(fmt.Errorf("start messaging candidate: %w", err))
+	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "messaging")
+
 	generation.module, err = todo.NewHTTP(todo.HTTPDependencies{
 		Dependencies: todo.Dependencies{
 			Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
@@ -370,6 +390,13 @@ func (f *applicationGenerationFactory) Prepare(
 
 	if err := module.ValidateContributions(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution); err != nil {
 		return abort(fmt.Errorf("validate application module contributions: %w", err))
+	}
+	messages, err := module.MessageBindings(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution)
+	if err != nil {
+		return abort(fmt.Errorf("collect application module messages: %w", err))
+	}
+	if err := generation.messaging.output.Control.Freeze(messages); err != nil {
+		return abort(fmt.Errorf("freeze messaging candidate: %w", err))
 	}
 	schedules, err := module.ScheduleBindings(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution)
 	if err != nil {
@@ -475,6 +502,7 @@ func (f *applicationGenerationFactory) Failures() <-chan error { return f.failur
 
 func (f *applicationGenerationFactory) Stop(ctx context.Context) error {
 	var joined error
+	joined = errors.Join(joined, f.messagingHub.Stop(ctx))
 	joined = errors.Join(joined, f.scheduleHub.Stop(ctx))
 	joined = errors.Join(joined, f.hub.Stop(ctx))
 	joined = errors.Join(joined, f.managementHub.Stop(ctx))
@@ -581,11 +609,23 @@ func (g *applicationGeneration) Commit(previous kernel.ActiveGeneration) (kernel
 		previousRoute = previousGeneration.route
 		previousManagementRoute = previousGeneration.managementRoute
 	}
+	if g.messaging == nil {
+		g.mu.Unlock()
+		return nil, fmt.Errorf("application generation %d messaging is missing", g.id)
+	}
+	if err := g.messaging.output.Control.OpenPublisher(context.Background()); err != nil {
+		g.mu.Unlock()
+		return nil, fmt.Errorf("open messaging publisher admission: %w", err)
+	}
 	if _, err := g.factory.hub.Commit(g.route, previousRoute); err != nil {
 		g.mu.Unlock()
 		return nil, err
 	}
 	if _, err := g.factory.managementHub.Commit(g.managementRoute, previousManagementRoute); err != nil {
+		g.mu.Unlock()
+		return nil, err
+	}
+	if err := g.factory.messagingHub.Commit(context.Background(), g.messaging.output.Control); err != nil {
 		g.mu.Unlock()
 		return nil, err
 	}
@@ -631,6 +671,9 @@ func (g *applicationGeneration) abort(ctx context.Context) error {
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.messaging != nil {
+		joined = errors.Join(joined, g.factory.messagingHub.Retire(ctx, g.messaging.output.Control))
+	}
 	if g.scheduler != nil {
 		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
 	}
@@ -685,6 +728,9 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.messaging != nil {
+		joined = errors.Join(joined, g.factory.messagingHub.Retire(ctx, g.messaging.output.Control))
+	}
 	if g.scheduler != nil {
 		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
 	}
@@ -751,6 +797,9 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.messaging != nil {
+		joined = errors.Join(joined, g.factory.messagingHub.Retire(ctx, g.messaging.output.Control))
+	}
 	if g.scheduler != nil {
 		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
 	}
@@ -851,6 +900,9 @@ func (g *applicationGeneration) releaseResources(ctx context.Context) error {
 	var joined error
 	if g.scheduler != nil {
 		joined = errors.Join(joined, g.scheduler.close(ctx))
+	}
+	if g.messaging != nil {
+		joined = errors.Join(joined, g.messaging.close(ctx))
 	}
 	if g.telemetry != nil {
 		joined = errors.Join(joined, g.telemetry.close(ctx))

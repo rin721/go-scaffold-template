@@ -1,0 +1,35 @@
+schema_version: 1
+id: R003
+title: "消息系统适配单轨综合结论"
+question: "如何把消息 Contract/Binding、多个 Provider、可靠交付、Execution 与 Application Generation 合并为一条显式运行链？"
+research_type: comparative-synthesis
+topics: ["messaging", "provider", "binding", "application-generation", "recovery", "observability"]
+keywords: ["MessagingHub", "Publisher", "Consumer", "Route", "ProviderFactory", "LeaseTTL", "RetentionTTL", "delayed retry", "Prepare", "Commit", "Retire"]
+applicable_scenarios: ["多模块消息生产消费", "RabbitMQ 首个 Provider", "多 Provider 并存", "Broker 故障自动恢复"]
+non_applicable_scenarios: ["业务消息实现", "Outbox/Inbox", "跨 Provider 原子复制", "exactly-once"]
+status: active
+summary: "采用项目自有 Contract/Binding、显式 ProviderFactory、generation-owned Publisher 与 process-stable Consumer Hub；RabbitMQ 4.3 负责 delayed redelivery/DLX，Execution 先分离 lease/retention/release 后负责单次业务治理。"
+evidence:
+  types: ["synthesis", "source-code", "official-docs"]
+  primary_sources:
+    - title: "当前能力清单"
+      locator: "docs/changes/038-messaging-adapter-capability/research/R001-current-messaging-capability-inventory/report.md"
+      snapshot: "R001 active 2026-08-20"
+    - title: "Provider 主源比较"
+      locator: "docs/changes/038-messaging-adapter-capability/research/R002-messaging-primary-source-comparison/report.md"
+      snapshot: "R002 active 2026-08-20"
+    - title: "Application Generation 与调度准入模式"
+      locator: "internal/composition/generation.go; internal/kernel/app/schedule/hub.go"
+      snapshot: "00083be local HEAD, verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2027-02-20"
+  refresh_triggers: ["公共 API/Provider/模块边界改变", "消费端无法参加 Generation handoff", "Outbox 成为当前范围"]
+relations:
+  extends: ["R001", "R002"]
+  related: ["037:R003", "035:R002", "023:R002"]
+  supersedes: []
+  superseded_by: []
+report: report.md

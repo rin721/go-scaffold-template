@@ -18,6 +18,7 @@ model <- service <- repo/binding <- module.go <- internal/composition
 - `middleware` 只实现所属模块拥有的 HTTP 横切策略；不能放入其他模块的业务不变量、Service、Repository 或事务。
 - `module.go` 只做纯内存局部装配。
 - 模块需要定时任务时只在 `module.go` 构造项目自有 `schedule.Binding` 并通过 `Contribution.Schedules` 输出；统一调度层负责触发和运行治理，详见[定时调度能力](../../docs/development/scheduled-task-capability.md)。
+- 模块需要消息生产或消费时只声明项目自有 Contract/Binding，并通过 `Contribution.Messages` 输出；payload 转换与业务 Handler 留在模块，Provider Client、ack/retry/DLX 和 Consumer lifecycle 由统一能力治理，详见[消息系统适配能力](../../docs/development/messaging-capability.md)。
 - `internal/composition` 是唯一可以同时知道 Kernel Capability 与应用模块的位置。
 
 HTTP 模块遵循固定的代码优先源头与分层（031 分责）：模块顶层 `handler/` 承载 HTTP 应用语义适配（`Operations`/`Handler`、DTO 与映射、错误呈现、`ActorAccess`），`binding/http` 只做代码优先契约声明（`pkg/httpx/contract.Module`，见 `contract_module.go`）与运行期把 typed handler 装箱为 `contract.Handler`（见 `handlers.go`）；`internal/composition` 聚合模块基础契约与运行期 handler；`internal/transport/http` 从同一份契约一次绑定 OpenAPI 校验、operation gate 与路由；生成器 `internal/tools/contract-gen` 据此渲染 `api/openapi.yaml` 与 operation inventory。`handler` 不 import `binding/**` 或 `internal/transport/**`，不创建 Router、不加载 OpenAPI。新增模块不得复制完整 Router、route binding 或 method/path 表。

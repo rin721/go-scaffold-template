@@ -39,13 +39,14 @@
 | `observability` | 项目自有契约 | 提供 HTTP observation、后台 `Work` span、Metrics endpoint 与低敏 diagnostics；Prometheus/OTel/OTLP 只存在于 Kernel App 实现。 |
 | `execution` | 项目自有契约 + 标准库 + `pkg/resilience`/`fault`/`concurrency`/`health` | 提供幂等键/执行记录存储与带失败重试的受托管操作执行契约 `OperationExecutor`；执行记录可携带经 context 传递的全链路追踪标识（`WithTrace`/`TraceFrom`）；外部依赖治理 Store `RecoveringStore`（主存储故障降级到本地、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，`Snapshot()`/`OnStateChange`/`Health()` 观测）与执行记录异步持久化 `AsyncRecorder`（幂等占用/完成同步、记录异步有界队列 + 溢出策略 + 排空式 Shutdown）（035）；backend 由 Kernel App 在选择后注入。 |
 | `schedule` | 项目自有声明契约；`gocron/v2` 只存在于内部 Adapter | 模块声明 cron/fixedDelay、任务级并发和分布式执行策略；不暴露 scheduler、生命周期或注册权。 |
+| `messaging` | 项目自有 Contract/Binding/Publisher；`amqp091-go` 只存在于内部 RabbitMQ Adapter | 模块声明消息 Contract、生产/消费关系、交付预算、重要性和并发；composition 解析逻辑 Route 并治理 confirm、ack、重投、死信、恢复和 Consumer 代际，不暴露 Broker Client 或物理 topology。 |
 | `coordination` | 项目自有租约契约；production Adapter 复用 Cache 的 `go-redis/v9` client | 表达 acquire/renew/release、未获得、不可用与失权；不把 Redis 类型或 token 暴露给业务模块。 |
 
 ## 暂缓路线
 
 以下能力属于成熟项目常见能力，但当前不阻塞底层库封装。必须等真实组件或业务场景明确后再定义契约：
 
-- 消息系统：NATS/Kafka/RabbitMQ adapter、consumer lifecycle、ack/retry/dead-letter。
+- 消息扩展：Kafka、NATS JetStream 等后续 Provider 与其分区、顺序、事务、Stream/Consumer Group 专属能力；当前只实现 RabbitMQ 4.3 Provider，不把未支持能力伪装为公共语义。
 - 通用业务锁：数据库锁、fencing-aware 资源写入等必须先明确一致性、租约与续期语义；当前 `coordination` 只服务统一调度执行权，不是通用 Lock API。
 - 认证授权：JWT/OIDC/password hash/RBAC，只有第一批组件包含用户身份时再进入。
 - 邮件：SMTP/API adapter、模板、重试和投递诊断。

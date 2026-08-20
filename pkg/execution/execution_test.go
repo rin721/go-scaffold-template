@@ -158,21 +158,70 @@ func TestExecutorValidation(t *testing.T) {
 		t.Fatalf("nil operation: %v", err)
 	}
 	if _, err := executor.Execute(context.Background(), Execution{
-		Key: "k", ClaimTTL: -time.Second, Operation: func(context.Context) (any, error) { return nil, nil },
+		Key: "k", LeaseTTL: -time.Second, Operation: func(context.Context) (any, error) { return nil, nil },
 	}); err == nil {
-		t.Fatal("negative claim ttl error = nil")
+		t.Fatal("negative lease ttl error = nil")
+	}
+	if _, err := executor.Execute(context.Background(), Execution{
+		Key: "k", RetentionTTL: -time.Second, Operation: func(context.Context) (any, error) { return nil, nil },
+	}); err == nil {
+		t.Fatal("negative retention ttl error = nil")
 	}
 }
 
-func TestExecutionClaimTTLIsExplicitAndBackendErrorsKeepCause(t *testing.T) {
-	exec := Execution{ClaimTTL: 15 * time.Minute}
-	if got := claimTTL(exec); got != exec.ClaimTTL {
-		t.Fatalf("claimTTL() = %s, want %s", got, exec.ClaimTTL)
+func TestExecutionTTLsAreExplicitAndBackendErrorsKeepCause(t *testing.T) {
+	exec := Execution{LeaseTTL: time.Minute, RetentionTTL: 15 * time.Minute}
+	if exec.LeaseTTL != time.Minute || exec.RetentionTTL != 15*time.Minute {
+		t.Fatalf("execution ttls = lease %s retention %s", exec.LeaseTTL, exec.RetentionTTL)
 	}
 	cause := errors.New("backend cause")
 	err := WrapBackend(cause)
 	if !errors.Is(err, ErrBackend) || !errors.Is(err, cause) {
 		t.Fatalf("WrapBackend() = %v", err)
+	}
+}
+
+func TestExecutorFailureReleasesClaimForRedelivery(t *testing.T) {
+	store := NewMemoryStore()
+	executor := NewExecutor(store)
+	failed := Execution{
+		Key: "message:1", LeaseTTL: time.Hour,
+		Operation: func(context.Context) (any, error) { return nil, errors.New("retry") },
+	}
+	if _, err := executor.Execute(context.Background(), failed); err == nil {
+		t.Fatal("first execute error = nil")
+	}
+	var calls int32
+	result, err := executor.Execute(context.Background(), Execution{
+		Key: "message:1", LeaseTTL: time.Hour,
+		Operation: func(context.Context) (any, error) {
+			atomic.AddInt32(&calls, 1)
+			return nil, nil
+		},
+	})
+	if err != nil || result.Status != StatusCompleted || calls != 1 {
+		t.Fatalf("redelivery result=%+v calls=%d err=%v", result, calls, err)
+	}
+}
+
+func TestMemoryCompletionRetentionStartsAtCompletion(t *testing.T) {
+	start := time.Date(2026, 8, 20, 10, 0, 0, 0, time.UTC)
+	completedAt := start.Add(50 * time.Minute)
+	store := NewMemoryStore().WithClock(func() time.Time { return completedAt })
+	claimed, err := store.Claim(context.Background(), "k", time.Hour, start)
+	if err != nil || !claimed {
+		t.Fatalf("claim=%v err=%v", claimed, err)
+	}
+	if err := store.Complete(context.Background(), "k", 30*time.Minute, Record{Key: "k", CreatedAt: completedAt}); err != nil {
+		t.Fatalf("complete: %v", err)
+	}
+	store.WithClock(func() time.Time { return completedAt.Add(20 * time.Minute) })
+	if done, err := store.IsCompleted(context.Background(), "k"); err != nil || !done {
+		t.Fatalf("completed within retention=%v err=%v", done, err)
+	}
+	store.WithClock(func() time.Time { return completedAt.Add(31 * time.Minute) })
+	if done, err := store.IsCompleted(context.Background(), "k"); err != nil || done {
+		t.Fatalf("completed after retention=%v err=%v", done, err)
 	}
 }
 

@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -54,7 +55,7 @@ func (e *executor) Execute(ctx context.Context, exec Execution) (Result, error) 
 // run 在占用保护下执行操作：占用 -> 带策略重试 -> 成功/失败记录。
 func (e *executor) run(ctx context.Context, exec Execution) (any, error) {
 	now := e.now()
-	claimed, err := e.store.Claim(ctx, exec.Key, claimTTL(exec), now)
+	claimed, err := e.store.Claim(ctx, exec.Key, exec.LeaseTTL, now)
 	if err != nil {
 		return Result{}, WrapBackend(err)
 	}
@@ -90,20 +91,20 @@ func (e *executor) run(ctx context.Context, exec Execution) (any, error) {
 	}
 	if runErr == nil {
 		rec.Status = StatusCompleted
-		if err := e.store.Complete(ctx, exec.Key, rec); err != nil {
+		if err := e.store.Complete(ctx, exec.Key, exec.RetentionTTL, rec); err != nil {
 			return Result{Status: StatusCompleted}, WrapBackend(err)
 		}
 		return Result{Status: StatusCompleted}, nil
 	}
 	rec.Error = runErr.Error()
-	if err := e.store.Record(ctx, exec.Key, rec); err != nil {
-		return Result{Status: StatusFailed}, WrapBackend(err)
-	}
-	return Result{Status: StatusFailed}, WrapRetryExhausted(runErr)
+	releaseErr := e.store.Release(ctx, exec.Key)
+	recordErr := e.store.Record(ctx, exec.Key, rec)
+	return Result{Status: StatusFailed}, errors.Join(
+		WrapRetryExhausted(runErr),
+		WrapBackend(releaseErr),
+		WrapBackend(recordErr),
+	)
 }
-
-// claimTTL 返回调用方显式声明的占用与完成去重窗口。
-func claimTTL(exec Execution) time.Duration { return exec.ClaimTTL }
 
 func validateExecution(exec Execution) error {
 	if exec.Key == "" {
@@ -112,8 +113,11 @@ func validateExecution(exec Execution) error {
 	if exec.Operation == nil {
 		return ErrNilOperation
 	}
-	if exec.ClaimTTL < 0 {
-		return fmt.Errorf("execution: claim ttl must be non-negative")
+	if exec.LeaseTTL < 0 {
+		return fmt.Errorf("execution: lease ttl must be non-negative")
+	}
+	if exec.RetentionTTL < 0 {
+		return fmt.Errorf("execution: retention ttl must be non-negative")
 	}
 	return nil
 }

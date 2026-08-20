@@ -266,11 +266,18 @@ func (f *faultyStore) IsCompleted(ctx context.Context, key pkgexecution.Key) (bo
 	return f.inner.IsCompleted(ctx, key)
 }
 
-func (f *faultyStore) Complete(ctx context.Context, key pkgexecution.Key, rec pkgexecution.Record) error {
+func (f *faultyStore) Complete(ctx context.Context, key pkgexecution.Key, retentionTTL time.Duration, rec pkgexecution.Record) error {
 	if f.fail.Load() {
 		return errors.New("primary: backend down")
 	}
-	return f.inner.Complete(ctx, key, rec)
+	return f.inner.Complete(ctx, key, retentionTTL, rec)
+}
+
+func (f *faultyStore) Release(ctx context.Context, key pkgexecution.Key) error {
+	if f.fail.Load() {
+		return errors.New("primary: backend down")
+	}
+	return f.inner.Release(ctx, key)
 }
 
 func (f *faultyStore) Record(ctx context.Context, key pkgexecution.Key, rec pkgexecution.Record) error {

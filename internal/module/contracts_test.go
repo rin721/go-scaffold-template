@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	pkgmessaging "github.com/rin721/go-scaffold-template/pkg/messaging"
 	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
@@ -57,6 +58,57 @@ func TestScheduleBindingsReturnsStableOrder(t *testing.T) {
 	}
 	if len(bindings) != 2 || bindings[0].ID() != "billing.reconcile" || bindings[1].ID() != "todo.cleanup" {
 		t.Fatalf("ScheduleBindings() = %#v", bindings)
+	}
+}
+
+func TestMessageBindingsAggregatesModuleContributions(t *testing.T) {
+	contract, err := pkgmessaging.DefineContract(pkgmessaging.ContractSpec{
+		ID: "orders.created", Version: 1, ContentType: "application/json",
+		MaxPayloadBytes: 1024, Fingerprint: "sha256:orders-created-v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer, err := pkgmessaging.BindProducer(pkgmessaging.ProducerSpec{
+		ID: "orders.writer", Contract: contract.Ref(), Route: "orders.events",
+		Confirm: pkgmessaging.ConfirmBroker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := MessageBindings(Contribution{
+		ID:       "orders",
+		Messages: pkgmessaging.Contribute([]pkgmessaging.Contract{contract}, []pkgmessaging.ProducerBinding{producer}, nil),
+	})
+	if err != nil {
+		t.Fatalf("MessageBindings() error = %v", err)
+	}
+	if len(catalog.Contracts()) != 1 || len(catalog.Producers()) != 1 {
+		t.Fatalf("MessageBindings() = %+v", catalog)
+	}
+}
+
+func TestMessageBindingsRejectsCrossModuleProducerConflict(t *testing.T) {
+	contract, err := pkgmessaging.DefineContract(pkgmessaging.ContractSpec{
+		ID: "orders.created", Version: 1, ContentType: "application/json",
+		MaxPayloadBytes: 1024, Fingerprint: "sha256:orders-created-v1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer, err := pkgmessaging.BindProducer(pkgmessaging.ProducerSpec{
+		ID: "orders.writer", Contract: contract.Ref(), Route: "orders.events",
+		Confirm: pkgmessaging.ConfirmBroker,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := pkgmessaging.Contribute([]pkgmessaging.Contract{contract}, []pkgmessaging.ProducerBinding{producer}, nil)
+	if _, err := MessageBindings(
+		Contribution{ID: "orders", Messages: messages},
+		Contribution{ID: "billing", Messages: messages},
+	); err == nil {
+		t.Fatal("MessageBindings() error = nil")
 	}
 }
 

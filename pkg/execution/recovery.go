@@ -103,13 +103,15 @@ type recKind uint8
 
 const (
 	kindComplete recKind = iota
+	kindRelease
 	kindRecord
 )
 
 type bufferedRecord struct {
-	key  Key
-	kind recKind
-	rec  Record
+	key          Key
+	kind         recKind
+	retentionTTL time.Duration
+	rec          Record
 }
 
 // 默认恢复治理参数（集中声明，供未显式配置时使用；应用层默认值由 kernel/app 声明）。
@@ -260,25 +262,37 @@ func (s *RecoveringStore) Claim(ctx context.Context, key Key, ttl time.Duration,
 }
 
 // Complete 实现 Store：降级期间写入本地并缓冲，供恢复后回放主存储。
-func (s *RecoveringStore) Complete(ctx context.Context, key Key, rec Record) error {
-	return s.write(ctx, key, kindComplete, rec, func() error {
-		return s.primary.Complete(ctx, key, rec)
+func (s *RecoveringStore) Complete(ctx context.Context, key Key, retentionTTL time.Duration, rec Record) error {
+	item := bufferedRecord{key: key, kind: kindComplete, retentionTTL: retentionTTL, rec: rec}
+	return s.write(ctx, item, func() error {
+		return s.primary.Complete(ctx, key, retentionTTL, rec)
 	}, func() error {
-		return s.local.Complete(ctx, key, rec)
+		return s.local.Complete(ctx, key, retentionTTL, rec)
+	})
+}
+
+// Release 实现 Store：状态转换同步写入当前 Store；降级期间缓冲主存储释放，避免恢复后遗留 running claim。
+func (s *RecoveringStore) Release(ctx context.Context, key Key) error {
+	item := bufferedRecord{key: key, kind: kindRelease}
+	return s.write(ctx, item, func() error {
+		return s.primary.Release(ctx, key)
+	}, func() error {
+		return s.local.Release(ctx, key)
 	})
 }
 
 // Record 实现 Store：降级期间写入本地并缓冲，供恢复后回放主存储。
 func (s *RecoveringStore) Record(ctx context.Context, key Key, rec Record) error {
-	return s.write(ctx, key, kindRecord, rec, func() error {
+	item := bufferedRecord{key: key, kind: kindRecord, rec: rec}
+	return s.write(ctx, item, func() error {
 		return s.primary.Record(ctx, key, rec)
 	}, func() error {
 		return s.local.Record(ctx, key, rec)
 	})
 }
 
-// write 统一处理 Complete/Record 的主/降级路由与缓冲成单一职责。
-func (s *RecoveringStore) write(ctx context.Context, key Key, kind recKind, rec Record, toPrimary, toLocal func() error) error {
+// write 统一处理 Complete/Release/Record 的主/降级路由与缓冲成单一职责。
+func (s *RecoveringStore) write(ctx context.Context, item bufferedRecord, toPrimary, toLocal func() error) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
@@ -292,13 +306,13 @@ func (s *RecoveringStore) write(ctx context.Context, key Key, kind recKind, rec 
 		if err := toLocal(); err != nil {
 			return err
 		}
-		return s.enqueue(ctx, bufferedRecord{key: key, kind: kind, rec: rec})
+		return s.enqueue(ctx, item)
 	}
 	// 降级 / 恢复中：写本地并缓冲。
 	if err := toLocal(); err != nil {
 		return err
 	}
-	return s.enqueue(ctx, bufferedRecord{key: key, kind: kind, rec: rec})
+	return s.enqueue(ctx, item)
 }
 
 // usingPrimary 判断当前路由是否应走主实现。
@@ -425,7 +439,7 @@ func (s *RecoveringStore) verifyOnce(ctx context.Context) error {
 		// 占用被占（理论上不会）：仍说明存储可读写，视为通过。
 		return nil
 	}
-	return s.primary.Complete(ctx, key, Record{Key: key, Status: StatusCompleted, CreatedAt: time.Now()})
+	return s.primary.Complete(ctx, key, recoveryProbeTTL, Record{Key: key, Status: StatusCompleted, CreatedAt: time.Now()})
 }
 
 // recover 进入 Recovering 状态并回放缓冲到主存储；全部回放成功后原子切回 Healthy。
@@ -459,7 +473,9 @@ func (s *RecoveringStore) recover() bool {
 		var err error
 		switch item.kind {
 		case kindComplete:
-			err = s.primary.Complete(ctx, item.key, item.rec)
+			err = s.primary.Complete(ctx, item.key, item.retentionTTL, item.rec)
+		case kindRelease:
+			err = s.primary.Release(ctx, item.key)
 		case kindRecord:
 			err = s.primary.Record(ctx, item.key, item.rec)
 		}

@@ -60,7 +60,7 @@ func TestAsyncCompleteIsSynchronous(t *testing.T) {
 	rec := NewAsyncRecorder(inner, AsyncConfig{Capacity: 8}).Start()
 	defer rec.Shutdown()
 	// Complete 同步落盘：返回后立即可见，且完成状态用于幂等去重。
-	if err := rec.Complete(context.Background(), "k", Record{Key: "k", Status: StatusCompleted}); err != nil {
+	if err := rec.Complete(context.Background(), "k", 0, Record{Key: "k", Status: StatusCompleted}); err != nil {
 		t.Fatalf("complete: %v", err)
 	}
 	done, err := rec.IsCompleted(context.Background(), "k")

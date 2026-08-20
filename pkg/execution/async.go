@@ -23,7 +23,7 @@ type AsyncConfig struct {
 // defaultAsyncCapacity 是异步记录队列默认上限。
 const defaultAsyncCapacity = 1000
 
-// AsyncRecorder 是 Store 装饰器：幂等占用与完成状态（Claim/IsCompleted/Complete）仍同步
+// AsyncRecorder 是 Store 装饰器：幂等占用与状态转换（Claim/IsCompleted/Complete/Release）仍同步
 // 交给底层 Store（保证去重不重跑），仅"过程/失败执行记录"（Record）进入有界后台队列异步持久化，
 // 避免等待记录落盘而阻塞正常业务链路。Shutdown 会排空剩余队列再退出工作线程。
 type AsyncRecorder struct {
@@ -129,8 +129,13 @@ func (a *AsyncRecorder) IsCompleted(ctx context.Context, key Key) (bool, error) 
 }
 
 // Complete 同步转发（完成状态决定去重，必须同步）。
-func (a *AsyncRecorder) Complete(ctx context.Context, key Key, rec Record) error {
-	return a.inner.Complete(ctx, key, rec)
+func (a *AsyncRecorder) Complete(ctx context.Context, key Key, retentionTTL time.Duration, rec Record) error {
+	return a.inner.Complete(ctx, key, retentionTTL, rec)
+}
+
+// Release 同步转发（失败后的 claim 释放决定后续交付是否可重新执行）。
+func (a *AsyncRecorder) Release(ctx context.Context, key Key) error {
+	return a.inner.Release(ctx, key)
 }
 
 // Record 异步持久化执行记录：入有界队列后立即返回；队列满按溢出策略处理。

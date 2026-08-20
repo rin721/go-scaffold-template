@@ -74,6 +74,7 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		}},
 		{ImportPath: modulePath + "/internal/kernel/composition", Imports: []string{modulePath + "/internal/kernel/app/database"}},
 		{ImportPath: modulePath + "/internal/kernel/app/database", Imports: []string{modulePath + "/pkg/database"}},
+		{ImportPath: modulePath + "/internal/kernel/app/messaging/rabbitmq", Imports: []string{"github.com/rabbitmq/amqp091-go"}},
 		{ImportPath: modulePath + "/internal/module/todo/service", Imports: []string{modulePath + "/internal/module/todo/model"}},
 		{ImportPath: modulePath + "/internal/module/todo/repo", Imports: []string{modulePath + "/pkg/database"}},
 		{ImportPath: modulePath + "/internal/module/auth/adapter/jwt", Imports: []string{"github.com/lestrrat-go/jwx/v3/jwt"}},
@@ -108,6 +109,7 @@ func TestPackageGraphRulesAcceptLegalFixtureAndRejectViolations(t *testing.T) {
 		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{"github.com/example/sdk"}}},
 		{{ImportPath: modulePath + "/internal/composition", Imports: []string{modulePath + "/internal/module/example/adapter/sdk"}}},
 		{{ImportPath: modulePath + "/internal/composition", Imports: []string{"go.uber.org/zap"}}},
+		{{ImportPath: modulePath + "/internal/module/example", Imports: []string{"github.com/rabbitmq/amqp091-go"}}},
 	} {
 		if err := validatePackageGraph(fixture); err == nil {
 			t.Fatalf("invalid fixture %#v passed", fixture)
@@ -198,6 +200,10 @@ func writeModuleBoundaryFixture(t *testing.T, root, relative, content string) {
 func validatePackageGraph(graph []packageNode) error {
 	for _, node := range graph {
 		for _, imported := range node.Imports {
+			if imported == "github.com/rabbitmq/amqp091-go" &&
+				node.ImportPath != modulePath+"/internal/kernel/app/messaging/rabbitmq" {
+				return fmt.Errorf("package %s bypasses the RabbitMQ messaging adapter", node.ImportPath)
+			}
 			if strings.HasPrefix(imported, "go.uber.org/zap") && node.ImportPath != modulePath+"/pkg/logger" {
 				return fmt.Errorf("package %s bypasses pkg/logger through %s", node.ImportPath, imported)
 			}

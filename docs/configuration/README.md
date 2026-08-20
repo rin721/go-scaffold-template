@@ -17,6 +17,7 @@ $env:APP_DATABASE__DSN = '.data/app.db'
 $env:APP_LOGGER__LEVEL = 'debug'
 $env:APP_HTTP__ADDR = '127.0.0.1:8081'
 $env:APP_SCHEDULER__ENABLED = 'true'
+$env:APP_MESSAGING__PROVIDERS__PRIMARY__RABBITMQ__URI = 'amqps://<user>:<password>@broker.example:5671/'
 ```
 
 配置解析是 strict 的：未知配置节、未知字段、重复逻辑路径、大小写别名和错误类型都会在创建资源或绑定 listener 前失败。
@@ -51,6 +52,7 @@ go run ./cmd/app config init --output .data/generated-config.yaml
 | `storage` | Kernel Storage App | 本地、S3、MinIO 对象存储配置 |
 | `execution` | Kernel Execution App | 幂等、重试、执行记录 backend 与命名策略 |
 | `scheduler` | Application Schedule Component | cron/fixedDelay、全局并发、关闭预算、执行权租约与任务级运维覆盖 |
+| `messaging` | Application Messaging Component | 命名 Provider、逻辑 Route、confirm/handoff/恢复与 RabbitMQ topology 要求 |
 | `todo` | Todo 模块 | Todo 业务约束 |
 | `auth` | Auth 模块 | development-anonymous 或 JWT 鉴权配置 |
 | `http` | Kernel HTTP composition | 业务 HTTP listener 与请求治理 |
@@ -73,6 +75,13 @@ Bootstrap CLI、migration one-shot、Todo CLI 和长期 Service 都必须识别�
 
 密码、Token、Access Key、完整生产 DSN 和私有证书不要写入配置文件或提交历史。使用环境变量注入敏感值，并让部署系统负责密钥来源。配置错误和日志也不得输出完整 DSN 或凭据。
 
+## 消息系统
+
+`messaging.enabled` 默认为 `false`。启用后，配置中的每个 Route 必须命中模块经
+`module.Contribution.Messages` 声明的 Producer 或 Consumer；未知、未使用或策略冲突会让候选 Generation 在 Commit
+前失败。当前生产 Provider 为 RabbitMQ，应用只验证 topology，不创建 exchange、queue 或 Policy。配置字段、Binding
+示例、`delivery-limit` 换算和可靠性边界见[消息系统适配能力](../development/messaging-capability.md)。
+
 ## Reload 行为
 
-长期 Service 监听配置文件变化，并把文件与进程启动时继承的环境变量重新合并成候选配置。被环境变量覆盖的字段即使文件发生变化，也不会改变最终有效值。scheduler 与任务集合随完整 Application Generation 重建，Prepare 不触发任务，Commit 才切换准入。reload 的底层机制见 [Kernel 运行与配置](../../internal/kernel/README.md)。
+长期 Service 监听配置文件变化，并把文件与进程启动时继承的环境变量重新合并成候选配置。被环境变量覆盖的字段即使文件发生变化，也不会改变最终有效值。scheduler、消息 Provider/Binding 与模块对象图随完整 Application Generation 重建；Prepare 不触发任务或消息消费，Commit 才切换准入。reload 的底层机制见 [Kernel 运行与配置](../../internal/kernel/README.md)。

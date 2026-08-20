@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"sort"
 
+	pkgmessaging "github.com/rin721/go-scaffold-template/pkg/messaging"
 	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
@@ -18,6 +19,7 @@ type Contribution struct {
 	ID           ID
 	Participants []supervisor.Participant
 	Schedules    []pkgschedule.Binding
+	Messages     pkgmessaging.Contribution
 }
 
 // ValidateContributions 在任何 listener 或 participant 启动前校验模块贡献。
@@ -76,6 +78,22 @@ func ScheduleBindings(contributions ...Contribution) ([]pkgschedule.Binding, err
 		return bindings[left].ID() < bindings[right].ID()
 	})
 	return bindings, nil
+}
+
+// MessageBindings 校验模块贡献并返回全局不可变消息 Catalog。
+func MessageBindings(contributions ...Contribution) (pkgmessaging.Catalog, error) {
+	if err := ValidateContributions(contributions...); err != nil {
+		return pkgmessaging.Catalog{}, err
+	}
+	messages := make([]pkgmessaging.Contribution, 0, len(contributions))
+	for _, contribution := range contributions {
+		messages = append(messages, contribution.Messages)
+	}
+	catalog, err := pkgmessaging.BuildCatalog(messages...)
+	if err != nil {
+		return pkgmessaging.Catalog{}, fmt.Errorf("module message bindings: %w", err)
+	}
+	return catalog, nil
 }
 
 func nilInterface(value any) bool {

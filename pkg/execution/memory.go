@@ -47,7 +47,7 @@ func (s *MemoryStore) now() time.Time {
 }
 
 // Claim 建立/续期 key 的 running 占用。已有活动占用（未过期 running 或未过期 completed）时返回 false。
-func (s *MemoryStore) Claim(ctx context.Context, key Key, ttl time.Duration, now time.Time) (bool, error) {
+func (s *MemoryStore) Claim(ctx context.Context, key Key, leaseTTL time.Duration, now time.Time) (bool, error) {
 	if err := contextErr(ctx); err != nil {
 		return false, err
 	}
@@ -64,8 +64,8 @@ func (s *MemoryStore) Claim(ctx context.Context, key Key, ttl time.Duration, now
 		}
 	}
 	until := time.Time{}
-	if ttl > 0 {
-		until = now.Add(ttl)
+	if leaseTTL > 0 {
+		until = now.Add(leaseTTL)
 	}
 	s.claims[key] = claimState{status: StatusRunning, until: until}
 	return true, nil
@@ -88,8 +88,8 @@ func (s *MemoryStore) IsCompleted(ctx context.Context, key Key) (bool, error) {
 	return s.now().Before(st.until), nil
 }
 
-// Complete 记录成功完成：写入成功记录并把占用标记为 completed，保留窗口沿用 Claim 的 TTL。
-func (s *MemoryStore) Complete(ctx context.Context, key Key, rec Record) error {
+// Complete 记录成功完成：写入成功记录，并从完成时间建立独立的去重保留窗口。
+func (s *MemoryStore) Complete(ctx context.Context, key Key, retentionTTL time.Duration, rec Record) error {
 	if err := contextErr(ctx); err != nil {
 		return err
 	}
@@ -98,14 +98,25 @@ func (s *MemoryStore) Complete(ctx context.Context, key Key, rec Record) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 保留窗口沿用原占用 TTL；调用方声明 0 时保持不过期。
-	old := s.claims[key]
-	until := old.until
-	if until.IsZero() {
-		until = time.Time{} // 原占用无 TTL 时，完成保留也不设过期（quasi-permanent）
+	until := time.Time{}
+	if retentionTTL > 0 {
+		until = rec.CreatedAt.Add(retentionTTL)
 	}
 	s.claims[key] = claimState{status: StatusCompleted, until: until}
 	s.records[key] = append(s.records[key], rec)
+	return nil
+}
+
+// Release 只释放 running 占用；成功完成状态继续由 retention 窗口保护。
+func (s *MemoryStore) Release(ctx context.Context, key Key) error {
+	if err := contextErr(ctx); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if current, ok := s.claims[key]; ok && current.status == StatusRunning {
+		delete(s.claims, key)
+	}
 	return nil
 }
 
