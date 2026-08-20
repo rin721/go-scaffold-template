@@ -12,6 +12,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
@@ -42,12 +43,13 @@ type applicationGenerationFactory struct {
 	managementHub *httpx.ListenerHub
 	opsRuntime    *opsRuntimeSource
 
-	loggerPool   *resourcePool[logger.Logger]
-	databasePool *resourcePool[databaseapp.Access]
-	cachePool    *resourcePool[cacheapp.Access]
-	i18nPool     *resourcePool[i18n.Translator]
-	storagePool  *resourcePool[storageapp.Access]
-	metricsPool  *resourcePool[pkgobservability.Metrics]
+	loggerPool    *resourcePool[logger.Logger]
+	databasePool  *resourcePool[databaseapp.Access]
+	cachePool     *resourcePool[cacheapp.Access]
+	i18nPool      *resourcePool[i18n.Translator]
+	storagePool   *resourcePool[storageapp.Access]
+	executionPool *resourcePool[executionapp.Access]
+	metricsPool   *resourcePool[pkgobservability.Metrics]
 
 	nextID    atomic.Uint64
 	failures  chan error
@@ -66,6 +68,7 @@ type applicationGeneration struct {
 	cache     *resourceHandle[cacheapp.Access]
 	i18n      *resourceHandle[i18n.Translator]
 	storage   *resourceHandle[storageapp.Access]
+	execution *resourceHandle[executionapp.Access]
 	metrics   *resourceHandle[pkgobservability.Metrics]
 	telemetry *immutableComponent[pkgobservability.Telemetry]
 
@@ -109,14 +112,15 @@ func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicati
 	}
 	factory := &applicationGenerationFactory{
 		logging: logging, hub: hub, managementHub: managementHub,
-		build:        opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
-		loggerPool:   newResourcePool[logger.Logger]("logger"),
-		databasePool: newResourcePool[databaseapp.Access]("database"),
-		cachePool:    newResourcePool[cacheapp.Access]("cache"),
-		i18nPool:     newResourcePool[i18n.Translator]("i18n"),
-		storagePool:  newResourcePool[storageapp.Access]("storage"),
-		metricsPool:  newResourcePool[pkgobservability.Metrics]("observability.metrics"),
-		failures:     make(chan error, 8),
+		build:         opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
+		loggerPool:    newResourcePool[logger.Logger]("logger"),
+		databasePool:  newResourcePool[databaseapp.Access]("database"),
+		cachePool:     newResourcePool[cacheapp.Access]("cache"),
+		i18nPool:      newResourcePool[i18n.Translator]("i18n"),
+		storagePool:   newResourcePool[storageapp.Access]("storage"),
+		executionPool: newResourcePool[executionapp.Access]("execution"),
+		metricsPool:   newResourcePool[pkgobservability.Metrics]("observability.metrics"),
+		failures:      make(chan error, 8),
 	}
 	factory.opsRuntime = &opsRuntimeSource{}
 	return factory, nil
@@ -311,10 +315,28 @@ func (f *applicationGenerationFactory) Prepare(
 	if err := migrationCompletion.Verify(ctx); err != nil {
 		return abort(fmt.Errorf("verify todo migration completion: %w", err))
 	}
+
+	executionDigest, err := snapshot.SectionDigest("execution")
+	if err != nil {
+		return abort(err)
+	}
+	generation.execution, reused, err = f.executionPool.acquire(ctx, executionDigest, func(ctx context.Context) (executionapp.Access, func(context.Context) error, error) {
+		component, buildErr := startImmutableExecution(ctx, snapshot, f.logging)
+		if buildErr != nil {
+			return nil, nil, buildErr
+		}
+		return component.output, component.close, nil
+	})
+	if err != nil {
+		return abort(err)
+	}
+	generation.recordResource("execution", reused)
+
 	generation.module, err = todo.NewHTTP(todo.HTTPDependencies{
 		Dependencies: todo.Dependencies{
 			Database: databaseAccess, Clock: clock.System(), IDGenerator: idgen.UUID(),
 			Config: todoConfig, Authorizer: authorizer,
+			Executor: todoExecutionAdapter(generation.execution.value()),
 		},
 		Translator: generation.i18n.value(), Actors: todoActorAccessAdapter{},
 	})
@@ -786,7 +808,7 @@ func (g *applicationGeneration) releaseResources(ctx context.Context) error {
 	if g.metrics != nil {
 		joined = errors.Join(joined, g.metrics.release(ctx))
 	}
-	joined = errors.Join(joined, releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger))
+	joined = errors.Join(joined, releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger, g.execution))
 	return joined
 }
 

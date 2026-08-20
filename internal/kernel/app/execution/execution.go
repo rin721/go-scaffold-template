@@ -164,6 +164,21 @@ func newAccess(delegate app.Lease[*resource]) (Access, error) {
 	return &access{delegate: delegate}, nil
 }
 
+// Configuration 返回 execution 组件的配置节契约（CapabilityID=execution, path=execution）。
+// 该绑定只承载配置校验元数据，不依赖 Logger 输入、不创建任何资源；各入口（bootstrap / CLI / migrate / config）
+// 用它识别 `execution` 配置节，无需先装配组件或注入 Logger。
+func Configuration() config.Binding {
+	return config.Binding{
+		CapabilityID: string(ID),
+		ConfigPath:   ConfigPath,
+		Contract:     defaults{},
+		Validate: func(snapshot config.Snapshot) error {
+			_, err := decode(snapshot)
+			return err
+		},
+	}
+}
+
 // Recovery 返回当前恢复治理快照；后端关闭或未装配恢复治理时返回错误。
 func (a *access) Recovery() (pkgexecution.RecoverySnapshot, error) {
 	var snap pkgexecution.RecoverySnapshot

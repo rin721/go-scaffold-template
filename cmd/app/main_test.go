@@ -350,6 +350,14 @@ todo:
   titleMaxRunes: 120
   defaultListLimit: 20
   maxListLimit: 100
+execution:
+  driver: memory
+  policies:
+    todo:
+      retryMaxAttempts: 3
+      retryInitialWaitMs: 50
+      retryMaxWaitMs: 500
+      timeoutMs: 2000
 http:
   addr: %q
 `, filepath.ToSlash(databasePath), filepath.ToSlash(storagePath), address)

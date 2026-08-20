@@ -60,7 +60,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "todo", "auth", "ops", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "execution", "todo", "auth", "ops", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
@@ -91,7 +91,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	if after.BoundAddress != initial.BoundAddress || after.CurrentGeneration != 2 || !after.Ready {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
-	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics"}) ||
+	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "execution"}) ||
 		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "todo", "auth", "ops", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
@@ -142,7 +142,7 @@ func TestAllConfigurationSectionsCommitOneGeneration(t *testing.T) {
 	if !result.Applied || result.PreviousGeneration != 1 || result.CurrentGeneration != 2 || fmt.Sprint(result.ChangedSections) != fmt.Sprint(wantSections) {
 		t.Fatalf("Reload() result = %#v", result)
 	}
-	if diagnostics := coordinator.Diagnostics(); diagnostics.CurrentGeneration != 2 || diagnostics.CandidateGeneration != 0 || fmt.Sprint(diagnostics.ResourceReused) != fmt.Sprint([]string{"observability.metrics"}) {
+	if diagnostics := coordinator.Diagnostics(); diagnostics.CurrentGeneration != 2 || diagnostics.CandidateGeneration != 0 || fmt.Sprint(diagnostics.ResourceReused) != fmt.Sprint([]string{"observability.metrics", "execution"}) {
 		t.Fatalf("Diagnostics() = %#v", diagnostics)
 	}
 }

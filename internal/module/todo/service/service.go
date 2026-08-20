@@ -15,6 +15,9 @@ import (
 
 var ErrPermissionDenied = errors.New("todo actor is not authorized")
 
+// completeExecKeyPrefix 是 Todo「完成」用例幂等键的前缀（业务语义稳定值）。
+const completeExecKeyPrefix = "todo:complete:"
+
 // Actor 是 HTTP/CLI 边界显式传入的项目主体事实。
 type Actor struct {
 	Subject string
@@ -100,6 +103,10 @@ type Repository interface {
 	Save(context.Context, model.Todo) (model.Todo, error)
 }
 
+// Executor 是 Todo「完成」用例经 execution 能力治理关键写操作（幂等 / 重试 / 执行记录）时使用的窄 port。
+// key 为幂等键；operation 为真实写操作，成功返回已写入实体；duplicate=true 表示同幂等键已完成、operation 未被重跑。
+type Executor func(ctx context.Context, key string, operation func(context.Context) (model.Todo, error)) (saved model.Todo, duplicate bool, err error)
+
 // UseCases 是 HTTP 与 CLI 共用的 Todo 用例入口。
 type UseCases interface {
 	Create(context.Context, CreateCommand) (model.Todo, error)
@@ -115,10 +122,11 @@ type Service struct {
 	ids        idgen.Generator
 	policy     Policy
 	authorizer Authorizer
+	executor   Executor
 }
 
 // New 创建无 I/O 副作用的 Todo Service。
-func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, policy Policy, authorizer Authorizer) (*Service, error) {
+func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, policy Policy, authorizer Authorizer, executor Executor) (*Service, error) {
 	if repository == nil {
 		return nil, fmt.Errorf("todo repository is nil")
 	}
@@ -131,11 +139,14 @@ func New(repository Repository, currentClock clock.Clock, ids idgen.Generator, p
 	if authorizer == nil {
 		return nil, fmt.Errorf("todo authorizer is nil")
 	}
+	if executor == nil {
+		return nil, fmt.Errorf("todo executor is nil")
+	}
 	if policy.TitleMaxRunes <= 0 || policy.DefaultListLimit <= 0 || policy.MaxListLimit <= 0 ||
 		policy.DefaultListLimit > policy.MaxListLimit {
 		return nil, fmt.Errorf("todo policy is invalid")
 	}
-	return &Service{repository: repository, clock: currentClock, ids: ids, policy: policy, authorizer: authorizer}, nil
+	return &Service{repository: repository, clock: currentClock, ids: ids, policy: policy, authorizer: authorizer, executor: executor}, nil
 }
 
 // Create 创建一个待完成 Todo。
@@ -262,9 +273,16 @@ func (s *Service) Complete(ctx context.Context, command CompleteCommand) (model.
 	if !changed {
 		return todo, nil
 	}
-	saved, err := s.repository.Save(ctx, todo)
+	// 把关键写操作经执行治理（幂等 / 重试 / 执行记录）执行；幂等键取自业务 ID。
+	saved, duplicate, err := s.executor(ctx, completeExecKeyPrefix+id, func(operationCtx context.Context) (model.Todo, error) {
+		return s.repository.Save(operationCtx, todo)
+	})
 	if err != nil {
-		return model.Todo{}, preserveRepositoryError(err, "todo.complete.save")
+		return model.Todo{}, fault.Wrap(err, fault.CodeInternal, "todo.complete.execution", false)
+	}
+	if duplicate {
+		// 并发下同幂等键刚被本次完成：本地 model 即持久化结果，直接返回，不重跑写操作。
+		return todo, nil
 	}
 	return saved, nil
 }

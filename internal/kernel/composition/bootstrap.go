@@ -6,6 +6,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	i18napp "github.com/rin721/go-scaffold-template/internal/kernel/app/i18n"
 	loggerapp "github.com/rin721/go-scaffold-template/internal/kernel/app/logger"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
@@ -86,6 +87,7 @@ func ConfigurationBindings(application ...config.Binding) ([]config.Binding, err
 		bindingOf(cacheDefinition),
 		bindingOf(i18nDefinition),
 		bindingOf(storageDefinition),
+		{value: executionapp.Configuration(), ok: true},
 	} {
 		if !binding.ok {
 			return nil, fmt.Errorf("bootstrap component configuration is missing")

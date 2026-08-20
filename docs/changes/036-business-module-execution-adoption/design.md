@@ -54,12 +54,23 @@ Adapter（类型适配，不泄漏 `executionapp.Access` 之外的实现），�
 
 | 文件 | 动作 |
 | --- | --- |
-| `internal/module/todo/service/service.go` | 新增 `Executor` 窄 port；注入到 `Service`；`Complete`(或 Create) 包装执行 |
-| `internal/module/todo/service/service_test.go` | 覆盖重复提交只执行一次、可重试按策略重试、executor 失败错误链 |
+| `internal/module/todo/service/service.go` | 新增 `Executor` 窄 port；注入到 `Service`；`Complete` 包装执行（幂等键 `todo:complete:<id>`，`PolicyName="todo"`） |
+| `internal/module/todo/service/service_test.go` | 覆盖重复提交只执行一次、可重试按策略重试、executor 失败错误链、幂等键前缀 |
 | `internal/module/todo/module.go` | `Dependencies` 增 `Executor`；传递到 `service.New` |
-| `internal/composition/todo.go` | 用 `capabilities.Execution` 构造 Adapter 并注入 |
-| `internal/composition/service_test.go` 等 | 装配/门禁更新 |
-| 配置文件 / 默认配置 | `execution.policies.todo`（若 application 默认配置含 execution 节） |
+| `internal/composition/todo.go` | `todoExecutionAdapter(capabilities.Execution)` 构造窄 port Adapter 并注入（一次性 CLI 路径） |
+| `internal/composition/generation.go` | 长期 HTTP Service 路径新增 execution 内核资源池/句柄，`todo.NewHTTP` 注入 `todoExecutionAdapter` |
+| `internal/composition/generation_resources.go` | 新增 `startImmutableExecution`（内置 logger + execution 定义，镜像 `startImmutableLogger`）；release 接线 |
+| `internal/kernel/app/execution/execution.go` | 新增导出 `Configuration()`（config.Binding，不依赖 Logger 输入/资源） |
+| `internal/kernel/composition/bootstrap.go` | `ConfigurationBindings` 注册 execution 配置节（用 `executionapp.Configuration()`），使 `db migrate`/`config` 识别 `execution` 节 |
+| `pkg/execution/executor.go` | 修复 `Timeout>0` 闭包自递归（超时包装引用重新赋值的 `call` 导致无限递归） |
+| `pkg/execution/execution_test.go` | 新增 `Timeout` 回归测试（不递归、超时返回 ErrRetryExhausted） |
+| 配置文件 | `config.yaml`/`config.example.yaml`/`cmd/app` 测试配置加入 `execution.policies.todo`；`cmd/app/main_test.go` 同步 |
+
+## 6. 配置绑定与 kernel 解耦说明
+
+- execution 组件为恢复治理可观测注入结构化 Logger，其含义 `Definition` 需 Logger target，无法像 database/cache 那样无依赖取配置绑定。
+- 为避免 bootstrap「只构造校验元数据、不创建资源」与「生产禁用 Noop」冲突，`executionapp.Configuration()` 直接构造 `config.Binding`（CapabilityID/ConfigPath/Contract/Validate），在不装配组件、不创建 Logger 的前提下让各入口识别 `execution` 配置节。
+- `ConfigurationBindings` 注册该绑定后，`db migrate`/`config init` 等命令能够接受 `config.yaml` 中的 `execution` 节（含 `policies.todo`）。
 
 ## 6. 失败与边界语义
 

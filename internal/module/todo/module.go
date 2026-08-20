@@ -23,6 +23,7 @@ type Dependencies struct {
 	IDGenerator idgen.Generator
 	Config      configbinding.Config
 	Authorizer  service.Authorizer
+	Executor    service.Executor
 }
 
 // Module 是 Todo 局部装配的完成结果。
@@ -51,7 +52,7 @@ func New(dependencies Dependencies) (Module, error) {
 		return Module{}, fmt.Errorf("compose todo repository: %w", err)
 	}
 	todoService, err := service.New(
-		repository, dependencies.Clock, dependencies.IDGenerator, dependencies.Config.Policy(), dependencies.Authorizer,
+		repository, dependencies.Clock, dependencies.IDGenerator, dependencies.Config.Policy(), dependencies.Authorizer, dependencies.Executor,
 	)
 	if err != nil {
 		return Module{}, fmt.Errorf("compose todo service: %w", err)

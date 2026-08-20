@@ -6,6 +6,7 @@ import (
 
 	"github.com/rin721/go-scaffold-template/internal/kernel"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	"github.com/rin721/go-scaffold-template/internal/module/auth"
@@ -15,6 +16,7 @@ import (
 	migrationbinding "github.com/rin721/go-scaffold-template/internal/module/todo/binding/migration"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/model"
 	"github.com/rin721/go-scaffold-template/internal/module/todo/service"
+	pkgexecution "github.com/rin721/go-scaffold-template/pkg/execution"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
@@ -91,6 +93,7 @@ func (a *Application) prepareTodo(ctx context.Context) (preparedTodo, error) {
 	module, err := todo.New(todo.Dependencies{
 		Database: databaseAccess, Clock: capabilities.Clock, IDGenerator: capabilities.IDGenerator,
 		Config: todoConfig, Authorizer: authorizer,
+		Executor: todoExecutionAdapter(capabilities.Execution),
 	})
 	if err != nil {
 		return preparedTodo{}, fmt.Errorf("compose todo module: %w", err)
@@ -140,6 +143,34 @@ func (a *Application) executeTodo(ctx context.Context, actor service.Actor, oper
 
 func newTodoOperationSupervisor(participants []supervisor.Participant) (*supervisor.Supervisor, error) {
 	return supervisor.New(supervisor.Config{}, participants...)
+}
+
+// todoPolicyName 是 Todo 模块引用的命名执行策略名（见 config execution.policies.todo）。
+const todoPolicyName = "todo"
+
+// todoExecutionAdapter 把底层 execution 能力（Capabilities.Execution）适配为 Todo Service 的窄 port。
+// 幂等键透传；执行体返回真实写入实体；重复完成（Duplicate）不重跑写操作。
+func todoExecutionAdapter(access executionapp.Access) service.Executor {
+	return func(ctx context.Context, key string, operation func(context.Context) (model.Todo, error)) (saved model.Todo, duplicate bool, err error) {
+		result, execErr := access.Execute(ctx, pkgexecution.Execution{
+			Key:        pkgexecution.Key(key),
+			PolicyName: todoPolicyName,
+			Operation: func(operationCtx context.Context) (any, error) {
+				value, opErr := operation(operationCtx)
+				if opErr == nil {
+					saved = value
+				}
+				return value, opErr
+			},
+		})
+		if execErr != nil {
+			return model.Todo{}, false, execErr
+		}
+		if result.Duplicate {
+			return model.Todo{}, true, nil
+		}
+		return saved, false, nil
+	}
 }
 
 type todoExecutor struct{ application *Application }

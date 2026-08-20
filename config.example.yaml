@@ -155,6 +155,18 @@ todo:
   # list 单次查询允许的最大数量。
   maxListLimit: 100
 
+execution:
+  # 后台任务执行能力（幂等 / 重试 / 执行记录）；当前默认 memory backend，自带降级 + 恢复治理 + 异步记录。
+  driver: memory
+  policies:
+    # 按模块命名策略：业务模块以 Execution.PolicyName 引用，实现模块间策略隔离。
+    # Todo「完成」用例使用 "todo"。
+    todo:
+      retryMaxAttempts: 3
+      retryInitialWaitMs: 50
+      retryMaxWaitMs: 500
+      timeoutMs: 2000
+
 # development-anonymous 只允许 development + loopback HTTP；production 必须改用 jwt。
 auth:
   mode: development-anonymous

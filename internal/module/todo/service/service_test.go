@@ -20,7 +20,7 @@ func TestServiceCreateListAndComplete(t *testing.T) {
 	repository := newMemoryRepository()
 	service, err := New(repository, clock.Fixed(now), fixedIDs{id: testID}, Policy{
 		TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50,
-	}, allowAuthorizer{})
+	}, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -45,7 +45,7 @@ func TestServiceCreateListAndComplete(t *testing.T) {
 func TestServiceClassifiesInvalidInputAndRepositoryErrors(t *testing.T) {
 	service, err := New(newMemoryRepository(), clock.Fixed(time.Now()), fixedIDs{id: testID}, Policy{
 		TitleMaxRunes: 3, DefaultListLimit: 1, MaxListLimit: 2,
-	}, allowAuthorizer{})
+	}, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -85,7 +85,7 @@ func TestServicePreservesDependencyFailures(t *testing.T) {
 	now := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
 	policy := Policy{TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50}
 	idFailure := errors.New("id source failed")
-	serviceWithIDFailure, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{err: idFailure}, policy, allowAuthorizer{})
+	serviceWithIDFailure, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{err: idFailure}, policy, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New(id failure) error = %v", err)
 	}
@@ -93,7 +93,7 @@ func TestServicePreservesDependencyFailures(t *testing.T) {
 		t.Fatalf("Create(id failure) error = %v", err)
 	}
 
-	serviceWithInvalidID, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{id: "invalid"}, policy, allowAuthorizer{})
+	serviceWithInvalidID, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{id: "invalid"}, policy, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New(invalid ID) error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestServicePreservesDependencyFailures(t *testing.T) {
 		t.Fatalf("Create(invalid generated ID) error = %v", err)
 	}
 
-	serviceWithZeroClock, err := New(newMemoryRepository(), clock.Fixed(time.Time{}), fixedIDs{id: testID}, policy, allowAuthorizer{})
+	serviceWithZeroClock, err := New(newMemoryRepository(), clock.Fixed(time.Time{}), fixedIDs{id: testID}, policy, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New(zero clock) error = %v", err)
 	}
@@ -110,7 +110,7 @@ func TestServicePreservesDependencyFailures(t *testing.T) {
 	}
 
 	repositoryFailure := fault.Wrap(errors.New("database unavailable"), fault.CodeUnavailable, "test", true)
-	serviceWithRepositoryFailure, err := New(failingRepository{err: repositoryFailure}, clock.Fixed(now), fixedIDs{id: testID}, policy, allowAuthorizer{})
+	serviceWithRepositoryFailure, err := New(failingRepository{err: repositoryFailure}, clock.Fixed(now), fixedIDs{id: testID}, policy, allowAuthorizer{}, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New(repository failure) error = %v", err)
 	}
@@ -124,7 +124,7 @@ func TestServiceUsesPersistedOwnerAndHidesCrossActorExistence(t *testing.T) {
 	authorizer := ownerAuthorizer{}
 	service, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{id: testID}, Policy{
 		TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50,
-	}, authorizer)
+	}, authorizer, runOnceExecutor())
 	if err != nil {
 		t.Fatalf("New() error = %v", err)
 	}
@@ -146,9 +146,104 @@ func TestServiceUsesPersistedOwnerAndHidesCrossActorExistence(t *testing.T) {
 	}
 }
 
+// TestServiceCompleteWrapsSaveWithExecutorKey 验证 Complete 的关键写操作经执行 port 执行，
+// 幂等键为业务 ID 前缀，且只运行一次写操作。
+func TestServiceCompleteWrapsSaveWithExecutorKey(t *testing.T) {
+	now := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
+	repository := newMemoryRepository()
+	var gotKey string
+	var ran int
+	executor := func(ctx context.Context, key string, operation func(context.Context) (model.Todo, error)) (model.Todo, bool, error) {
+		gotKey = key
+		ran++
+		saved, err := operation(ctx)
+		return saved, false, err
+	}
+	service, err := New(repository, clock.Fixed(now), fixedIDs{id: testID}, Policy{
+		TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50,
+	}, allowAuthorizer{}, executor)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := service.Create(t.Context(), CreateCommand{Actor: testActor, Title: "todo"}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	completed, err := service.Complete(t.Context(), CompleteCommand{Actor: testActor, ID: testID})
+	if err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if gotKey != "todo:complete:"+testID {
+		t.Fatalf("executor key = %q, want todo:complete prefix", gotKey)
+	}
+	if ran != 1 {
+		t.Fatalf("executor ran %d times, want 1", ran)
+	}
+	if completed.Status != model.StatusCompleted {
+		t.Fatalf("completed status = %s", completed.Status)
+	}
+}
+
+// TestServiceCompleteDuplicateSkipsOperation 验证幂等键重复（Duplicate）时不重跑写操作，
+// 直接返回已完成对象。
+func TestServiceCompleteDuplicateSkipsOperation(t *testing.T) {
+	now := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
+	repository := newMemoryRepository()
+	var ran int
+	executor := func(_ context.Context, _ string, _ func(context.Context) (model.Todo, error)) (model.Todo, bool, error) {
+		ran++
+		return model.Todo{}, true, nil // 重复完成，operation 不应被调用
+	}
+	service, err := New(repository, clock.Fixed(now), fixedIDs{id: testID}, Policy{
+		TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50,
+	}, allowAuthorizer{}, executor)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := service.Create(t.Context(), CreateCommand{Actor: testActor, Title: "todo"}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	completed, err := service.Complete(t.Context(), CompleteCommand{Actor: testActor, ID: testID})
+	if err != nil {
+		t.Fatalf("Complete(duplicate) error = %v", err)
+	}
+	if ran != 1 || completed.Status != model.StatusCompleted {
+		t.Fatalf("ran=%d status=%s want ran=1 and completed without operation", ran, completed.Status)
+	}
+}
+
+// TestServiceCompletePropagatesExecutorError 验证执行治理失败保留原因链并归类为内部错误。
+func TestServiceCompletePropagatesExecutorError(t *testing.T) {
+	now := time.Date(2026, 8, 15, 1, 2, 3, 0, time.UTC)
+	execErr := errors.New("execution backend down")
+	executor := func(_ context.Context, _ string, _ func(context.Context) (model.Todo, error)) (model.Todo, bool, error) {
+		return model.Todo{}, false, execErr
+	}
+	service, err := New(newMemoryRepository(), clock.Fixed(now), fixedIDs{id: testID}, Policy{
+		TitleMaxRunes: 20, DefaultListLimit: 10, MaxListLimit: 50,
+	}, allowAuthorizer{}, executor)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	if _, err := service.Create(t.Context(), CreateCommand{Actor: testActor, Title: "todo"}); err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	_, err = service.Complete(t.Context(), CompleteCommand{Actor: testActor, ID: testID})
+	if err == nil || fault.CodeOf(err) != fault.CodeInternal || !errors.Is(err, execErr) {
+		t.Fatalf("Complete(executor error) = %v", err)
+	}
+}
+
 type fixedIDs struct {
 	id  string
 	err error
+}
+
+// runOnceExecutor 是测试用窄 port：直接执行一次写操作，不做幂等/重试治理（保持既有单测语义）。
+func runOnceExecutor() Executor {
+	return func(ctx context.Context, key string, operation func(context.Context) (model.Todo, error)) (saved model.Todo, duplicate bool, err error) {
+		saved, err = operation(ctx)
+		return saved, false, err
+	}
 }
 
 type allowAuthorizer struct{}

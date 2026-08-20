@@ -155,3 +155,46 @@ func TestExecutorValidation(t *testing.T) {
 		t.Fatalf("nil operation: %v", err)
 	}
 }
+
+// TestExecutorTimeoutDoesNotRecurse 回归验证 Timeout>0 时不会因超时包装闭包自递归而挂死。
+func TestExecutorTimeoutDoesNotRecurse(t *testing.T) {
+	store := NewMemoryStore()
+	executor := NewExecutor(store)
+	var calls int32
+	res, err := executor.Execute(context.Background(), Execution{
+		Key: "with-timeout", Timeout: time.Second,
+		Operation: func(context.Context) (any, error) {
+			atomic.AddInt32(&calls, 1)
+			return "ok", nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("execute with timeout: %v", err)
+	}
+	if res.Status != StatusCompleted {
+		t.Fatalf("status=%s want completed", res.Status)
+	}
+	if calls != 1 {
+		t.Fatalf("calls=%d want 1 (no recursive retry)", calls)
+	}
+}
+
+// TestExecutorTimeoutExpiry 验证单次操作超时后返回可区分错误，而非无限递归或无限重试。
+func TestExecutorTimeoutExpiry(t *testing.T) {
+	executor := NewExecutor(NewMemoryStore())
+	deadline := errors.New("deadline")
+	_, err := executor.Execute(context.Background(), Execution{
+		Key: "expired", Timeout: 20 * time.Millisecond,
+		Policy: resilience.RetryPolicy{MaxAttempts: 2, InitialWait: time.Millisecond, MaxWait: time.Millisecond},
+		Operation: func(ctx context.Context) (any, error) {
+			<-ctx.Done()
+			return nil, deadline
+		},
+	})
+	if err == nil {
+		t.Fatal("want timeout error")
+	}
+	if !errors.Is(err, ErrRetryExhausted) {
+		t.Fatalf("error=%v want ErrRetryExhausted", err)
+	}
+}

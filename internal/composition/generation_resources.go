@@ -11,6 +11,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
+	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
 	i18napp "github.com/rin721/go-scaffold-template/internal/kernel/app/i18n"
 	loggerapp "github.com/rin721/go-scaffold-template/internal/kernel/app/logger"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
@@ -274,6 +275,66 @@ func startImmutableLogger(
 	return &immutableComponent[pkglogger.Logger]{coordinator: coordinator, output: local.Logger()}, nil
 }
 
+// startImmutableExecution 在 Application Generation 隔离装配 execution 内核组件。
+// execution 组件需要注入内置 Logger（kernellogging.Target），因此不能走无依赖的 startImmutableComponent，
+// 这里显式绑定 builtin logger target 到 execution Definition（镜像 startImmutableLogger 的装配方式）。
+func startImmutableExecution(
+	ctx context.Context,
+	snapshot config.Snapshot,
+	baseline *kernellogging.Manager,
+) (*immutableComponent[executionapp.Access], error) {
+	if baseline == nil {
+		return nil, fmt.Errorf("execution component logging manager is nil")
+	}
+	local, err := kernellogging.New(baseline.Logger())
+	if err != nil {
+		return nil, err
+	}
+	isolated, err := isolateComponentSnapshot(ctx, snapshot, executionConfigPath)
+	if err != nil {
+		return nil, fmt.Errorf("isolate execution component configuration: %w", err)
+	}
+	loader := config.New(config.MapSource("application-generation-execution", isolated.Data()))
+	runtime, err := kernel.New(loader, kernel.Options{Logging: local})
+	if err != nil {
+		return nil, err
+	}
+	plan := app.NewPlan()
+	builtin, err := app.Value[kernellogging.Target](kernel.BuiltinLoggerID, local)
+	if err != nil {
+		return nil, err
+	}
+	builtinAdded, err := app.Add(plan, builtin)
+	if err != nil {
+		return nil, err
+	}
+	definition, err := executionapp.Definition(app.InputOf(builtinAdded.Binding))
+	if err != nil {
+		return nil, err
+	}
+	added, err := app.Add(plan, definition)
+	if err != nil {
+		return nil, err
+	}
+	frozen, err := plan.Freeze()
+	if err != nil {
+		return nil, err
+	}
+	if err := runtime.Install(frozen); err != nil {
+		return nil, err
+	}
+	coordinator, err := kernel.NewCoordinator(runtime)
+	if err != nil {
+		return nil, err
+	}
+	if err := coordinator.Start(ctx); err != nil {
+		return nil, err
+	}
+	return &immutableComponent[executionapp.Access]{coordinator: coordinator, output: added.Output}, nil
+}
+
+const executionConfigPath = "execution"
+
 // isolateComponentSnapshot 只保留目标 binding 所属的顶层配置对象。
 // 独立 immutable component 仍执行自己的严格未知字段校验，但不会把同一
 // Application Generation 中由其他 owner 管理的配置节误判为未知配置。
@@ -307,6 +368,7 @@ func releaseGenerationResources(
 	cache *resourceHandle[cacheapp.Access],
 	database *resourceHandle[databaseapp.Access],
 	logging *resourceHandle[pkglogger.Logger],
+	execution *resourceHandle[executionapp.Access],
 ) error {
 	var joined error
 	if storage != nil {
@@ -323,6 +385,9 @@ func releaseGenerationResources(
 	}
 	if logging != nil {
 		joined = errors.Join(joined, logging.release(ctx))
+	}
+	if execution != nil {
+		joined = errors.Join(joined, execution.release(ctx))
 	}
 	return joined
 }

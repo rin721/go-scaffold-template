@@ -61,15 +61,18 @@ func (e *executor) run(ctx context.Context, exec Execution) (any, error) {
 		return Result{Status: StatusRunning}, ErrAlreadyRunning
 	}
 	started := e.now()
-	call := func(c context.Context) error {
+	// operation 是原始业务执行体；call 是最终传给重试引擎的操作（可能包一层超时）。
+	operation := func(c context.Context) error {
 		_, err := exec.Operation(c)
 		return err
 	}
+	call := operation
 
-	// 单次操作超时（0 = 不额外超时）。
+	// 单次操作超时（0 = 不额外超时）。超时包装的闭包必须引用原始的 operation，
+	// 而不是被重新赋值的 call，否则会无限自递归（复用 Timer 的 WithTimeout 层层再包）。
 	if exec.Timeout > 0 {
 		call = func(c context.Context) error {
-			return resilience.WithTimeout(c, resilience.TimeoutPolicy{Timeout: exec.Timeout}, call)
+			return resilience.WithTimeout(c, resilience.TimeoutPolicy{Timeout: exec.Timeout}, operation)
 		}
 	}
 	// 重试仅对可重试错误使用 pkg/resilience.Do。
