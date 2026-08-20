@@ -122,6 +122,39 @@ func (a *telemetryAccess) Diagnostics(ctx context.Context) (pkgobservability.Dia
 	return result, err
 }
 
+func (a *telemetryAccess) Observe(ctx context.Context, work pkgobservability.Work, run pkgobservability.WorkFunc) error {
+	if ctx == nil {
+		return fmt.Errorf("telemetry work context is nil")
+	}
+	if strings.TrimSpace(work.Name) == "" || strings.TrimSpace(work.Kind) == "" {
+		return fmt.Errorf("telemetry work identity is incomplete")
+	}
+	if run == nil {
+		return fmt.Errorf("telemetry work function is nil")
+	}
+	return a.delegate.Use(ctx, func(current *telemetryResource) error {
+		return current.observe(ctx, work, run)
+	})
+}
+
+func (r *telemetryResource) observe(ctx context.Context, work pkgobservability.Work, run pkgobservability.WorkFunc) error {
+	ctx, span := r.tracer.Start(ctx, work.Name, trace.WithSpanKind(trace.SpanKindInternal), trace.WithAttributes(
+		attribute.String("work.kind", work.Kind),
+	))
+	defer span.End()
+	if traceID := span.SpanContext().TraceID(); traceID.IsValid() {
+		ctx = pkgobservability.WithTraceID(ctx, traceID.String())
+	}
+	err := run(ctx)
+	if err != nil {
+		span.SetStatus(codes.Error, "work_failed")
+		span.SetAttributes(attribute.String("error.type", errorType(err)))
+	} else {
+		span.SetStatus(codes.Ok, "")
+	}
+	return err
+}
+
 func (r *telemetryResource) serveHTTP(writer http.ResponseWriter, request *http.Request, next http.Handler, operations []pkgobservability.Operation) {
 	operation := resolveOperation(request.Method, request.URL.Path, operations)
 	traceContext := propagation.TraceContext{}
@@ -249,7 +282,9 @@ func (p *boundedProcessor) run() {
 			}
 		case response := <-p.flush:
 			batch = p.drain(batch)
-			response <- p.export(batch)
+			exportErr := p.export(batch)
+			p.captureExportError(exportErr)
+			response <- exportErr
 			batch = batch[:0]
 		case <-ticker.C:
 			p.captureExportError(p.export(batch))

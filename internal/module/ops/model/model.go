@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/rin721/go-scaffold-template/pkg/observability"
+	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 )
 
 // ProbeKind 是管理端点支持的有限探针集合。
@@ -52,6 +53,8 @@ type RuntimeSnapshot struct {
 	LastFailureOwner  string                    `json:"lastFailureOwner,omitempty"`
 	LastFailureType   string                    `json:"lastFailureType,omitempty"`
 	Telemetry         observability.Diagnostics `json:"telemetry"`
+	Scheduler         pkgschedule.Diagnostics   `json:"scheduler"`
+	SchedulerHealth   string                    `json:"schedulerHealth"`
 	Since             time.Time                 `json:"since"`
 }
 

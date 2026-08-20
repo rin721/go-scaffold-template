@@ -1,0 +1,38 @@
+schema_version: 1
+id: R001
+title: "当前定时调度与运行治理能力清单"
+question: "当前项目已有哪些可复用的调度相邻能力，真正缺少什么，现有契约在哪里不能直接表达定时任务？"
+research_type: current-project
+topics: ["scheduler", "module-binding", "application-generation", "execution", "cache", "health", "tracing"]
+keywords: ["cron", "fixedDelay", "Contribution", "Supervisor", "GenerationCoordinator", "OperationExecutor", "Redis", "Telemetry"]
+applicable_scenarios: ["定时调度底层能力", "业务模块定时任务 Binding", "多实例单实例执行", "配置重载与调度排空"]
+non_applicable_scenarios: ["业务任务逻辑设计", "消息队列消费", "外部工作流平台", "精确一次业务副作用"]
+status: active
+summary: "项目已有生命周期、代际、执行治理、Redis Cache、Tracing 和 Ops 诊断，但没有调度契约、任务 Binding 或分布式 lease；调度必须接入现有 Application Generation admission，不能直接作为候选 Participant 启动。"
+evidence:
+  types: ["source-code", "tests", "project-docs", "git-snapshot"]
+  primary_sources:
+    - title: "应用模块 Contribution 契约"
+      locator: "internal/module/contracts.go"
+      snapshot: "a675f33 verified 2026-08-20"
+    - title: "Application Generation 与 Service Supervisor"
+      locator: "internal/composition/generation.go; internal/composition/service.go; internal/kernel/generation.go"
+      snapshot: "a675f33 verified 2026-08-20"
+    - title: "Execution 与 Cache 当前实现"
+      locator: "pkg/execution; internal/kernel/app/execution; pkg/cache; internal/kernel/app/cache"
+      snapshot: "a675f33 verified 2026-08-20"
+    - title: "Observability 与 Ops 当前出口"
+      locator: "pkg/observability; internal/composition/ops.go; internal/module/ops/model/model.go"
+      snapshot: "a675f33 verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2027-02-20"
+  refresh_triggers: ["Application Generation/Contribution/Execution/Cache 契约变化", "新增调度或分布式锁实现", "调度改为外部控制面"]
+relations:
+  extends: ["035:R001", "035:R002", "036:R001", "023:R001", "023:R002"]
+  related: []
+  supersedes: []
+  superseded_by: []
+report: report.md

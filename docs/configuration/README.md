@@ -16,6 +16,7 @@ FileSource -> EnvSource
 $env:APP_DATABASE__DSN = '.data/app.db'
 $env:APP_LOGGER__LEVEL = 'debug'
 $env:APP_HTTP__ADDR = '127.0.0.1:8081'
+$env:APP_SCHEDULER__ENABLED = 'true'
 ```
 
 配置解析是 strict 的：未知配置节、未知字段、重复逻辑路径、大小写别名和错误类型都会在创建资源或绑定 listener 前失败。
@@ -48,6 +49,8 @@ go run ./cmd/app config init --output .data/generated-config.yaml
 | `cache` | Kernel Cache App | 缓存 backend 与 Redis 参数 |
 | `i18n` | Kernel I18n App | 默认语言、消息文件（统一维护于 `./locales`）和缺失翻译策略 |
 | `storage` | Kernel Storage App | 本地、S3、MinIO 对象存储配置 |
+| `execution` | Kernel Execution App | 幂等、重试、执行记录 backend 与命名策略 |
+| `scheduler` | Application Schedule Component | cron/fixedDelay、全局并发、关闭预算、执行权租约与任务级运维覆盖 |
 | `todo` | Todo 模块 | Todo 业务约束 |
 | `auth` | Auth 模块 | development-anonymous 或 JWT 鉴权配置 |
 | `http` | Kernel HTTP composition | 业务 HTTP listener 与请求治理 |
@@ -60,10 +63,16 @@ Bootstrap CLI、migration one-shot、Todo CLI 和长期 Service 都必须识别�
 
 `observability.tracing.enabled` 默认为 `false`。启用后必须提供合法 endpoint、采样和批处理参数。生产环境优先使用安全传输；HTTP endpoint 只适合明确受控的本地或测试环境，并需要显式配置 `insecure: true`。
 
+## 定时调度
+
+`scheduler.enabled` 默认为 `false`。业务模块通过 `module.Contribution.Schedules` 声明真实任务；配置只能按已声明 Task ID 覆盖启用状态与协调不可用策略，未知 Task ID 会让候选 Generation 在 Commit 前失败。
+
+严格分布式任务需要 `cache.driver: redis`。Redis 暂时不可用时不会默认降级为本地执行，而是按任务声明进入 `skip`、`pause` 或 `fail`；best-effort 任务只有显式声明 `local` 才允许弱化。配置字段、声明示例和保证边界见 [定时调度能力](../development/scheduled-task-capability.md)。
+
 ## 密钥与环境差异
 
 密码、Token、Access Key、完整生产 DSN 和私有证书不要写入配置文件或提交历史。使用环境变量注入敏感值，并让部署系统负责密钥来源。配置错误和日志也不得输出完整 DSN 或凭据。
 
 ## Reload 行为
 
-长期 Service 监听配置文件变化，并把文件与进程启动时继承的环境变量重新合并成候选配置。被环境变量覆盖的字段即使文件发生变化，也不会改变最终有效值。reload 的底层机制见 [Kernel 运行与配置](../../internal/kernel/README.md)。
+长期 Service 监听配置文件变化，并把文件与进程启动时继承的环境变量重新合并成候选配置。被环境变量覆盖的字段即使文件发生变化，也不会改变最终有效值。scheduler 与任务集合随完整 Application Generation 重建，Prepare 不触发任务，Commit 才切换准入。reload 的底层机制见 [Kernel 运行与配置](../../internal/kernel/README.md)。

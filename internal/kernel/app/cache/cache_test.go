@@ -12,6 +12,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/app"
 	kernelconfig "github.com/rin721/go-scaffold-template/internal/kernel/config"
 	pkgcache "github.com/rin721/go-scaffold-template/pkg/cache"
+	"github.com/rin721/go-scaffold-template/pkg/coordination"
 )
 
 func TestDefinitionContributesRestartRequiredCacheAccess(t *testing.T) {
@@ -105,6 +106,116 @@ func TestRedisResourceSupportsTypedClient(t *testing.T) {
 	}
 	if server.CurrentConnectionCount() != 0 {
 		t.Fatalf("Redis connections after stop = %d, want 0", server.CurrentConnectionCount())
+	}
+}
+
+func TestRedisCoordinationEnforcesTokenOwnershipAndTTL(t *testing.T) {
+	server := miniredis.RunT(t)
+	cfg := defaultConfig()
+	cfg.Driver = DriverRedis
+	cfg.Redis.Address = server.Addr()
+	current, err := build(t.Context(), cfg, struct{}{})
+	if err != nil {
+		t.Fatalf("build() error = %v", err)
+	}
+	t.Cleanup(func() { _ = stop(context.Background(), current) })
+	backend, err := newAccess(fakeLease{current: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := Coordination(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Coordination(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	options := coordination.LeaseOptions{TTL: time.Second}
+	lease, err := first.Acquire(t.Context(), "scheduler:test:billing.reconcile", options)
+	if err != nil {
+		t.Fatalf("first Acquire() error = %v", err)
+	}
+	if _, err := second.Acquire(t.Context(), "scheduler:test:billing.reconcile", options); !errors.Is(err, coordination.ErrNotAcquired) {
+		t.Fatalf("second Acquire() error = %v", err)
+	}
+	if err := lease.Renew(t.Context(), options); err != nil {
+		t.Fatalf("Renew() error = %v", err)
+	}
+	server.Set("scheduler:test:billing.reconcile", "different-owner-token")
+	if err := lease.Renew(t.Context(), options); !errors.Is(err, coordination.ErrLeaseLost) {
+		t.Fatalf("Renew(after token change) error = %v", err)
+	}
+	if err := lease.Release(t.Context()); !errors.Is(err, coordination.ErrLeaseLost) {
+		t.Fatalf("Release(after token change) error = %v", err)
+	}
+	server.Del("scheduler:test:billing.reconcile")
+	lease, err = first.Acquire(t.Context(), "scheduler:test:billing.reconcile", options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Release(t.Context()); err != nil {
+		t.Fatalf("Release() error = %v", err)
+	}
+	if _, err := second.Acquire(t.Context(), "scheduler:test:billing.reconcile", options); err != nil {
+		t.Fatalf("Acquire(after release) error = %v", err)
+	}
+}
+
+func TestDisabledCoordinationIsExplicitlyUnavailable(t *testing.T) {
+	backend, err := newAccess(fakeLease{current: &resource{driver: DriverDisabled, coordination: coordination.Unavailable()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := Coordination(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = manager.Acquire(t.Context(), "scheduler:test:task", coordination.LeaseOptions{TTL: time.Second})
+	if !errors.Is(err, coordination.ErrUnavailable) {
+		t.Fatalf("Acquire() error = %v", err)
+	}
+}
+
+func TestRedisCoordinationClassifiesOutageAndRecoversWithoutRebuild(t *testing.T) {
+	server := miniredis.RunT(t)
+	cfg := defaultConfig()
+	cfg.Driver = DriverRedis
+	cfg.Redis.Address = server.Addr()
+	cfg.Redis.DialTimeout = 25 * time.Millisecond
+	cfg.Redis.ReadTimeout = 25 * time.Millisecond
+	cfg.Redis.WriteTimeout = 25 * time.Millisecond
+	current, err := build(t.Context(), cfg, struct{}{})
+	if err != nil {
+		t.Fatalf("build() error = %v", err)
+	}
+	t.Cleanup(func() { _ = stop(context.Background(), current) })
+	backend, err := newAccess(fakeLease{current: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager, err := Coordination(backend)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.Close()
+	outageCtx, cancelOutage := context.WithTimeout(t.Context(), 2*time.Second)
+	_, err = manager.Acquire(outageCtx, "scheduler:test:recover", coordination.LeaseOptions{TTL: time.Second})
+	cancelOutage()
+	if !errors.Is(err, coordination.ErrUnavailable) {
+		t.Fatalf("Acquire(during outage) error = %v, want ErrUnavailable", err)
+	}
+	if err := server.Restart(); err != nil {
+		t.Fatalf("Restart() error = %v", err)
+	}
+	recoveryCtx, cancelRecovery := context.WithTimeout(t.Context(), time.Second)
+	defer cancelRecovery()
+	lease, err := manager.Acquire(recoveryCtx, "scheduler:test:recover", coordination.LeaseOptions{TTL: time.Second})
+	if err != nil {
+		t.Fatalf("Acquire(after recovery) error = %v", err)
+	}
+	if err := lease.Release(recoveryCtx); err != nil {
+		t.Fatalf("Release(after recovery) error = %v", err)
 	}
 }
 

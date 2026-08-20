@@ -88,7 +88,7 @@ func (s *MemoryStore) IsCompleted(ctx context.Context, key Key) (bool, error) {
 	return s.now().Before(st.until), nil
 }
 
-// Complete 记录成功完成：写入成功记录并把占用标记为 completed。保留窗口取 rec.Context 中的保留时长。
+// Complete 记录成功完成：写入成功记录并把占用标记为 completed，保留窗口沿用 Claim 的 TTL。
 func (s *MemoryStore) Complete(ctx context.Context, key Key, rec Record) error {
 	if err := contextErr(ctx); err != nil {
 		return err
@@ -98,7 +98,7 @@ func (s *MemoryStore) Complete(ctx context.Context, key Key, rec Record) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	// 保留窗口默认沿用原占用 TTL（若 rec.Duration==0 则用短保留，避免占用永久堆积）。
+	// 保留窗口沿用原占用 TTL；调用方声明 0 时保持不过期。
 	old := s.claims[key]
 	until := old.until
 	if until.IsZero() {

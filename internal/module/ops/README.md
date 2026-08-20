@@ -10,10 +10,10 @@ Prometheus、OTel、OTLP exporter 和通用 HTTP observation 同时覆盖 Auth/T
 
 - `/startupz`：首次 generation commit 后通过；
 - `/livez`：只表达进程仍能治理生命周期，不因普通下游故障触发重启；
-- `/readyz`：汇总 generation admission、Auth verifier 与 Database ping；
+- `/readyz`：汇总 generation admission、Auth verifier、Database ping 与当前 scheduler 任务策略状态；严格任务 `pause` / `fail` 会阻止 ready，`skip` / 显式 best-effort `local` 以 degraded 诊断呈现；
 - `/metrics`：按 `management.metricsAccess` 关闭、公开或保护；
 - `/build`：只返回 version、commit、build time、Go version 与 dirty state；
 - `/diagnostics`：始终需要 `management:read`，只返回 typed、脱敏状态；
 - `/debug/pprof/*`：当前没有注册，默认和生产 Router 中均不存在。
 
-HTTP observation 只使用显式 operation inventory，不记录 raw path、subject、Todo ID、SQL、query 或 error text。具体 Prometheus Registry、OTel Provider/Exporter、有界队列和请求租约位于 `internal/kernel/app/observability`；Metrics identity 跨 Application Generation 稳定，Telemetry 在旧代请求排空后按预算 flush。
+HTTP observation 只使用显式 operation inventory，不记录 raw path、subject、Todo ID、SQL、query 或 error text。具体 Prometheus Registry、OTel Provider/Exporter、有界队列和请求租约位于 `internal/kernel/app/observability`；Metrics identity 跨 Application Generation 稳定，Telemetry 在旧代请求排空后按预算 flush。scheduler 不新建管理端点或 Health Registry，只把 typed、低敏快照合并到现有 diagnostics/readiness。

@@ -74,6 +74,9 @@ func TestExecutorRetryExhausted(t *testing.T) {
 	if !errors.Is(err, ErrRetryExhausted) {
 		t.Fatalf("want ErrRetryExhausted, got %v", err)
 	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("retry error lost original cause: %v", err)
+	}
 	if result.Status != StatusFailed {
 		t.Fatalf("status=%s want failed", result.Status)
 	}
@@ -153,6 +156,23 @@ func TestExecutorValidation(t *testing.T) {
 	}
 	if _, err := executor.Execute(context.Background(), Execution{Key: "k"}); !errors.Is(err, ErrNilOperation) {
 		t.Fatalf("nil operation: %v", err)
+	}
+	if _, err := executor.Execute(context.Background(), Execution{
+		Key: "k", ClaimTTL: -time.Second, Operation: func(context.Context) (any, error) { return nil, nil },
+	}); err == nil {
+		t.Fatal("negative claim ttl error = nil")
+	}
+}
+
+func TestExecutionClaimTTLIsExplicitAndBackendErrorsKeepCause(t *testing.T) {
+	exec := Execution{ClaimTTL: 15 * time.Minute}
+	if got := claimTTL(exec); got != exec.ClaimTTL {
+		t.Fatalf("claimTTL() = %s, want %s", got, exec.ClaimTTL)
+	}
+	cause := errors.New("backend cause")
+	err := WrapBackend(cause)
+	if !errors.Is(err, ErrBackend) || !errors.Is(err, cause) {
+		t.Fatalf("WrapBackend() = %v", err)
 	}
 }
 

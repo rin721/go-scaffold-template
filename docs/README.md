@@ -13,6 +13,7 @@
 ## 开发与架构主题
 
 - [应用模块开发](development/application-module-development.md)
+- [定时调度能力](development/scheduled-task-capability.md)
 - [底层能力库](../pkg/README.md)
 - [Kernel 运行与配置](../internal/kernel/README.md)
 - [Kernel App 组件](../internal/kernel/app/README.md)

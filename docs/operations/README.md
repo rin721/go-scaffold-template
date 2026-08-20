@@ -7,5 +7,6 @@
 - [本地候选与正式发布](release.md)
 - [复制为独立项目](copying.md)
 - [安全响应](security.md)
+- [定时任务运维](scheduled-tasks.md)
 
 所有命令都从仓库根目录运行。Linux、容器、PostgreSQL/MySQL 和 keyless release 的最终证据来自 CI；没有对应日志时不得用 cross-build 或未运行的 workflow 代替。

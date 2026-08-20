@@ -85,6 +85,20 @@ func (s generationOpsSource) Snapshot(ctx context.Context) (opsmodel.RuntimeSnap
 		return opsmodel.RuntimeSnapshot{}, err
 	}
 	result.AuthReady = s.generation.authModule.Service.Ready()
+	if s.generation.scheduler == nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("scheduler diagnostics are unavailable")
+	}
+	scheduler, schedulerErr := s.generation.scheduler.output.Diagnostics(ctx)
+	if schedulerErr != nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read scheduler diagnostics: %w", schedulerErr)
+	}
+	schedulerHealth, schedulerHealthErr := s.generation.scheduler.output.Health(ctx)
+	if schedulerHealthErr != nil {
+		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read scheduler health: %w", schedulerHealthErr)
+	}
+	result.Scheduler = scheduler
+	result.SchedulerHealth = string(schedulerHealth.Status)
+	result.Ready = result.Ready && scheduler.Ready
 	telemetry, diagnosticsErr := s.generation.telemetry.output.Diagnostics(ctx)
 	if diagnosticsErr != nil {
 		return opsmodel.RuntimeSnapshot{}, fmt.Errorf("read telemetry diagnostics: %w", diagnosticsErr)

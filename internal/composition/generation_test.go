@@ -60,7 +60,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	})
 	initial := coordinator.Diagnostics()
 	if initial.CurrentGeneration != 1 || initial.ConfiguredAddress != "127.0.0.1:0" || initial.BoundAddress == "" ||
-		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "execution", "todo", "auth", "ops", "http"}) {
+		initial.RestartPolicy != "" || fmt.Sprint(initial.ResourceBuilt) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "observability.telemetry", "execution", "todo", "scheduler", "auth", "ops", "http"}) {
 		t.Fatalf("initial diagnostics = %#v", initial)
 	}
 	if status := createTodo(t, initial.BoundAddress, strings.Repeat("x", 100)); status != http.StatusCreated {
@@ -92,7 +92,7 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 		t.Fatalf("reloaded diagnostics = %#v, initial = %#v", after, initial)
 	}
 	if fmt.Sprint(after.ResourceReused) != fmt.Sprint([]string{"logger", "database", "cache", "i18n", "storage", "observability.metrics", "execution"}) ||
-		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "todo", "auth", "ops", "http"}) {
+		fmt.Sprint(after.ResourceBuilt) != fmt.Sprint([]string{"observability.telemetry", "todo", "scheduler", "auth", "ops", "http"}) {
 		t.Fatalf("reloaded resource diagnostics = %#v", after)
 	}
 	if status := createTodo(t, after.BoundAddress, strings.Repeat("x", 100)); status != http.StatusBadRequest {
@@ -104,6 +104,35 @@ func TestApplicationGenerationReloadsTodoAndHTTPWithoutRestart(t *testing.T) {
 	assertMetricCount(t, factory, "listTodos", 2)
 	if status := listTodosWithHeader(t, after.BoundAddress, largeHeader); status != http.StatusOK {
 		t.Fatalf("reloaded large-header status = %d, want 200", status)
+	}
+}
+
+func TestScheduleFailureUsesExistingGenerationFailureChannel(t *testing.T) {
+	manager, err := kernellogging.New(logger.Noop())
+	if err != nil {
+		t.Fatalf("logging.New() error = %v", err)
+	}
+	factory, err := newApplicationGenerationFactory(manager, "test")
+	if err != nil {
+		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
+	}
+	cause := errors.New("coordination fatal")
+	generation := &applicationGeneration{id: 7, factory: factory}
+	generation.reportScheduleFailure(cause)
+	select {
+	case failure := <-factory.Failures():
+		if !errors.Is(failure, cause) {
+			t.Fatalf("failure=%v should preserve scheduler cause", failure)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("scheduler failure did not enter the existing generation monitor channel")
+	}
+	generation.stopping.Store(true)
+	generation.reportScheduleFailure(cause)
+	select {
+	case failure := <-factory.Failures():
+		t.Fatalf("stopping generation reported scheduler failure: %v", failure)
+	default:
 	}
 }
 
@@ -186,7 +215,7 @@ func TestApplicationGenerationPinsOldDatabaseUntilRetire(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
 	}
-	factory, err := newApplicationGenerationFactory(manager)
+	factory, err := newApplicationGenerationFactory(manager, "test")
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
@@ -264,7 +293,7 @@ func TestApplicationGenerationReusesUnchangedTypedResources(t *testing.T) {
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
 	}
-	factory, err := newApplicationGenerationFactory(manager)
+	factory, err := newApplicationGenerationFactory(manager, "test")
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
@@ -330,6 +359,7 @@ func TestEachConfigurationSectionCreatesOneCompleteGeneration(t *testing.T) {
 		{section: "storage", update: func(_ *testing.T, directory, payload string) string {
 			return strings.Replace(payload, filepath.ToSlash(filepath.Join(directory, "storage")), filepath.ToSlash(filepath.Join(directory, "storage-next")), 1)
 		}},
+		{section: "scheduler", update: replaceConfig("maxConcurrency: 32", "maxConcurrency: 31")},
 		{section: "http", update: replaceConfig("maxHeaderBytes: 1048576", "maxHeaderBytes: 2097152")},
 		{section: "todo", update: replaceConfig("titleMaxRunes: 120", "titleMaxRunes: 80")},
 	}
@@ -615,7 +645,7 @@ func newGenerationTestCoordinator(t *testing.T, configPath string) (*kernel.Gene
 	if err != nil {
 		t.Fatalf("logging.New() error = %v", err)
 	}
-	factory, err := newApplicationGenerationFactory(manager)
+	factory, err := newApplicationGenerationFactory(manager, "test")
 	if err != nil {
 		t.Fatalf("newApplicationGenerationFactory() error = %v", err)
 	}
@@ -677,6 +707,10 @@ storage:
   driver: local
   local:
     basePath: %q
+scheduler:
+  enabled: false
+  timezone: UTC
+  maxConcurrency: 32
 todo:
   titleMaxRunes: %d
   defaultListLimit: 20

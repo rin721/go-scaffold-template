@@ -4,7 +4,9 @@ package module
 import (
 	"fmt"
 	"reflect"
+	"sort"
 
+	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
@@ -15,12 +17,14 @@ type ID string
 type Contribution struct {
 	ID           ID
 	Participants []supervisor.Participant
+	Schedules    []pkgschedule.Binding
 }
 
 // ValidateContributions 在任何 listener 或 participant 启动前校验模块贡献。
 func ValidateContributions(contributions ...Contribution) error {
 	modules := make(map[ID]struct{}, len(contributions))
 	owners := make(map[string]ID)
+	scheduleOwners := make(map[pkgschedule.TaskID]ID)
 	for index, contribution := range contributions {
 		if contribution.ID == "" {
 			return fmt.Errorf("module contribution %d module id is required", index)
@@ -42,8 +46,36 @@ func ValidateContributions(contributions ...Contribution) error {
 			}
 			owners[name] = contribution.ID
 		}
+		for scheduleIndex, binding := range contribution.Schedules {
+			if err := binding.Validate(); err != nil {
+				return fmt.Errorf("module %s schedule %d: %w", contribution.ID, scheduleIndex, err)
+			}
+			if owner, exists := scheduleOwners[binding.ID()]; exists {
+				return fmt.Errorf("module schedule %q is shared by modules %s and %s", binding.ID(), owner, contribution.ID)
+			}
+			scheduleOwners[binding.ID()] = contribution.ID
+		}
 	}
 	return nil
+}
+
+// ScheduleBindings 校验并按 Task ID 返回全部模块的不可变任务声明副本。
+func ScheduleBindings(contributions ...Contribution) ([]pkgschedule.Binding, error) {
+	if err := ValidateContributions(contributions...); err != nil {
+		return nil, err
+	}
+	total := 0
+	for _, contribution := range contributions {
+		total += len(contribution.Schedules)
+	}
+	bindings := make([]pkgschedule.Binding, 0, total)
+	for _, contribution := range contributions {
+		bindings = append(bindings, contribution.Schedules...)
+	}
+	sort.Slice(bindings, func(left, right int) bool {
+		return bindings[left].ID() < bindings[right].ID()
+	})
+	return bindings, nil
 }
 
 func nilInterface(value any) bool {

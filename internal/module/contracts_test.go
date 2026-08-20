@@ -3,7 +3,9 @@ package module
 import (
 	"context"
 	"testing"
+	"time"
 
+	pkgschedule "github.com/rin721/go-scaffold-template/pkg/schedule"
 	"github.com/rin721/go-scaffold-template/pkg/supervisor"
 )
 
@@ -17,6 +19,7 @@ func TestValidateContributionsAcceptsParticipant(t *testing.T) {
 }
 
 func TestValidateContributionsRejectsOwnershipConflicts(t *testing.T) {
+	scheduled := testSchedule(t, "todo.cleanup")
 	tests := []struct {
 		name          string
 		contributions []Contribution
@@ -27,6 +30,13 @@ func TestValidateContributionsRejectsOwnershipConflicts(t *testing.T) {
 			{ID: "todo", Participants: []supervisor.Participant{testParticipant("schema")}},
 			{ID: "other", Participants: []supervisor.Participant{testParticipant("schema")}},
 		}},
+		{name: "duplicate schedule", contributions: []Contribution{
+			{ID: "todo", Schedules: []pkgschedule.Binding{scheduled}},
+			{ID: "other", Schedules: []pkgschedule.Binding{scheduled}},
+		}},
+		{name: "invalid schedule", contributions: []Contribution{
+			{ID: "todo", Schedules: []pkgschedule.Binding{{}}},
+		}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -35,6 +45,34 @@ func TestValidateContributionsRejectsOwnershipConflicts(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestScheduleBindingsReturnsStableOrder(t *testing.T) {
+	bindings, err := ScheduleBindings(
+		Contribution{ID: "billing", Schedules: []pkgschedule.Binding{testSchedule(t, "billing.reconcile")}},
+		Contribution{ID: "todo", Schedules: []pkgschedule.Binding{testSchedule(t, "todo.cleanup")}},
+	)
+	if err != nil {
+		t.Fatalf("ScheduleBindings() error = %v", err)
+	}
+	if len(bindings) != 2 || bindings[0].ID() != "billing.reconcile" || bindings[1].ID() != "todo.cleanup" {
+		t.Fatalf("ScheduleBindings() = %#v", bindings)
+	}
+}
+
+func testSchedule(t *testing.T, id pkgschedule.TaskID) pkgschedule.Binding {
+	t.Helper()
+	trigger, err := pkgschedule.FixedDelay(time.Minute, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := pkgschedule.Bind(pkgschedule.Spec{
+		ID: id, Trigger: trigger, Concurrency: pkgschedule.SerialSkip(), Coordination: pkgschedule.Local(),
+	}, func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	return binding
 }
 
 type testParticipant string

@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/rin721/go-scaffold-template/pkg/concurrency"
@@ -101,17 +102,8 @@ func (e *executor) run(ctx context.Context, exec Execution) (any, error) {
 	return Result{Status: StatusFailed}, WrapRetryExhausted(runErr)
 }
 
-// claimTTL 返回占用 TTL；未配置时使用 0（不设过期，完成时保留）。
-func claimTTL(exec Execution) time.Duration {
-	if t, ok := execTTL(exec); ok {
-		return t
-	}
-	return 0
-}
-
-// execTTL 从 Execution 提取可配置占用 TTL（Design 预留字段；当前键无内置 TTL 配置时返回 false）。
-// 这是 035 计划中的占位约定：TTL 语义由 kernel/app/execution 的配置注入；此处保持 0 即"不设过期"。
-func execTTL(Execution) (time.Duration, bool) { return 0, false }
+// claimTTL 返回调用方显式声明的占用与完成去重窗口。
+func claimTTL(exec Execution) time.Duration { return exec.ClaimTTL }
 
 func validateExecution(exec Execution) error {
 	if exec.Key == "" {
@@ -119,6 +111,9 @@ func validateExecution(exec Execution) error {
 	}
 	if exec.Operation == nil {
 		return ErrNilOperation
+	}
+	if exec.ClaimTTL < 0 {
+		return fmt.Errorf("execution: claim ttl must be non-negative")
 	}
 	return nil
 }

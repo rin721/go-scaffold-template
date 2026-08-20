@@ -129,3 +129,30 @@ func TestBoundedProcessorDropsWithoutBlockingWhenQueueIsFull(t *testing.T) {
 		t.Fatalf("Shutdown() error = %v", err)
 	}
 }
+
+func TestObserveKeepsLeaseAndProvidesProjectTraceIdentity(t *testing.T) {
+	metricsState, err := buildMetrics(t.Context(), struct{}{}, struct{}{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := &metricsAccess{delegate: fixedLease[*metricsResource]{current: metricsState}}
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSampler(sdktrace.AlwaysSample()))
+	resource := &telemetryResource{provider: provider, tracer: provider.Tracer("test"), metrics: metrics}
+	resource.lastError.Store("")
+	lease := &checkingLease{current: resource}
+	telemetry := &telemetryAccess{delegate: lease}
+	var traceID string
+	err = telemetry.Observe(t.Context(), pkgobservability.Work{Name: "schedule.task", Kind: "scheduled-task"}, func(ctx context.Context) error {
+		if !lease.active {
+			t.Error("work escaped telemetry lease")
+		}
+		traceID = pkgobservability.TraceIDFrom(ctx)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Observe() error = %v", err)
+	}
+	if traceID == "" {
+		t.Fatal("Observe() did not provide trace identity")
+	}
+}

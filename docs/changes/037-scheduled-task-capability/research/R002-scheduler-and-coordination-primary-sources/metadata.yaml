@@ -1,0 +1,44 @@
+schema_version: 1
+id: R002
+title: "调度引擎与 Redis 协调主源评估"
+question: "cron/fixedDelay 应复用哪个成熟 Go 调度引擎，Redis 分布式执行权可以承诺什么，哪些上游能力不能直接当作本项目保证？"
+research_type: external-primary-sources
+topics: ["gocron", "cron", "fixedDelay", "distributed-lock", "redis", "lease"]
+keywords: ["WithIntervalFromCompletion", "CronJob", "Locker", "SET NX PX", "token", "renew", "fencing"]
+applicable_scenarios: ["Go 进程内定时触发", "Redis 可续租执行权", "多实例任务领导权", "有界关闭"]
+non_applicable_scenarios: ["多 Redis Redlock 部署", "共识系统 leader election", "业务副作用 exactly-once", "外部 SaaS scheduler"]
+status: active
+summary: "gocron/v2 可作为被封装的触发引擎；其 Locker 不同步多实例运行时间，不能独自满足严格周期唯一性。Redis lease 必须使用 token、原子续期/释放和失权取消，并明确 fencing/时钟/故障域限制。"
+evidence:
+  types: ["official-source", "official-docs", "release-history", "security-policy"]
+  primary_sources:
+    - title: "go-co-op/gocron v2 package documentation"
+      locator: "https://pkg.go.dev/github.com/go-co-op/gocron/v2"
+      snapshot: "v2.22.0 reviewed 2026-08-20"
+    - title: "go-co-op/gocron releases"
+      locator: "https://github.com/go-co-op/gocron/releases"
+      snapshot: "v2.22.0 latest reviewed 2026-08-20"
+    - title: "go-co-op/gocron security policy"
+      locator: "https://github.com/go-co-op/gocron/security"
+      snapshot: "v2 supported; no published advisories reviewed 2026-08-20"
+    - title: "Redis distributed locks"
+      locator: "https://redis.io/docs/latest/develop/clients/patterns/distributed-locks/"
+      snapshot: "reviewed 2026-08-20"
+    - title: "Redis SET and scripting"
+      locator: "https://redis.io/docs/latest/commands/set/; https://redis.io/docs/latest/develop/interact/programmability/eval-intro/"
+      snapshot: "reviewed 2026-08-20"
+    - title: "go-redis official client"
+      locator: "https://github.com/redis/go-redis"
+      snapshot: "v9 current family reviewed 2026-08-20; project pins v9.22.0"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: time-bounded
+  review_after: "2026-11-20"
+  refresh_triggers: ["gocron major/minor semantics change", "Redis coordination topology changes", "strict guarantee expands to failover/consensus", "dependency security advisory"]
+relations:
+  extends: []
+  related: ["R001", "R003"]
+  supersedes: []
+  superseded_by: []
+report: report.md

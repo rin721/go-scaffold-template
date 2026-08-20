@@ -137,6 +137,7 @@ dependencies, err := app.DependencySet(func(values app.Values) (Dependencies, er
 - `app/storage`：配置化对象存储 Manager，Leased Swap；当前 Manager 没有独占 transport/goroutine，因此不声明 finalizer；按 route 借用无 Close Client，文件工具不进入该组件。
 - `app/observability`：Metrics 使用 process-stable `ManagedFixed` Lease facade；Telemetry 使用 generation-owned `ManagedConfigured`，HTTP 请求在 Lease 内完成，排空后 flush/shutdown；两者都不导出 Prometheus Registry、OTel Tracer/Provider 或关闭权。
 - `app/execution`：配置化（memory/disabled 开关）的后台任务执行组件，Leased Swap；`DependencySet` 注入结构化 Logger；输出 `pkg/execution` 的 `OperationExecutor` 稳定 facade，向业务模块提供幂等 / 失败重试 / 执行记录能力（035）。组件装配 `pkg/execution.RecoveringStore` 恢复治理（Healthy/Degraded/Recovering 状态机、有界记录缓冲 + 溢出策略、退避/抖动/最大频率探测、可用性验证、恢复后回放并原子切回主实现，goroutine 由 terminal finalizer 停止），并按模块 `Config.Policies` + `Execution.PolicyName` 提供命令式策略隔离；状态变化经注入 Logger 输出结构化日志，`Access.Recovery()`/`Access.Health()` 导出恢复治理观测；执行记录经 `pkg/execution.AsyncRecorder` 异步持久化（`Config.Async` 控制容量/溢出，`stop()` 先排空再停恢复循环）。当前 memory backend 同时兼作外部主存储缺位时的降级兜底，多实例下不等价于分布式 Cache 语义。真正的 Cache-primary/数据库外部主存储接入为下一增量。
+- `app/schedule`：Application Generation 持有的配置化调度 Component。Prepare 构建暂停的 gocron Adapter，进程稳定 `ScheduleHub` 在 Commit/Retire 切换准入；分布式执行权通过 Cache Redis owner 提供的项目 `coordination.Manager` 协调，任务统一进入 Telemetry 与 Execution。它不作为普通 Participant 提前启动，也不向模块暴露 Access 或第三方类型。
 
 当前 Service 在 Kernel App Plan 外接入 application-owned HTTP listener，但没有业务 middleware、handler、service、repository 或 model；本组件模型不替它们定义目录、构造器或容器职责。
 

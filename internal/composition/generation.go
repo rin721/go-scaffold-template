@@ -13,6 +13,7 @@ import (
 	cacheapp "github.com/rin721/go-scaffold-template/internal/kernel/app/cache"
 	databaseapp "github.com/rin721/go-scaffold-template/internal/kernel/app/database"
 	executionapp "github.com/rin721/go-scaffold-template/internal/kernel/app/execution"
+	scheduleapp "github.com/rin721/go-scaffold-template/internal/kernel/app/schedule"
 	storageapp "github.com/rin721/go-scaffold-template/internal/kernel/app/storage"
 	kernelcomposition "github.com/rin721/go-scaffold-template/internal/kernel/composition"
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
@@ -38,10 +39,12 @@ import (
 )
 
 type applicationGenerationFactory struct {
-	logging       *kernellogging.Manager
-	hub           *httpx.ListenerHub
-	managementHub *httpx.ListenerHub
-	opsRuntime    *opsRuntimeSource
+	logging         *kernellogging.Manager
+	hub             *httpx.ListenerHub
+	managementHub   *httpx.ListenerHub
+	scheduleHub     *scheduleapp.Hub
+	opsRuntime      *opsRuntimeSource
+	applicationName string
 
 	loggerPool    *resourcePool[logger.Logger]
 	databasePool  *resourcePool[databaseapp.Access]
@@ -71,6 +74,7 @@ type applicationGeneration struct {
 	execution *resourceHandle[executionapp.Access]
 	metrics   *resourceHandle[pkgobservability.Metrics]
 	telemetry *immutableComponent[pkgobservability.Telemetry]
+	scheduler *immutableComponent[scheduleapp.Access]
 
 	module            todo.HTTPModule
 	authModule        auth.Module
@@ -98,9 +102,12 @@ type applicationGeneration struct {
 	terminalErr         error
 }
 
-func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicationGenerationFactory, error) {
+func newApplicationGenerationFactory(logging *kernellogging.Manager, applicationName string) (*applicationGenerationFactory, error) {
 	if logging == nil {
 		return nil, fmt.Errorf("application generation logging manager is nil")
+	}
+	if applicationName == "" {
+		return nil, fmt.Errorf("application generation application name is empty")
 	}
 	hub, err := httpx.NewListenerHub(0)
 	if err != nil {
@@ -111,7 +118,7 @@ func newApplicationGenerationFactory(logging *kernellogging.Manager) (*applicati
 		return nil, err
 	}
 	factory := &applicationGenerationFactory{
-		logging: logging, hub: hub, managementHub: managementHub,
+		logging: logging, hub: hub, managementHub: managementHub, scheduleHub: scheduleapp.NewHub(), applicationName: applicationName,
 		build:         opsmodel.BuildInfo{Version: "test", Commit: "unknown", BuildTime: "unknown", GoVersion: runtime.Version(), Dirty: true},
 		loggerPool:    newResourcePool[logger.Logger]("logger"),
 		databasePool:  newResourcePool[databaseapp.Access]("database"),
@@ -364,6 +371,28 @@ func (f *applicationGenerationFactory) Prepare(
 	if err := module.ValidateContributions(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution); err != nil {
 		return abort(fmt.Errorf("validate application module contributions: %w", err))
 	}
+	schedules, err := module.ScheduleBindings(generation.authModule.Contribution, generation.module.Contribution, generation.opsModule.Contribution)
+	if err != nil {
+		return abort(fmt.Errorf("collect application module schedules: %w", err))
+	}
+	coordinationManager, err := cacheapp.Coordination(generation.cache.value())
+	if err != nil {
+		return abort(fmt.Errorf("compose scheduler coordination: %w", err))
+	}
+	schedulerDefinition, err := scheduleapp.Definition(scheduleapp.Dependencies{
+		ApplicationName: f.applicationName, Generation: generation.id,
+		Logger: generation.logger.value(), Clock: clock.System(), Execution: generation.execution.value(), Coordination: coordinationManager,
+		Telemetry: generation.telemetry.output, Bindings: schedules,
+		ReportFailure: generation.reportScheduleFailure,
+	})
+	if err != nil {
+		return abort(fmt.Errorf("define scheduler app: %w", err))
+	}
+	generation.scheduler, err = startImmutableComponent(ctx, snapshot, f.logging, schedulerDefinition)
+	if err != nil {
+		return abort(fmt.Errorf("start scheduler candidate: %w", err))
+	}
+	generation.resourceStats.Built = append(generation.resourceStats.Built, "scheduler")
 	generation.resourceStats.Built = append(generation.resourceStats.Built, "auth")
 	generation.resourceStats.Built = append(generation.resourceStats.Built, "ops")
 	participants := append(append([]supervisor.Participant(nil), generation.module.Contribution.Participants...), generation.authModule.Contribution.Participants...)
@@ -446,12 +475,13 @@ func (f *applicationGenerationFactory) Failures() <-chan error { return f.failur
 
 func (f *applicationGenerationFactory) Stop(ctx context.Context) error {
 	var joined error
+	joined = errors.Join(joined, f.scheduleHub.Stop(ctx))
 	joined = errors.Join(joined, f.hub.Stop(ctx))
 	joined = errors.Join(joined, f.managementHub.Stop(ctx))
 	remaining := map[string]int{
 		"logger": f.loggerPool.remaining(), "database": f.databasePool.remaining(),
 		"cache": f.cachePool.remaining(), "i18n": f.i18nPool.remaining(), "storage": f.storagePool.remaining(),
-		"observability.metrics": f.metricsPool.remaining(),
+		"execution": f.executionPool.remaining(), "observability.metrics": f.metricsPool.remaining(),
 	}
 	for owner, count := range remaining {
 		if count != 0 {
@@ -559,6 +589,14 @@ func (g *applicationGeneration) Commit(previous kernel.ActiveGeneration) (kernel
 		g.mu.Unlock()
 		return nil, err
 	}
+	if g.scheduler == nil {
+		g.mu.Unlock()
+		return nil, fmt.Errorf("application generation %d scheduler is missing", g.id)
+	}
+	if err := g.factory.scheduleHub.Commit(context.Background(), g.scheduler.output); err != nil {
+		g.mu.Unlock()
+		return nil, err
+	}
 	g.factory.logging.Replace(g.logger.value())
 	g.committed = true
 	g.current = true
@@ -593,6 +631,9 @@ func (g *applicationGeneration) abort(ctx context.Context) error {
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.scheduler != nil {
+		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
+	}
 	if g.managementServer != nil {
 		joined = errors.Join(joined, g.managementServer.Stop(ctx))
 		joined = errors.Join(joined, g.waitManagementRun(ctx))
@@ -644,6 +685,9 @@ func (g *applicationGeneration) stop(ctx context.Context, retireCurrentRoute boo
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.scheduler != nil {
+		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
+	}
 	if retireCurrentRoute && wasCurrent {
 		joined = errors.Join(joined, g.factory.hub.Retire(g.route))
 		joined = errors.Join(joined, g.factory.managementHub.Retire(g.managementRoute))
@@ -707,6 +751,9 @@ func (g *applicationGeneration) ForceStop(ctx context.Context) error {
 	g.stopping.Store(true)
 	g.mu.Unlock()
 	var joined error
+	if g.scheduler != nil {
+		joined = errors.Join(joined, g.factory.scheduleHub.Retire(ctx, g.scheduler.output))
+	}
 	joined = errors.Join(joined, g.factory.hub.Retire(g.route))
 	joined = errors.Join(joined, g.factory.managementHub.Retire(g.managementRoute))
 	if g.server != nil {
@@ -802,6 +849,9 @@ func (g *applicationGeneration) managementServerRunError() error {
 
 func (g *applicationGeneration) releaseResources(ctx context.Context) error {
 	var joined error
+	if g.scheduler != nil {
+		joined = errors.Join(joined, g.scheduler.close(ctx))
+	}
 	if g.telemetry != nil {
 		joined = errors.Join(joined, g.telemetry.close(ctx))
 	}
@@ -810,6 +860,16 @@ func (g *applicationGeneration) releaseResources(ctx context.Context) error {
 	}
 	joined = errors.Join(joined, releaseGenerationResources(ctx, g.storage, g.i18n, g.cache, g.database, g.logger, g.execution))
 	return joined
+}
+
+func (g *applicationGeneration) reportScheduleFailure(err error) {
+	if err == nil || g.stopping.Load() {
+		return
+	}
+	select {
+	case g.factory.failures <- fmt.Errorf("run scheduler generation %d: %w", g.id, err):
+	default:
+	}
 }
 
 func (g *applicationGeneration) stopParticipants(ctx context.Context) error {

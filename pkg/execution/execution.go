@@ -41,6 +41,7 @@ type Execution struct {
 	Key       Key
 	Policy    resilience.RetryPolicy // 复用 pkg/resilience；Retryable 用 fault.Retryable
 	Timeout   time.Duration          // 0 表示不额外超时
+	ClaimTTL  time.Duration          // 幂等占用与完成去重窗口；0 表示由 Store 保持不过期
 	Trigger   string                 // 低敏触发者/来源，用于执行记录
 	Operation Operation
 	// PolicyName 是给装配方（Kernel App）使用的命令式策略选择标识：业务模块可通过
@@ -94,7 +95,7 @@ func WrapBackend(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%w: %v", ErrBackend, err)
+	return fmt.Errorf("%w: %w", ErrBackend, err)
 }
 
 // WrapRetryExhausted 包装重试耗尽，保留最后原因。
@@ -102,5 +103,5 @@ func WrapRetryExhausted(err error) error {
 	if err == nil {
 		return err
 	}
-	return fmt.Errorf("%w: %v", ErrRetryExhausted, err)
+	return fmt.Errorf("%w: %w", ErrRetryExhausted, err)
 }

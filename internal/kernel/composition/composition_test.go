@@ -82,7 +82,7 @@ func TestComposeBootstrapGeneratesAllServiceSectionsWithoutKernel(t *testing.T) 
 		t.Fatalf("CLI and direct generation differ:\nCLI:\n%s\ndirect:\n%s", cliPayload, directPayload)
 	}
 	previous := -1
-	for _, section := range []string{"logger:", "database:", "cache:", "i18n:", "storage:", "http:"} {
+	for _, section := range []string{"logger:", "database:", "cache:", "i18n:", "storage:", "execution:", "scheduler:", "http:"} {
 		index := bytes.Index(cliPayload, []byte(section))
 		if index <= previous {
 			t.Fatalf("generated section %s is missing or out of order:\n%s", section, cliPayload)

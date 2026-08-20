@@ -21,6 +21,9 @@ func (t telemetryFixture) HTTP([]observability.Operation) func(http.Handler) htt
 func (t telemetryFixture) Diagnostics(context.Context) (observability.Diagnostics, error) {
 	return t.diagnostics, nil
 }
+func (t telemetryFixture) Observe(ctx context.Context, _ observability.Work, run observability.WorkFunc) error {
+	return run(ctx)
+}
 
 func TestCapabilitiesCanBeConsumedWithoutTechnologyTypes(t *testing.T) {
 	capabilities := observability.Capabilities{

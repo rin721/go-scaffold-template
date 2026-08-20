@@ -167,6 +167,31 @@ execution:
       retryMaxWaitMs: 500
       timeoutMs: 2000
 
+scheduler:
+  # 调度默认关闭；只有模块通过 Contribution.Schedules 声明的任务才会被统一装配。
+  enabled: false
+  # cron 未单独声明时区时使用此 IANA 时区。
+  timezone: UTC
+  # 当前 Application Generation 内所有任务共享的并发上限。
+  maxConcurrency: 32
+  shutdownTimeout: 30s
+  # occurrence 的幂等占用与完成去重窗口。
+  occurrenceRetention: 24h0m0s
+  coordination:
+    # namespace + application identity + Task ID 组成 Redis 协调键；日志不输出原始 token。
+    namespace: go-scaffold-template:scheduler
+    leaseTTL: 30s
+    # renewInterval 必须至少留下两个续租安全窗口，即 renewInterval * 3 <= leaseTTL。
+    renewInterval: 10s
+    acquireTimeout: 2s
+    retryMin: 500ms
+    retryMax: 10s
+  # 这里只能覆盖代码已经声明的稳定 Task ID；未知 ID 会让候选 Generation 失败。
+  # tasks:
+  #   billing.reconcile:
+  #     enabled: true
+  #     unavailablePolicy: pause
+
 # development-anonymous 只允许 development + loopback HTTP；production 必须改用 jwt。
 auth:
   mode: development-anonymous

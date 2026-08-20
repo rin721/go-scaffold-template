@@ -8,6 +8,8 @@
 
 需要幂等 / 失败重试 / 执行记录的业务操作，接入 `execution` 能力的方法见 [业务模块接入 execution 能力](./execution-capability.md)（声明式命名策略、`OperationExecutor` 用法、错误语义、观测与多实例边界）。
 
+需要 cron / fixedDelay 触发的业务任务，通过 `module.Contribution.Schedules` 接入，完整声明、策略与恢复语义见 [业务模块接入定时调度能力](./scheduled-task-capability.md)。模块不得自行创建 scheduler、Redis client 或隐式注册流程。
+
 ## 1. 开始条件
 
 收到“新增应用模块”请求后，不先复制 Todo 目录，也不先创建空 Handler、Repository、配置或 CLI。研究阶段先写清：
@@ -131,6 +133,7 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 | migration binding | `binding/migration` | composition / migrate 使用 | `internal/module/<name>/binding/migration` |
 | i18n binding | `binding/i18n`（模块自有语言资源 + 窄契约，如 `MessageFiles()`/`fs.FS`/catalog） | composition 显式聚合进 Non-Essential I18n 装配，再按模块注入 `pkg/i18n.Translator` | `internal/module/<name>/binding/i18n` 与模块内语言资源 |
 | middleware | `middleware/`（横切策略） | composition 挂载 | `internal/module/<name>/middleware` |
+| schedule binding | `module.go` 构造 `pkg/schedule.Binding` | `module.Contribution.Schedules`，由 application composition 统一聚合 | 模块 Service 与 `module.go` |
 
 **新增业务模块必须接入的基础契约**：
 
@@ -138,6 +141,7 @@ HTTP 的固定构造顺序是 `模块顶层 typed Handler + binding 契约/装�
 - 若有用户可见翻译：必须提供 i18n binding（自有语言资源 + `binding/i18n`），经 composition/kernel 聚合后通过注入的 `pkg/i18n.Translator` 消费；不得绕过注入直接读 `pkg/i18n` 默认配置。
 - `module.go` 只做纯内存装配并返回窄 Handler/Service 与 contribution；`internal/composition` 是唯一跨模块连接点。
 - 保留 032 配置边界：`pkg/*` 只提供通用能力 + 基础默认；`kernel/app/*` 负责应用层默认与装配，不隐式依赖 `pkg/*.DefaultConfig()`。
+- 若声明定时任务：业务逻辑留在模块 Service，`module.go` 只构造不可变 Binding；触发、并发、协调、Execution、Tracing、健康与 Generation 切换均由统一底层能力负责。
 
 ## 5. 资源和运行 owner
 

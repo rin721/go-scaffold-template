@@ -146,4 +146,6 @@ if err := profiles.InvalidateTags(ctx, "profile"); err != nil {
 
 推荐在 composition 完成后通过 `cacheapp.NewClient[T](capabilities.Cache, cfg)` 创建 `cache.Client[T]`，再通过构造函数注入业务组件。typed Client 拥有自己的 L1 状态和清理 goroutine，创建方必须调用 `Close`；它不拥有 Kernel 的 Redis 连接。业务组件不要自行创建 Redis client，也不要绕过 `pkg/cache` 直接散写 Redis key、tag 索引或序列化格式。
 
-Cache App 默认 `disabled`，启用 Redis 后会在启动 Ready 阶段 Ping。底层 App 的独立 Kernel reload 策略仍是 `RestartRequired`，因为它不能替调用方迁移已有 typed Client 的 L1；长期 Service 不调用这条局部 reload，而是在完整 Application Generation 中按 Cache section digest 构造或复用后端。模块若拥有 typed Client，其 Client、L1、tag index 与清理 goroutine 必须归对应 generation 的终结 journal，不能跨代复用。
+Cache App 默认 `disabled`。启用 Redis 后，组件 Ready 只校验配置、资源 owner 与 Adapter 已完整建立；`Access.Ping`、普通缓存调用和调度协调调用分别保留真实运行期错误，不在 Generation Prepare 通过一次 Ping 覆盖消费方的恢复策略，也不静默回退内存。底层 App 的独立 Kernel reload 策略仍是 `RestartRequired`，因为它不能替调用方迁移已有 typed Client 的 L1；长期 Service 不调用这条局部 reload，而是在完整 Application Generation 中按 Cache section digest 构造或复用后端。模块若拥有 typed Client，其 Client、L1、tag index 与清理 goroutine 必须归对应 generation 的终结 journal，不能跨代复用。
+
+同一 Cache Redis resource 还为统一 scheduler 提供项目自有 `pkg/coordination.Manager` Adapter，复用现有 go-redis client、超时和关闭 owner。该 Adapter 不进入业务缓存 API，也不把 token、Redis Client 或释放权暴露给业务模块。

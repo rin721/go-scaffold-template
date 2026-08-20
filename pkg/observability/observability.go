@@ -13,6 +13,15 @@ type Operation struct {
 	Path   string
 }
 
+// Work 是后台工作 span 的稳定低基数身份，不包含业务参数。
+type Work struct {
+	Name string
+	Kind string
+}
+
+// WorkFunc 是在同一 Telemetry provider 下执行的后台工作。
+type WorkFunc func(context.Context) error
+
 // Diagnostics 描述 exporter 的低敏、自包含运行状态。
 type Diagnostics struct {
 	Enabled       bool   `json:"enabled"`
@@ -31,6 +40,7 @@ type Metrics interface {
 // Telemetry 提供请求级观测和低敏诊断，不暴露 tracer、provider 或关闭权。
 type Telemetry interface {
 	HTTP([]Operation) func(http.Handler) http.Handler
+	Observe(context.Context, Work, WorkFunc) error
 	Diagnostics(context.Context) (Diagnostics, error)
 }
 
@@ -38,4 +48,23 @@ type Telemetry interface {
 type Capabilities struct {
 	Metrics   Metrics
 	Telemetry Telemetry
+}
+
+type traceIDContextKey struct{}
+
+// WithTraceID 把低敏 trace identity 放入项目自有 context，不暴露 SDK Span 类型。
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, traceIDContextKey{}, traceID)
+}
+
+// TraceIDFrom 返回由 Telemetry 写入的低敏 trace identity。
+func TraceIDFrom(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	traceID, _ := ctx.Value(traceIDContextKey{}).(string)
+	return traceID
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/rin721/go-scaffold-template/internal/kernel/config"
 	pkgcache "github.com/rin721/go-scaffold-template/pkg/cache"
 	"github.com/rin721/go-scaffold-template/pkg/cache/redisstore"
+	"github.com/rin721/go-scaffold-template/pkg/coordination"
 )
 
 const (
@@ -65,13 +66,15 @@ type RedisConfig struct {
 type Access interface {
 	Ping(context.Context) error
 	use(context.Context, func(pkgcache.RemoteStore) error) error
+	useCoordination(context.Context, func(coordination.Manager) error) error
 }
 
 type resource struct {
-	driver      Driver
-	client      *redis.Client
-	store       pkgcache.RemoteStore
-	pingTimeout time.Duration
+	driver       Driver
+	client       *redis.Client
+	store        pkgcache.RemoteStore
+	coordination coordination.Manager
+	pingTimeout  time.Duration
 }
 
 type access struct {
@@ -102,6 +105,15 @@ func NewClient[T any](backend Access, cfg *pkgcache.Config) (pkgcache.Client[T],
 		return nil, fmt.Errorf("cache app access is nil")
 	}
 	return pkgcache.New[T](remoteAccess{backend: backend}, cfg)
+}
+
+// Coordination 使用 Cache 已拥有的 Redis 资源构造专用执行权入口。
+// 返回值不暴露 Redis client，也不拥有关闭权。
+func Coordination(backend Access) (coordination.Manager, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("cache app access is nil")
+	}
+	return &coordinationAccess{backend: backend}, nil
 }
 
 func newAccess(delegate app.Lease[*resource]) (Access, error) {
@@ -158,6 +170,24 @@ func (a *access) use(ctx context.Context, use func(pkgcache.RemoteStore) error) 
 	})
 }
 
+func (a *access) useCoordination(ctx context.Context, use func(coordination.Manager) error) error {
+	if ctx == nil {
+		return coordination.ErrNilContext
+	}
+	if use == nil {
+		return fmt.Errorf("cache coordination callback is nil")
+	}
+	return a.delegate.Use(ctx, func(current *resource) error {
+		if current == nil {
+			return fmt.Errorf("cache instance is nil")
+		}
+		if current.coordination == nil {
+			return coordination.ErrUnavailable
+		}
+		return use(current.coordination)
+	})
+}
+
 type remoteAccess struct{ backend Access }
 
 func (r remoteAccess) Get(ctx context.Context, key string) ([]byte, time.Duration, error) {
@@ -201,7 +231,10 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 		return nil, err
 	}
 	if cfg.Driver == DriverDisabled {
-		return &resource{driver: DriverDisabled, pingTimeout: cfg.Redis.PingTimeout}, nil
+		return &resource{
+			driver: DriverDisabled, pingTimeout: cfg.Redis.PingTimeout,
+			coordination: coordination.Unavailable(),
+		}, nil
 	}
 	client := redis.NewClient(&redis.Options{
 		Addr:         cfg.Redis.Address,
@@ -219,28 +252,29 @@ func build(ctx context.Context, cfg Config, _ struct{}) (*resource, error) {
 		return nil, errors.Join(fmt.Errorf("create cache redis store: %w", err), client.Close())
 	}
 	return &resource{
-		driver:      DriverRedis,
-		client:      client,
-		store:       store,
-		pingTimeout: cfg.Redis.PingTimeout,
+		driver:       DriverRedis,
+		client:       client,
+		store:        store,
+		coordination: newRedisCoordination(client),
+		pingTimeout:  cfg.Redis.PingTimeout,
 	}, nil
 }
 
 func ready(ctx context.Context, current *resource) error {
+	if ctx == nil {
+		return app.ErrNilContext
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	if current == nil {
 		return fmt.Errorf("cache instance is nil")
 	}
-	if current.driver == DriverDisabled {
-		return nil
+	if current.driver == DriverRedis && (current.client == nil || current.store == nil || current.coordination == nil) {
+		return fmt.Errorf("cache redis resource is incomplete")
 	}
-	if current.client == nil {
-		return fmt.Errorf("cache redis client is unavailable")
-	}
-	pingCtx, cancel := context.WithTimeout(ctx, current.pingTimeout)
-	defer cancel()
-	if err := current.client.Ping(pingCtx).Err(); err != nil {
-		return fmt.Errorf("verify cache readiness: %w", err)
-	}
+	// Ready 只证明配置、资源所有权和 Adapter 已构建。Redis 的运行期连通性由 Ping
+	// 与各消费方策略判断，避免在 Generation Prepare 阶段覆盖任务级 skip/pause/fail。
 	return nil
 }
 

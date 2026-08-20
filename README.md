@@ -30,6 +30,7 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 | 配置来源、环境变量、`config init`、`config.example.yaml` | [配置说明](docs/configuration/README.md) |
 | API 路由与接口清单 | [API 文档](api/README.md) |
 | 开发应用模块 | [应用模块开发](docs/development/application-module-development.md) |
+| 声明 cron / fixedDelay 定时任务 | [定时调度能力](docs/development/scheduled-task-capability.md) |
 | 日志打印规范 | [开发日志规范](docs/development/logging.md) |
 | Kernel 与 Application Generation | [Kernel 运行与配置](internal/kernel/README.md) |
 | Kernel App 组件 | [Kernel App 组件](internal/kernel/app/README.md) |
@@ -42,7 +43,7 @@ Invoke-RestMethod http://127.0.0.1:9090/readyz
 
 ## 架构摘要
 
-应用入口 `cmd/app` 只负责进程 I/O、基线日志和信号处理；`internal/composition` 显式装配 Bootstrap CLI、migration one-shot 与长期 Service。长期 Service 使用 Application Generation 管理配置快照、资源复用、listener 交接、ready 状态和优雅停止。
+应用入口 `cmd/app` 只负责进程 I/O、基线日志和信号处理；`internal/composition` 显式装配 Bootstrap CLI、migration one-shot 与长期 Service。长期 Service 使用 Application Generation 管理配置快照、资源复用、listener 与定时任务准入交接、ready 状态和优雅停止。
 
 配置严格按 owner 注册，未知配置节会在资源副作用前失败；`config init`、`db migrate` 和长期 Service 必须识别同一套应用配置节，避免“生成的配置自己不能启动”的漂移。
 

@@ -1,0 +1,35 @@
+schema_version: 1
+id: R003
+title: "定时调度单轨接入综合结论"
+question: "如何把模块任务声明、触发引擎、Execution、Redis coordination、Tracing 与健康状态合并进现有 Application Generation，而不建立平行治理体系？"
+research_type: comparative-synthesis
+topics: ["scheduler", "application-generation", "admission", "coordination", "execution", "observability"]
+keywords: ["ScheduleBinding", "ScheduleHub", "Prepare", "Commit", "Retire", "lease", "OperationExecutor", "Ops"]
+applicable_scenarios: ["多模块定时任务", "配置重载", "多实例 strict singleton", "优雅排空"]
+non_applicable_scenarios: ["业务任务实现", "动态远程任务管理", "独立 scheduler service", "分布式工作流"]
+status: active
+summary: "采用模块显式 Binding + process-stable ScheduleHub + generation candidate 的单轨结构；gocron 只负责时机，Execution 负责运行治理，Cache-owned coordination 负责执行权，Telemetry/Ops 扩展现有出口。"
+evidence:
+  types: ["synthesis", "source-code", "official-docs"]
+  primary_sources:
+    - title: "当前项目能力清单"
+      locator: "docs/changes/037-scheduled-task-capability/research/R001-current-scheduling-capability-inventory/report.md"
+      snapshot: "R001 active 2026-08-20"
+    - title: "调度和协调主源评估"
+      locator: "docs/changes/037-scheduled-task-capability/research/R002-scheduler-and-coordination-primary-sources/report.md"
+      snapshot: "R002 active 2026-08-20"
+    - title: "Application Generation 当前实现"
+      locator: "internal/kernel/generation.go; internal/composition/generation.go; pkg/httpx/listener_hub.go"
+      snapshot: "a675f33 verified 2026-08-20"
+researched_at: "2026-08-20"
+verified_at: "2026-08-20"
+validity:
+  mode: snapshot
+  review_after: "2027-02-20"
+  refresh_triggers: ["目标/API/依赖/模块边界实质变化", "调度 admission 无法参加 generation commit/retire", "Redis guarantee 假设变化"]
+relations:
+  extends: ["R001", "R002"]
+  related: ["023:R001", "023:R002", "035:R001", "035:R002", "036:R001"]
+  supersedes: []
+  superseded_by: []
+report: report.md

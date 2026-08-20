@@ -58,7 +58,7 @@ func (a *Application) newServiceRuntime() (*serviceRuntime, error) {
 	if err != nil {
 		return nil, fmt.Errorf("compose service configuration bindings: %w", err)
 	}
-	factory, err := newApplicationGenerationFactory(a.config.Logging)
+	factory, err := newApplicationGenerationFactory(a.config.Logging, a.config.Name)
 	if err != nil {
 		return nil, fmt.Errorf("create application generation factory: %w", err)
 	}
